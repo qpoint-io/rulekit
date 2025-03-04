@@ -2,31 +2,42 @@ package rulekit
 
 import "cmp"
 
-func compareNumber(left any, op int, right any) (ret bool) {
+func compareNumber(left any, op int, right any) (ret bool, err error) {
 	defer func() {
 		debugResult(ret, "│ cmpNum", "", left, op, right)
 	}()
-	return compareWithOp(cmpNumber(left, right), op)
+	cmpResult, err := cmpNumber(left, right)
+	if err != nil {
+		return false, err
+	}
+	return compareWithOp(cmpResult, op), nil
 }
 
-func cmpNumber(left any, right any) int {
+func cmpNumber(left any, right any) (int, error) {
 	switch left := left.(type) {
 	case int:
 		return cmpNumber(int64(left), right)
 	case int64:
 		switch right := right.(type) {
 		case int:
-			return cmp.Compare(left, int64(right))
+			return cmp.Compare(left, int64(right)), nil
 		case int64:
-			return cmp.Compare(left, right)
+			return cmp.Compare(left, right), nil
 		case uint:
-			return compareSignedUnsigned(left, uint64(right))
+			return compareSignedUnsigned(left, uint64(right)), nil
 		case uint64:
-			return compareSignedUnsigned(left, right)
+			return compareSignedUnsigned(left, right), nil
 		case float32:
-			return cmp.Compare(float64(left), float64(right))
+			return cmp.Compare(float64(left), float64(right)), nil
 		case float64:
-			return cmp.Compare(float64(left), right)
+			return cmp.Compare(float64(left), right), nil
+		default:
+			return cmpResultNotComparable, &ErrIncomparable{
+				Field:      left,
+				FieldValue: left,
+				Value:      right,
+				Operator:   "number comparison",
+			}
 		}
 
 	case uint:
@@ -34,17 +45,24 @@ func cmpNumber(left any, right any) int {
 	case uint64:
 		switch right := right.(type) {
 		case int:
-			return compareUnsignedSigned(left, int64(right))
+			return compareUnsignedSigned(left, int64(right)), nil
 		case int64:
-			return compareUnsignedSigned(left, right)
+			return compareUnsignedSigned(left, right), nil
 		case uint:
-			return cmp.Compare(left, uint64(right))
+			return cmp.Compare(left, uint64(right)), nil
 		case uint64:
-			return cmp.Compare(left, right)
+			return cmp.Compare(left, right), nil
 		case float32:
-			return cmp.Compare(float64(left), float64(right))
+			return cmp.Compare(float64(left), float64(right)), nil
 		case float64:
-			return cmp.Compare(float64(left), right)
+			return cmp.Compare(float64(left), right), nil
+		default:
+			return cmpResultNotComparable, &ErrIncomparable{
+				Field:      left,
+				FieldValue: left,
+				Value:      right,
+				Operator:   "number comparison",
+			}
 		}
 
 	case float32:
@@ -52,20 +70,32 @@ func cmpNumber(left any, right any) int {
 	case float64:
 		switch right := right.(type) {
 		case float32:
-			return cmp.Compare(left, float64(right))
+			return cmp.Compare(left, float64(right)), nil
 		case float64:
-			return cmp.Compare(left, right)
+			return cmp.Compare(left, right), nil
 		case int:
-			return cmp.Compare(left, float64(right))
+			return cmp.Compare(left, float64(right)), nil
 		case int64:
-			return cmp.Compare(left, float64(right))
+			return cmp.Compare(left, float64(right)), nil
 		case uint:
-			return cmp.Compare(left, float64(right))
+			return cmp.Compare(left, float64(right)), nil
 		case uint64:
-			return cmp.Compare(left, float64(right))
+			return cmp.Compare(left, float64(right)), nil
+		default:
+			return cmpResultNotComparable, &ErrIncomparable{
+				Field:      left,
+				FieldValue: left,
+				Value:      right,
+				Operator:   "number comparison",
+			}
 		}
 	}
-	return cmpResultNotComparable
+	return cmpResultNotComparable, &ErrIncomparable{
+		Field:      left,
+		FieldValue: left,
+		Value:      right,
+		Operator:   "number comparison",
+	}
 }
 
 // Helper function for comparing signed vs unsigned numbers

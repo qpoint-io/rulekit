@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-func compareString(left string, op int, right any) (ret bool) {
+func compareString(left string, op int, right any) (ret bool, err error) {
 	defer func() {
 		debugResult(ret, "│ cmpStr", "", left, op, right)
 	}()
@@ -27,38 +27,43 @@ func compareString(left string, op int, right any) (ret bool) {
 		// string ? hex
 		return compareBytesBytes([]byte(left), op, right.Bytes)
 	}
-	return false
+	return false, &ErrIncomparable{
+		Field:      left,
+		FieldValue: left,
+		Value:      right,
+		Operator:   operatorToString(op),
+	}
 }
 
-func compareStringString(left string, op int, right string) (ret bool) {
+func compareStringString(left string, op int, right string) (ret bool, err error) {
 	defer func() {
 		debugResult(ret, "│  cmpStrStr", "", left, op, right)
 	}()
 	switch op {
 	case token_TEST_EQ:
-		return left == right
+		return left == right, nil
 	case token_TEST_NE:
-		return left != right
+		return left != right, nil
 	case token_TEST_CONTAINS:
-		return strings.Contains(left, right)
+		return strings.Contains(left, right), nil
 	}
-	return false
+	return false, nil
 }
 
-func compareStringRegex(left string, op int, right *regexp.Regexp) (ret bool) {
+func compareStringRegex(left string, op int, right *regexp.Regexp) (ret bool, err error) {
 	defer func() {
 		debugResult(ret, "│ cmpStrRegex", "", left, op, right)
 	}()
 	switch op {
 	case token_TEST_EQ, token_TEST_CONTAINS:
-		return right.MatchString(left)
+		return right.MatchString(left), nil
 	case token_TEST_NE:
-		return !right.MatchString(left)
+		return !right.MatchString(left), nil
 	}
-	return false
+	return false, nil
 }
 
-func compareStringSlice(left []string, op int, right any) (ret bool) {
+func compareStringSlice(left []string, op int, right any) (ret bool, err error) {
 	defer func() {
 		debugResult(ret, "│ cmp[]Str", "", left, op, right)
 	}()
@@ -73,21 +78,20 @@ func compareStringSlice(left []string, op int, right any) (ret bool) {
 
 	switch right := right.(type) {
 	case string:
-		// []string{...} ? string
-		for _, fv := range left {
-			if compareString(fv, op, right) {
-				return true
-			}
-		}
-		return false
+		// []string ? string
+		return compareSlice(left, op, func(lv string, op int) (bool, error) {
+			return compareStringString(lv, op, right)
+		})
 	case *regexp.Regexp:
-		// []string{...} ? regexp
-		for _, fv := range left {
-			if compareStringRegex(fv, op, right) {
-				return true
-			}
-		}
-		return false
+		// []string ? regexp
+		return compareSlice(left, op, func(lv string, op int) (bool, error) {
+			return compareStringRegex(lv, op, right)
+		})
 	}
-	return false
+	return false, &ErrIncomparable{
+		Field:      left,
+		FieldValue: left,
+		Value:      right,
+		Operator:   operatorToString(op),
+	}
 }

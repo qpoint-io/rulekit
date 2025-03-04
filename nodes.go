@@ -31,6 +31,9 @@ func (n *nodeAnd) Eval(p map[string]any) Result {
 	}
 
 	// either one could pass/fail with/without missing fields
+	errs := make([]error, 0, len(rleft.Errors)+len(rright.Errors))
+	errs = append(errs, rleft.Errors...)
+	errs = append(errs, rright.Errors...)
 	r := Result{
 		Pass: rleft.Pass && rright.Pass,
 		EvaluatedRule: &nodeAnd{
@@ -38,6 +41,7 @@ func (n *nodeAnd) Eval(p map[string]any) Result {
 			right: rright.EvaluatedRule,
 		},
 		MissingFields: set.Union(rleft.MissingFields, rright.MissingFields),
+		Errors:        errs,
 	}
 	return r
 }
@@ -64,6 +68,9 @@ func (n *nodeOr) Eval(p map[string]any) Result {
 	}
 
 	// either one could pass/fail with/without missing fields
+	errs := make([]error, 0, len(rleft.Errors)+len(rright.Errors))
+	errs = append(errs, rleft.Errors...)
+	errs = append(errs, rright.Errors...)
 	r := Result{
 		Pass: rleft.Pass || rright.Pass,
 		EvaluatedRule: &nodeOr{
@@ -71,6 +78,7 @@ func (n *nodeOr) Eval(p map[string]any) Result {
 			right: rright.EvaluatedRule,
 		},
 		MissingFields: set.Union(rleft.MissingFields, rright.MissingFields),
+		Errors:        errs,
 	}
 	return r
 }
@@ -93,6 +101,7 @@ func (n *nodeNot) Eval(p map[string]any) Result {
 	return Result{
 		Pass:          !r.Pass,
 		MissingFields: r.MissingFields,
+		Errors:        r.Errors,
 		EvaluatedRule: n,
 	}
 }
@@ -150,27 +159,37 @@ func (n *nodeMatch) Eval(p map[string]any) Result {
 		}
 	}
 
+	pass, err := n.apply(val)
+	err = convertIncomparableError(err, n.field, token_TEST_MATCHES)
 	return Result{
-		Pass:          n.apply(val),
+		Pass:          pass,
 		EvaluatedRule: n,
+		Errors:        appendError(nil, err),
 	}
 }
 
-func (n *nodeMatch) apply(fv any) bool {
+func (n *nodeMatch) apply(fv any) (bool, error) {
 	if n.reg_expr == nil {
-		return false
+		return false, nil
 	}
 	switch val := fv.(type) {
 	case string:
-		return n.reg_expr.MatchString(val)
+		return n.reg_expr.MatchString(val), nil
 	case []string:
 		for _, s := range val {
 			if n.reg_expr.MatchString(s) {
-				return true
+				return true, nil
 			}
 		}
+	default:
+		return false, &ErrIncomparable{
+			Field:      n.field,
+			FieldValue: fv,
+			Value:      n.reg_expr,
+			Operator:   "matches",
+		}
 	}
-	return false
+	return false, nil
 }
 
 func (n *nodeMatch) FieldName() string {
@@ -202,10 +221,12 @@ func (n *nodeCompare) Eval(m map[string]any) Result {
 		return r
 	}
 
-	pass := compare(value, n.op, n.value)
+	pass, err := compare(value, n.op, n.value)
+	err = convertIncomparableError(err, n.field, n.op)
 	return Result{
 		Pass:          pass,
 		EvaluatedRule: n,
+		Errors:        appendError(nil, err),
 	}
 }
 
@@ -241,4 +262,12 @@ func isZero(val any) bool {
 		return v == nil || v.IP == nil
 	}
 	return false
+}
+
+// Helper function to append an error to a slice if it's not nil
+func appendError(errors []error, err error) []error {
+	if err != nil {
+		return append(errors, err)
+	}
+	return errors
 }

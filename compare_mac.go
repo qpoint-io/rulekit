@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-func compareMac(left net.HardwareAddr, op int, right any) (ret bool) {
+func compareMac(left net.HardwareAddr, op int, right any) (ret bool, err error) {
 	defer func() {
 		debugResult(ret, "│ cmpMac", "", left, op, right)
 	}()
@@ -21,5 +21,10 @@ func compareMac(left net.HardwareAddr, op int, right any) (ret bool) {
 		// mac ? string
 		return compareStringString(strings.ToLower(left.String()), op, strings.ToLower(right))
 	}
-	return false
+	return false, &ErrIncomparable{
+		Field:      left,
+		FieldValue: left,
+		Value:      right,
+		Operator:   operatorToString(op),
+	}
 }

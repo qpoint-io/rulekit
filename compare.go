@@ -5,7 +5,7 @@ import (
 	"net"
 )
 
-func compare(left any, op int, right any) (ret bool) {
+func compare(left any, op int, right any) (ret bool, err error) {
 	defer func() {
 		debugResult(ret, "╰ cmp", "", left, op, right)
 	}()
@@ -25,44 +25,49 @@ func compare(left any, op int, right any) (ret bool) {
 
 	case []int:
 		// []int ? any
-		return compareSlice(lv, op, func(lv int, op int) bool {
+		return compareSlice(lv, op, func(lv int, op int) (bool, error) {
 			return compareNumber(lv, op, right)
 		})
 
 	case []int64:
 		// []int64 ? any
-		return compareSlice(lv, op, func(lv int64, op int) bool {
+		return compareSlice(lv, op, func(lv int64, op int) (bool, error) {
 			return compareNumber(lv, op, right)
 		})
 
 	case []uint:
 		// []uint ? any
-		return compareSlice(lv, op, func(lv uint, op int) bool {
+		return compareSlice(lv, op, func(lv uint, op int) (bool, error) {
 			return compareNumber(lv, op, right)
 		})
 
 	case []uint64:
 		// []uint64 ? any
-		return compareSlice(lv, op, func(lv uint64, op int) bool {
+		return compareSlice(lv, op, func(lv uint64, op int) (bool, error) {
 			return compareNumber(lv, op, right)
 		})
 
 	case []float32:
 		// []float32 ? any
-		return compareSlice(lv, op, func(lv float32, op int) bool {
+		return compareSlice(lv, op, func(lv float32, op int) (bool, error) {
 			return compareNumber(lv, op, right)
 		})
 
 	case []float64:
 		// []float64 ? any
-		return compareSlice(lv, op, func(lv float64, op int) bool {
+		return compareSlice(lv, op, func(lv float64, op int) (bool, error) {
 			return compareNumber(lv, op, right)
 		})
 
 	case bool:
 		rv, ok := right.(bool)
 		if !ok {
-			return false
+			return false, &ErrIncomparable{
+				Field:      left,
+				FieldValue: left,
+				Value:      right,
+				Operator:   operatorToString(op),
+			}
 		}
 		return compareBool(lv, op, rv)
 
@@ -75,7 +80,12 @@ func compare(left any, op int, right any) (ret bool) {
 		return compareMac(lv, op, right)
 	}
 
-	return false
+	return false, &ErrIncomparable{
+		Field:      left,
+		FieldValue: left,
+		Value:      right,
+		Operator:   operatorToString(op),
+	}
 }
 
 func debugResult(result bool, prefix string, lname string, lv any, op int, rv any) bool {
@@ -89,7 +99,7 @@ func debugResult(result bool, prefix string, lname string, lv any, op int, rv an
 	return result
 }
 
-func compareSlice[T any](left []T, op int, fn func(lv T, op int) bool) bool {
+func compareSlice[T any](left []T, op int, fn func(lv T, op int) (bool, error)) (bool, error) {
 	if op == token_TEST_CONTAINS {
 		// []T contains any
 		//      -> check if of the slice elements are equal to the right value
@@ -102,26 +112,43 @@ func compareSlice[T any](left []T, op int, fn func(lv T, op int) bool) bool {
 		token_TEST_LT, token_TEST_LE:
 		// []T ==, >, >=, <, <= any
 		//      -> check if any of the slice elements are equal to the right value
+		var lastErr error
 		for _, lv := range left {
 			// we need only one item to match
-			if fn(lv, op) {
-				return true
+			ret, err := fn(lv, op)
+			if err != nil {
+				lastErr = err
+				continue
+			}
+			if ret {
+				return true, nil
 			}
 		}
-		return false
+
+		return false, lastErr
 
 	case token_TEST_NE:
 		// []T != any
 		//      -> check if NONE of the slice elements are equal to the right value
+		var lastErr error
 		for _, lv := range left {
-			if fn(lv, token_TEST_EQ) {
+			ret, err := fn(lv, token_TEST_EQ)
+			if err != nil {
+				lastErr = err
+				continue
+			}
+			if ret {
 				// one item matches
-				return false
+				return false, nil
 			}
 		}
-		return true
+		return lastErr == nil, lastErr
 
 	default:
-		return false
+		return false, &errIncomparable{
+			Left: left,
+			// Right:    right, TODO
+			Operator: op,
+		}
 	}
 }
