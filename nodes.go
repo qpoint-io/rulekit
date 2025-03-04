@@ -32,8 +32,11 @@ func (n *nodeAnd) Eval(p map[string]any) Result {
 
 	// either one could pass/fail with/without missing fields
 	r := Result{
-		Pass:          rleft.Pass && rright.Pass,
-		EvaluatedRule: n,
+		Pass: rleft.Pass && rright.Pass,
+		EvaluatedRule: &nodeAnd{
+			left:  rleft.EvaluatedRule,
+			right: rright.EvaluatedRule,
+		},
 		MissingFields: set.Union(rleft.MissingFields, rright.MissingFields),
 	}
 	return r
@@ -62,8 +65,11 @@ func (n *nodeOr) Eval(p map[string]any) Result {
 
 	// either one could pass/fail with/without missing fields
 	r := Result{
-		Pass:          rleft.Pass || rright.Pass,
-		EvaluatedRule: n,
+		Pass: rleft.Pass || rright.Pass,
+		EvaluatedRule: &nodeOr{
+			left:  rleft.EvaluatedRule,
+			right: rright.EvaluatedRule,
+		},
 		MissingFields: set.Union(rleft.MissingFields, rright.MissingFields),
 	}
 	return r

@@ -166,6 +166,27 @@ func TestMatch(t *testing.T) {
 				},
 			},
 		},
+		{
+			filter: `
+				dst.ip == 8.8.8.8
+				or (
+					dst.ip == 1.1.1.1
+					and (
+						dst.port == 53
+						or (dst.port == 443 and tls.enabled)
+					)
+				)`,
+			tests: map[*map[string]any]TestResult{
+				{
+					"tls.enabled": true,
+					"dst.ip":      net.ParseIP("1.1.1.1"),
+					"dst.port":    443,
+				}: {
+					Pass:          true,
+					EvaluatedRule: `dst.ip == 1.1.1.1 and (dst.port == 443 and tls.enabled)`,
+				},
+			},
+		},
 	}
 
 	for _, tc := range tcs {
