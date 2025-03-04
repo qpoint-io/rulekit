@@ -1,4 +1,4 @@
-package rule
+package rulekit
 
 //go:generate bash gen.sh
 

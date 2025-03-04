@@ -1,4 +1,4 @@
-package rule
+package rulekit
 
 func compareBool(left bool, op int, right bool) (ret bool) {
 	defer func() {

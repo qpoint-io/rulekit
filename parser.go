@@ -2,7 +2,7 @@
 
 //line parser.y:1
 
-package rule
+package rulekit
 
 import __yyfmt__ "fmt"
 

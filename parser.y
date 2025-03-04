@@ -1,5 +1,5 @@
 %{
-package rule
+package rulekit
 
 import (
 	"fmt"
