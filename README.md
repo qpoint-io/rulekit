@@ -1,3 +1,6 @@
+![Rulekit icon](./readme_assets/rule-kit-icon-dark.svg#gh-dark-mode-only) 
+![Rulekit icon](./readme_assets/rule-kit-icon-light.svg#gh-light-mode-only)
+ 
 # RuleKit
 
 RuleKit is a flexible expression-based rules engine for Go, providing a simple and expressive syntax for defining business rules that can be evaluated against key-value data.
@@ -101,3 +104,6 @@ The Result also provides additional helper methods:
 ## License
 
 TODO
+
+[![Qpoint Opensource](./readme_assets/qpoint-open.svg#gh-dark-mode-only)](https://qpoint.io)
+[![Qpoint Opensource](./readme_assets/qpoint-open-light.svg#gh-light-mode-only)](https://qpoint.io)
