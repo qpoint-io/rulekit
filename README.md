@@ -1,3 +1,9 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./readme_assets/rule-kit-icon-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="./readme_assets/rule-kit-icon-light.svg">
+  <img alt="Rulekit icon" src="./readme_assets/rule-kit-icon-light.svg">
+</picture>
+
 # RuleKit
 
 RuleKit is a flexible expression-based rules engine for Go, providing a simple and expressive syntax for defining business rules that can be evaluated against key-value data.
@@ -100,4 +106,10 @@ The Result also provides additional helper methods:
 
 ## License
 
-TODO
+[Apache 2.0](./LICENSE)
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./readme_assets/qpoint-open.svg">
+  <source media="(prefers-color-scheme: light)" srcset="./readme_assets/qpoint-open-light.svg">
+  <img alt="Image showing \"Qpoint ❤ OpenSource\"" src="./readme_assets/qpoint-open-light.svg">
+</picture>
