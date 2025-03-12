@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"regexp"
+	"strings"
 
 	"github.com/qpoint-io/rulekit/set"
 )
@@ -114,7 +115,7 @@ type nodeNotZero struct {
 }
 
 func (n *nodeNotZero) Eval(p map[string]any) Result {
-	val, ok := p[n.field]
+	val, ok := mapPath(p, n.field)
 	if !ok {
 		return Result{
 			// missing field == zero value
@@ -141,7 +142,7 @@ type nodeMatch struct {
 }
 
 func (n *nodeMatch) Eval(p map[string]any) Result {
-	val, ok := p[n.field]
+	val, ok := mapPath(p, n.field)
 	if !ok {
 		return Result{
 			Pass:          false,
@@ -189,7 +190,7 @@ type nodeCompare struct {
 }
 
 func (n *nodeCompare) Eval(m map[string]any) Result {
-	value, ok := m[n.field]
+	value, ok := mapPath(m, n.field)
 	if !ok {
 		r := Result{
 			MissingFields: set.NewSet(n.field),
@@ -241,4 +242,27 @@ func isZero(val any) bool {
 		return v == nil || v.IP == nil
 	}
 	return false
+}
+
+// mapPath gets element key from a map, interpreting it as a path if it contains a period.
+func mapPath(m map[string]any, key string) (any, bool) {
+	val, ok := m[key]
+	if ok {
+		return val, true
+	}
+
+	// interpret it as a path
+	parts := strings.SplitN(key, ".", 2)
+	if len(parts) == 2 {
+		child, ok := m[parts[0]]
+		if !ok {
+			return nil, false
+		}
+
+		if childMap, ok := child.(map[string]any); ok {
+			return mapPath(childMap, parts[1])
+		}
+		return nil, false
+	}
+	return nil, false
 }
