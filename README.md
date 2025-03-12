@@ -8,6 +8,8 @@
 
 RuleKit is a flexible expression-based rules engine for Go, providing a simple and expressive syntax for defining business rules that can be evaluated against key-value data.
 
+![RuleKit Demo](./readme_assets/demo.gif)
+
 ## Overview
 
 This package implements an expression-based rules engine that evaluates expressions against a key-value map of values, returning a true/false result with additional context.
