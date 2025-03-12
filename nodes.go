@@ -246,23 +246,44 @@ func isZero(val any) bool {
 
 // mapPath gets element key from a map, interpreting it as a path if it contains a period.
 func mapPath(m map[string]any, key string) (any, bool) {
-	val, ok := m[key]
-	if ok {
-		return val, true
-	}
+	// Iterative approach to traverse the path
+	currentMap := m
+	start := 0
 
-	// interpret it as a path
-	parts := strings.SplitN(key, ".", 2)
-	if len(parts) == 2 {
-		child, ok := m[parts[0]]
+	for {
+		part := key[start:]
+		// First check for direct key match (most common case)
+		if val, ok := currentMap[part]; ok {
+			return val, true
+		}
+
+		// Find the next period
+		idx := strings.IndexByte(part, '.')
+		if idx == -1 {
+			// No more periods, this is the last part
+			part = key[start:]
+			val, ok := currentMap[part]
+			return val, ok
+		}
+
+		// Adjust idx to be relative to the full string
+		idx += start
+		part = key[start:idx]
+
+		// Get the value for this part
+		val, ok := currentMap[part]
 		if !ok {
 			return nil, false
 		}
 
-		if childMap, ok := child.(map[string]any); ok {
-			return mapPath(childMap, parts[1])
+		// Convert to map for next iteration
+		nextMap, ok := val.(map[string]any)
+		if !ok {
+			return nil, false
 		}
-		return nil, false
+		currentMap = nextMap
+
+		// Move to the next part
+		start = idx + 1
 	}
-	return nil, false
 }
