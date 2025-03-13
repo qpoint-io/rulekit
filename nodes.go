@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"regexp"
+	"strings"
 
 	"github.com/qpoint-io/rulekit/set"
 )
@@ -114,7 +115,7 @@ type nodeNotZero struct {
 }
 
 func (n *nodeNotZero) Eval(p map[string]any) Result {
-	val, ok := p[n.field]
+	val, ok := mapPath(p, n.field)
 	if !ok {
 		return Result{
 			// missing field == zero value
@@ -141,7 +142,7 @@ type nodeMatch struct {
 }
 
 func (n *nodeMatch) Eval(p map[string]any) Result {
-	val, ok := p[n.field]
+	val, ok := mapPath(p, n.field)
 	if !ok {
 		return Result{
 			Pass:          false,
@@ -189,7 +190,7 @@ type nodeCompare struct {
 }
 
 func (n *nodeCompare) Eval(m map[string]any) Result {
-	value, ok := m[n.field]
+	value, ok := mapPath(m, n.field)
 	if !ok {
 		r := Result{
 			MissingFields: set.NewSet(n.field),
@@ -241,4 +242,48 @@ func isZero(val any) bool {
 		return v == nil || v.IP == nil
 	}
 	return false
+}
+
+// mapPath gets element key from a map, interpreting it as a path if it contains a period.
+func mapPath(m map[string]any, key string) (any, bool) {
+	// Iterative approach to traverse the path
+	currentMap := m
+	start := 0
+
+	for {
+		part := key[start:]
+		// First check for direct key match (most common case)
+		if val, ok := currentMap[part]; ok {
+			return val, true
+		}
+
+		// Find the next period
+		idx := strings.IndexByte(part, '.')
+		if idx == -1 {
+			// No more periods, this is the last part
+			part = key[start:]
+			val, ok := currentMap[part]
+			return val, ok
+		}
+
+		// Adjust idx to be relative to the full string
+		idx += start
+		part = key[start:idx]
+
+		// Get the value for this part
+		val, ok := currentMap[part]
+		if !ok {
+			return nil, false
+		}
+
+		// Convert to map for next iteration
+		nextMap, ok := val.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		currentMap = nextMap
+
+		// Move to the next part
+		start = idx + 1
+	}
 }

@@ -50,15 +50,20 @@ func TestEngineExample(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.True(t, filter.Eval(map[string]any{
-		"tags":        []string{"db-svc", "internal-vlan", "unprivileged-user"},
-		"domain":      "example.com",
-		"process.uid": 1000,
-		"port":        8080,
+		"tags":   []string{"db-svc", "internal-vlan", "unprivileged-user"},
+		"domain": "example.com",
+		"process": map[string]any{
+			"uid":  1000,
+			"path": "/usr/bin/some-other-process",
+		},
+		"port": 8080,
 	}).Pass)
 
 	assert.True(t, filter.Eval(map[string]any{
-		"destination.ip":   net.ParseIP("192.168.2.37"),
-		"destination.port": 22,
+		"destination": map[string]any{
+			"ip":   net.ParseIP("192.168.2.37"),
+			"port": 22,
+		},
 	}).Pass)
 
 	assert.False(t, filter.Eval(map[string]any{
@@ -75,7 +80,7 @@ func TestEngineExample(t *testing.T) {
 	}).Pass)
 }
 
-func TestMatch(t *testing.T) {
+func TestEval(t *testing.T) {
 	tcs := []struct {
 		filter  string
 		tests   map[*map[string]any]TestResult
@@ -226,7 +231,7 @@ func BenchmarkParse(b *testing.B) {
 	})
 }
 
-func BenchmarkMatch(b *testing.B) {
+func BenchmarkEval(b *testing.B) {
 	simpleFilter, err := Parse("tags eq 'db-svc'")
 	require.NoError(b, err)
 	largeFilter, err := Parse(`tags eq 'db-svc' OR domain matches /example\.com$/ OR (process.uid != 0 AND tags contains 'internal-svc') OR (destination.port <= 1023 AND destination.ip != 192.168.0.0/16)`)
