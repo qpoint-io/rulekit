@@ -54,17 +54,26 @@ func operatorToString(op int) string {
 	}
 }
 
+func withNegate(negate bool, node Rule) Rule {
+	if negate {
+		return &nodeNot{right: node}
+	}
+	return node
+}
+
 %}
 
 %union {
-	rule    Rule
-	data     []byte
-	operator int
+	rule      Rule
+	data      []byte
+	operator  int
+	negate    bool
 }
 
 // Type declarations for non-terminals (rules)
 %type <rule> search_condition predicate
 %type <operator> comparison_operator ineq_operator eq_operator
+%type <negate> optional_negate
 
 %token <data> token_FIELD
 %token <data> token_STRING token_HEX_STRING
@@ -117,9 +126,12 @@ search_condition:
 	;
 
 predicate:
-	token_FIELD eq_operator token_STRING
+	token_FIELD optional_negate eq_operator token_STRING
 	{
-		field, raw_value := string($1), string($3)
+		field, raw_value := string($1), string($4)
+		negate := $2
+		op := $3
+
 		value := raw_value
 		if value[0] == '\'' {
             // Convert single-quoted string to double-quoted
@@ -134,29 +146,35 @@ predicate:
 			return 1
 		}
 		
-		$$ = &nodeCompare{
+		$$ = withNegate(negate, &nodeCompare{
 			predicate: predicate{field: field, raw_value: raw_value},
-			op: $2,
+			op: op,
 			value: unquoted,
-		}
+		})
 	}
-	| token_FIELD eq_operator token_HEX_STRING
+	| token_FIELD optional_negate eq_operator token_HEX_STRING
 	{
-		field, raw_value := string($1), string($3)
+		field, raw_value := string($1), string($4)
+		negate := $2
+		op := $3
+
 		hs, err := ParseHexString(raw_value)
 		if err != nil {
 			rulelex.Error(fmt.Sprintf("parsing hex string: %v", err))
 			return 1
 		}
-		$$ = &nodeCompare{
+		$$ = withNegate(negate, &nodeCompare{
 			predicate: predicate{field: field, raw_value: raw_value},
-			op: $2,
+			op: op,
 			value: hs,
-		}
+		})
 	}
-	| token_FIELD comparison_operator token_INT
+	| token_FIELD optional_negate comparison_operator token_INT
 	{
-		field, raw_value := string($1), string($3)
+		field, raw_value := string($1), string($4)
+		negate := $2
+		op := $3
+
 		var num any
 		// attempt to parse as int64
 		if n, err := strconv.ParseInt(raw_value, 0, 64); err == nil {
@@ -169,30 +187,36 @@ predicate:
 			return 1
 		}
 		
-		$$ = &nodeCompare{
+		$$ = withNegate(negate, &nodeCompare{
 			predicate: predicate{field: field, raw_value: raw_value},
-			op: $2,
+			op: op,
 			value: num,
-		}
+		})
 	}
-	| token_FIELD comparison_operator token_FLOAT
+	| token_FIELD optional_negate comparison_operator token_FLOAT
 	{
-		field, raw_value := string($1), string($3)
+		field, raw_value := string($1), string($4)
+		negate := $2
+		op := $3
+
 		num, err := strconv.ParseFloat(raw_value, 64)
 		if err != nil {
 			rulelex.Error(fmt.Sprintf("parsing %q: %v", raw_value, err))
 			return 1
 		}
 		
-		$$ = &nodeCompare{
+		$$ = withNegate(negate, &nodeCompare{
 			predicate: predicate{field: field, raw_value: raw_value},
-			op: $2,
+			op: op,
 			value: num,
-		}
+		})
 	}
-	| token_FIELD eq_operator token_BOOL
+	| token_FIELD optional_negate eq_operator token_BOOL
 	{
-		field, raw_value := string($1), string($3)
+		field, raw_value := string($1), string($4)
+		negate := $2
+		op := $3
+
 		var value bool
 		if strings.EqualFold(raw_value, "true") {
 			value = true
@@ -203,46 +227,53 @@ predicate:
 			return 1
 		}
 		
-		$$ = &nodeCompare{
+		$$ = withNegate(negate, &nodeCompare{
 			predicate: predicate{field: field, raw_value: raw_value},
-			op: $2,
+			op: op,
 			value: value,
-		}
+		})
 	}
-	| token_FIELD eq_operator token_IP
+	| token_FIELD optional_negate eq_operator token_IP
 	{
-		field, raw_value := string($1), string($3)
+		field, raw_value := string($1), string($4)
+		negate := $2
+		op := $3
+
 		ip := net.ParseIP(raw_value)
 		if ip == nil {
 			rulelex.Error(fmt.Sprintf("parsing IP: invalid value %q", raw_value))
 			return 1
 		}
 		
-		$$ = &nodeCompare{
+		$$ = withNegate(negate, &nodeCompare{
 			predicate: predicate{field: field, raw_value: raw_value},
-			op: $2,
+			op: op,
 			value: ip,
-		}
+		})
 	}
-	| token_FIELD eq_operator token_IP_CIDR
+	| token_FIELD optional_negate eq_operator token_IP_CIDR
 	{
-		field, raw_value := string($1), string($3)
+		field, raw_value := string($1), string($4)
+		negate := $2
+		op := $3
+
 		_, ipnet, err := net.ParseCIDR(raw_value)
 		if err != nil {
 			rulelex.Error(fmt.Sprintf("parsing CIDR: invalid value %v", raw_value))
 			return 1
 		}
 		
-		$$ = &nodeCompare{
+		$$ = withNegate(negate, &nodeCompare{
 			predicate: predicate{field: field, raw_value: raw_value},
-			op: $2,
+			op: op,
 			value: ipnet,
-		}
+		})
 	}
-	| token_FIELD token_TEST_MATCHES token_REGEX
+	| token_FIELD optional_negate token_TEST_MATCHES token_REGEX
 	{
-		field, raw_value := string($1), string($3)
+		field, raw_value := string($1), string($4)
 		pattern := raw_value[1:len(raw_value)-1]  // Remove the forward slashes
+		negate := $2
 		
 		r_expr, err := regexp.Compile(pattern)
 		if err != nil {
@@ -250,10 +281,10 @@ predicate:
 			return 1
 		}
 		
-		$$ = &nodeMatch{
+		$$ = withNegate(negate, &nodeMatch{
 			predicate: predicate{field: field, raw_value: raw_value},
 			reg_expr: r_expr,
-		}
+		})
 	}
 	| token_FIELD
 	{
@@ -261,7 +292,7 @@ predicate:
 	}
 	;
 
-comparison_operator: ineq_operator | eq_operator
+comparison_operator: ineq_operator | eq_operator;
 
 ineq_operator:
 	token_TEST_GT        { $$ = token_TEST_GT }
@@ -274,5 +305,10 @@ eq_operator:
 	token_TEST_EQ         { $$ = token_TEST_EQ       }
 	| token_TEST_NE       { $$ = token_TEST_NE       }
 	| token_TEST_CONTAINS { $$ = token_TEST_CONTAINS }
+	;
+
+optional_negate:
+	{ $$ = false }
+	| token_TEST_NOT { $$ = true };
 
 %%
