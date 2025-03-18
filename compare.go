@@ -86,6 +86,12 @@ func compare(left any, op int, right any) (ret bool) {
 	case net.HardwareAddr:
 		// mac ? any
 		return compareMac(lv, op, right)
+
+	case []any:
+		// []any ? any
+		return compareSlice(lv, op, func(lv any, op int) bool {
+			return compare(lv, op, right)
+		})
 	}
 
 	return false

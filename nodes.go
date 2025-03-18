@@ -223,6 +223,33 @@ func (n *nodeCompare) String() string {
 	return fmt.Sprintf("%s %s %s", n.field, operatorToString(n.op), n.raw_value)
 }
 
+// TEST_IN
+type nodeIn struct {
+	predicate
+	values []any
+}
+
+func (n *nodeIn) Eval(p map[string]any) Result {
+	val, ok := mapPath(p, n.field)
+	if !ok {
+		return Result{
+			MissingFields: set.NewSet(n.field),
+			EvaluatedRule: n,
+		}
+	}
+
+	// `FIELD in ARR` == `ARR contains FIELD`
+	pass := compare(n.values, token_TEST_CONTAINS, val)
+	return Result{
+		Pass:          pass,
+		EvaluatedRule: n,
+	}
+}
+
+func (n *nodeIn) String() string {
+	return fmt.Sprintf("%s in %s", n.field, n.raw_value)
+}
+
 func isZero(val any) bool {
 	switch v := val.(type) {
 	case bool:

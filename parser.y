@@ -49,6 +49,8 @@ func operatorToString(op int) string {
 		return "contains"
 	case token_TEST_MATCHES:
 		return "matches"
+	case token_TEST_IN:
+		return "in"
 	default:
 		return "unknown"
 	}
@@ -131,7 +133,7 @@ func parseBool[T interface{ string | []byte }](data T) (bool, error) {
 %token token_COMMA
 %token token_TEST_EQ token_TEST_NE
 %token token_TEST_GT token_TEST_GE token_TEST_LT token_TEST_LE
-%token token_TEST_CONTAINS token_TEST_MATCHES
+%token token_TEST_CONTAINS token_TEST_MATCHES token_TEST_IN
 %token token_ERROR
 
 // Operator precedence
@@ -328,6 +330,19 @@ predicate:
 			predicate: predicate{field: field, raw_value: raw_value},
 			op: op,
 			value: values,
+		})
+	}
+	| token_FIELD optional_negate token_TEST_IN token_LBRACKET array_values token_RBRACKET
+	{
+		field := string($1)
+		negate := $2
+		values := $5
+
+		raw_value := fmt.Sprintf("%v", values) // TODO
+		
+		$$ = withNegate(negate, &nodeIn{
+			predicate: predicate{field: field, raw_value: raw_value},
+			values: values,
 		})
 	}
 	;

@@ -712,3 +712,14 @@ func TestArray(t *testing.T) {
 		require.True(t, f.Eval(map[string]any{"field": 123}).FailStrict())
 	}
 }
+
+func TestIn(t *testing.T) {
+	SetDebugLevel(1)
+	{
+		f, err := Parse(`field in [1, "str", 3]`)
+		require.NoError(t, err)
+
+		require.True(t, f.Eval(map[string]any{"field": "str"}).PassStrict())
+		require.True(t, f.Eval(map[string]any{"field": 123}).FailStrict())
+	}
+}

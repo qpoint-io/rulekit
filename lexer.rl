@@ -86,6 +86,7 @@ import (
 
 		'contains'i         => { token_kind = token_TEST_CONTAINS; fbreak; };
 		('=~' | 'matches'i) => { token_kind = token_TEST_MATCHES;  fbreak; };
+		'in'i               => { token_kind = token_TEST_IN;       fbreak; };
 
 		# Values
 		int    => { token_kind = token_INT;    fbreak; };
