@@ -698,6 +698,7 @@ func TestArray(t *testing.T) {
 	{
 		f, err := Parse(`field == [1, "str", 3]`)
 		require.NoError(t, err)
+		require.Equal(t, `field == [1, "str", 3]`, f.String())
 
 		require.True(t, f.Eval(map[string]any{"field": 3}).PassStrict())
 		require.True(t, f.Eval(map[string]any{"field": 4}).FailStrict())
@@ -707,6 +708,7 @@ func TestArray(t *testing.T) {
 	{
 		f, err := Parse(`field contains [1, "str", 3]`)
 		require.NoError(t, err)
+		require.Equal(t, `field contains [1, "str", 3]`, f.String())
 
 		require.True(t, f.Eval(map[string]any{"field": "string"}).PassStrict())
 		require.True(t, f.Eval(map[string]any{"field": 123}).FailStrict())
@@ -714,12 +716,36 @@ func TestArray(t *testing.T) {
 }
 
 func TestIn(t *testing.T) {
-	SetDebugLevel(1)
 	{
 		f, err := Parse(`field in [1, "str", 3]`)
 		require.NoError(t, err)
+		require.Equal(t, `field in [1, "str", 3]`, f.String())
 
 		require.True(t, f.Eval(map[string]any{"field": "str"}).PassStrict())
 		require.True(t, f.Eval(map[string]any{"field": 123}).FailStrict())
+	}
+
+	{
+		f, err := Parse(`field not in [1.1.1.1, 192.168.0.0/16]`)
+		require.NoError(t, err)
+		require.Equal(t, `field not in [1.1.1.1, 192.168.0.0/16]`, f.String())
+
+		for ip, want := range map[string]bool{
+			"1.1.1.1":     false,
+			"192.168.0.0": false,
+			"192.168.0.1": false,
+			"192.0.1.1":   true,
+			"1.1.1.2":     true,
+		} {
+			v := net.ParseIP(ip)
+			res := f.Eval(map[string]any{"field": v})
+			require.True(t, res.Strict())
+			assert.Equal(t, want, res.Pass, ip)
+			if want != res.Pass {
+				SetDebugLevel(1)
+				f.Eval(map[string]any{"field": v})
+				t.Fatal(ip)
+			}
+		}
 	}
 }

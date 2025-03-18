@@ -83,6 +83,10 @@ func compare(left any, op int, right any) (ret bool) {
 		// ip ? any
 		return compareIP(lv, op, right)
 
+	case *net.IPNet:
+		// ipnet ? any
+		return compareIPNet(lv, op, right)
+
 	case net.HardwareAddr:
 		// mac ? any
 		return compareMac(lv, op, right)

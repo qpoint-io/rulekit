@@ -102,6 +102,20 @@ func parseBool[T interface{ string | []byte }](data T) (bool, error) {
 	return false, fmt.Errorf("parsing boolean: unknown value %q", raw_value)
 }
 
+// Add a new struct for array elements
+type arrayElement struct {
+	raw_value string
+	value     any
+}
+
+// Helper to format array raw value nicely
+func formatArrayRawValue(elements []arrayElement) string {
+	parts := make([]string, len(elements))
+	for i, elem := range elements {
+		parts[i] = elem.raw_value
+	}
+	return fmt.Sprintf("[%s]", strings.Join(parts, ", "))
+}
 %}
 
 %union {
@@ -110,13 +124,14 @@ func parseBool[T interface{ string | []byte }](data T) (bool, error) {
 	operator  int
 	negate    bool
 	values    []any
+	arrayElems   []arrayElement  // Change type from []any to []arrayElement
 }
 
 // Type declarations for non-terminals (rules)
 %type <rule> search_condition predicate
 %type <operator> comparison_operator ineq_operator eq_operator
 %type <negate> optional_negate
-%type <values> array_values array_value
+%type <arrayElems> array_values array_value
 
 %token <data> token_FIELD
 %token <data> token_STRING token_HEX_STRING
@@ -322,12 +337,16 @@ predicate:
 		field := string($1)
 		negate := $2
 		op := $3
-		values := $5
+		elements := $5
 		
-		raw_value := fmt.Sprintf("%v", values) // TODO
+		// Extract just the values for the node
+		values := make([]any, len(elements))
+		for i, elem := range elements {
+			values[i] = elem.value
+		}
 		
 		$$ = withNegate(negate, &nodeCompare{
-			predicate: predicate{field: field, raw_value: raw_value},
+			predicate: predicate{field: field, raw_value: formatArrayRawValue(elements)},
 			op: op,
 			value: values,
 		})
@@ -336,12 +355,16 @@ predicate:
 	{
 		field := string($1)
 		negate := $2
-		values := $5
-
-		raw_value := fmt.Sprintf("%v", values) // TODO
+		elements := $5
+		
+		// Extract just the values for the node
+		values := make([]any, len(elements))
+		for i, elem := range elements {
+			values[i] = elem.value
+		}
 		
 		$$ = withNegate(negate, &nodeIn{
-			predicate: predicate{field: field, raw_value: raw_value},
+			predicate: predicate{field: field, raw_value: formatArrayRawValue(elements)},
 			values: values,
 		})
 	}
@@ -378,42 +401,77 @@ array_values:
 	}
 	;
 
+// TODO review parsing code & see if we can clean up this+above a little
 array_value:
 	token_STRING
 	{
+		raw_value := string($1)
 		value, err := parseString($1)
 		if err != nil {
 			rulelex.Error(fmt.Sprintf("parsing array string: %v", err))
 			return 1
 		}
-		$$ = []any{value}
+		$$ = []arrayElement{{raw_value: raw_value, value: value}}
 	}
 	| token_INT
 	{
+		raw_value := string($1)
 		value, err := parseInt($1)
 		if err != nil {
 			rulelex.Error(err.Error())
 			return 1
 		}
-		$$ = []any{value}
+		$$ = []arrayElement{{raw_value: raw_value, value: value}}
 	}
 	| token_FLOAT
 	{
+		raw_value := string($1)
 		value, err := parseFloat($1)
 		if err != nil {
 			rulelex.Error(fmt.Sprintf("parsing array float: %v", err))
 			return 1
 		}
-		$$ = []any{value}
+		$$ = []arrayElement{{raw_value: raw_value, value: value}}
 	}
 	| token_BOOL
 	{
+		raw_value := string($1)
 		value, err := parseBool($1)
 		if err != nil {
 			rulelex.Error(err.Error())
 			return 1
 		}
-		$$ = []any{value}
+		$$ = []arrayElement{{raw_value: raw_value, value: value}}
+	}
+	| token_IP
+	{
+		raw_value := string($1)
+		ip := net.ParseIP(raw_value)
+		if ip == nil {
+			rulelex.Error(fmt.Sprintf("parsing IP: invalid value %q", raw_value))
+			return 1
+		}
+		$$ = []arrayElement{{raw_value: raw_value, value: ip}}
+	}
+	| token_IP_CIDR
+	{
+		raw_value := string($1)
+		_, ipnet, err := net.ParseCIDR(raw_value)
+		if err != nil {
+			rulelex.Error(fmt.Sprintf("parsing CIDR: invalid value %v", raw_value))
+			return 1
+		}
+		$$ = []arrayElement{{raw_value: raw_value, value: ipnet}}
+	}
+	| token_HEX_STRING
+	{
+		raw_value := string($1)
+		hs, err := ParseHexString(raw_value)
+		if err != nil {
+			rulelex.Error(fmt.Sprintf("parsing hex string: %v", err))
+			return 1
+		}
+		$$ = []arrayElement{{raw_value: raw_value, value: hs}}
 	}
 	;
 

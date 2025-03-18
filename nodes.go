@@ -113,6 +113,9 @@ func (n *nodeNot) String() string {
 	} else if nn, ok := n.right.(*nodeMatch); ok {
 		// special formatting for field not =~ /pattern/
 		return nn.field + " not =~ " + nn.raw_value
+	} else if nn, ok := n.right.(*nodeIn); ok {
+		// special formatting for field not in [1, "str", 3]
+		return nn.field + " not in " + nn.raw_value
 	}
 
 	return "not (" + n.right.String() + ")"
