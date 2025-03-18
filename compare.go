@@ -6,9 +6,22 @@ import (
 )
 
 func compare(left any, op int, right any) (ret bool) {
+	if arr, ok := right.([]any); ok {
+		defer func() {
+			debugResult(ret, "╰ cmp[]", "", left, op, right)
+		}()
+		for _, v := range arr {
+			if compare(left, op, v) {
+				return true
+			}
+		}
+		return false
+	}
+
 	defer func() {
 		debugResult(ret, "╰ cmp", "", left, op, right)
 	}()
+
 	// the field type determines the comparison logic
 	switch lv := left.(type) {
 	case string:

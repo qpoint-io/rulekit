@@ -6,6 +6,7 @@ func compareNumber(left any, op int, right any) (ret bool) {
 	defer func() {
 		debugResult(ret, "│ cmpNum", "", left, op, right)
 	}()
+
 	return compareWithOp(cmpNumber(left, right), op)
 }
 

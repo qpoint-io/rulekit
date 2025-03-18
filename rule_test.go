@@ -693,3 +693,22 @@ func TestOptionalNegate(t *testing.T) {
 		require.True(t, ok)
 	}
 }
+
+func TestArray(t *testing.T) {
+	{
+		f, err := Parse(`field == [1, "str", 3]`)
+		require.NoError(t, err)
+
+		require.True(t, f.Eval(map[string]any{"field": 3}).PassStrict())
+		require.True(t, f.Eval(map[string]any{"field": 4}).FailStrict())
+		require.True(t, f.Eval(map[string]any{"field": "str"}).PassStrict())
+	}
+
+	{
+		f, err := Parse(`field contains [1, "str", 3]`)
+		require.NoError(t, err)
+
+		require.True(t, f.Eval(map[string]any{"field": "string"}).PassStrict())
+		require.True(t, f.Eval(map[string]any{"field": 123}).FailStrict())
+	}
+}

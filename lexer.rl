@@ -67,6 +67,9 @@ import (
 		# Control
 		'(' => { token_kind = token_LPAREN; fbreak; };
 		')' => { token_kind = token_RPAREN; fbreak; };
+		'[' => { token_kind = token_LBRACKET; fbreak; };
+		']' => { token_kind = token_RBRACKET; fbreak; };
+		',' => { token_kind = token_COMMA; fbreak; };
 
 		# Logical operators
 		('!' | 'not'i)  => { token_kind = token_TEST_NOT; fbreak; };

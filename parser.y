@@ -61,6 +61,45 @@ func withNegate(negate bool, node Rule) Rule {
 	return node
 }
 
+// Add these type-specific parsing functions in the Go code section
+func parseString[T interface{ string | []byte }](data T) (string, error) {
+	raw_value := string(data)
+	if raw_value[0] == '\'' {
+		// Convert single-quoted string to double-quoted
+		inner := raw_value[1:len(raw_value)-1]
+		escaped := strings.ReplaceAll(inner, `"`, "\\\"")
+		escaped = strings.ReplaceAll(escaped, `\'`, `'`)
+		raw_value = `"` + escaped + `"`
+	}
+	return strconv.Unquote(raw_value)
+}
+
+func parseInt[T interface{ string | []byte }](data T) (any, error) {
+	raw_value := string(data)
+	if n, err := strconv.ParseInt(raw_value, 0, 64); err == nil {
+		return n, nil
+	}
+	if n, err := strconv.ParseUint(raw_value, 0, 64); err == nil {
+		return n, nil
+	}
+	return nil, fmt.Errorf("parsing integer: invalid value %q", raw_value)
+}
+
+func parseFloat[T interface{ string | []byte }](data T) (float64, error) {
+	return strconv.ParseFloat(string(data), 64)
+}
+
+func parseBool[T interface{ string | []byte }](data T) (bool, error) {
+	raw_value := string(data)
+	if strings.EqualFold(raw_value, "true") {
+		return true, nil
+	}
+	if strings.EqualFold(raw_value, "false") {
+		return false, nil
+	}
+	return false, fmt.Errorf("parsing boolean: unknown value %q", raw_value)
+}
+
 %}
 
 %union {
@@ -68,12 +107,14 @@ func withNegate(negate bool, node Rule) Rule {
 	data      []byte
 	operator  int
 	negate    bool
+	values    []any
 }
 
 // Type declarations for non-terminals (rules)
 %type <rule> search_condition predicate
 %type <operator> comparison_operator ineq_operator eq_operator
 %type <negate> optional_negate
+%type <values> array_values array_value
 
 %token <data> token_FIELD
 %token <data> token_STRING token_HEX_STRING
@@ -86,6 +127,8 @@ func withNegate(negate bool, node Rule) Rule {
 // Tokens without values
 %token token_TEST_NOT token_TEST_AND token_TEST_OR
 %token token_LPAREN token_RPAREN
+%token token_LBRACKET token_RBRACKET
+%token token_COMMA
 %token token_TEST_EQ token_TEST_NE
 %token token_TEST_GT token_TEST_GE token_TEST_LT token_TEST_LE
 %token token_TEST_CONTAINS token_TEST_MATCHES
@@ -131,16 +174,8 @@ predicate:
 		field, raw_value := string($1), string($4)
 		negate := $2
 		op := $3
-
-		value := raw_value
-		if value[0] == '\'' {
-            // Convert single-quoted string to double-quoted
-            inner := value[1:len(value)-1]                // Remove outer quotes
-            escaped := strings.ReplaceAll(inner, `"`, "\\\"")  // Escape any double quotes
-            escaped = strings.ReplaceAll(escaped, `\'`, `'`)  // Unescape single quotes
-            value = `"` + escaped + `"`                      // Wrap in double quotes
-        }
-		unquoted, err := strconv.Unquote(value)
+		
+		value, err := parseString(raw_value)
 		if err != nil {
 			rulelex.Error(fmt.Sprintf("parsing string: %v", err))
 			return 1
@@ -149,7 +184,7 @@ predicate:
 		$$ = withNegate(negate, &nodeCompare{
 			predicate: predicate{field: field, raw_value: raw_value},
 			op: op,
-			value: unquoted,
+			value: value,
 		})
 	}
 	| token_FIELD optional_negate eq_operator token_HEX_STRING
@@ -174,23 +209,17 @@ predicate:
 		field, raw_value := string($1), string($4)
 		negate := $2
 		op := $3
-
-		var num any
-		// attempt to parse as int64
-		if n, err := strconv.ParseInt(raw_value, 0, 64); err == nil {
-			num = n
-		} else if n, err := strconv.ParseUint(raw_value, 0, 64); err == nil {
-			// if value is out of range for int64, attempt to parse as uint64
-			num = n
-		} else {
-			rulelex.Error(fmt.Sprintf("parsing integer: %v", err))
+		
+		value, err := parseInt(raw_value)
+		if err != nil {
+			rulelex.Error(err.Error())
 			return 1
 		}
 		
 		$$ = withNegate(negate, &nodeCompare{
 			predicate: predicate{field: field, raw_value: raw_value},
 			op: op,
-			value: num,
+			value: value,
 		})
 	}
 	| token_FIELD optional_negate comparison_operator token_FLOAT
@@ -198,17 +227,17 @@ predicate:
 		field, raw_value := string($1), string($4)
 		negate := $2
 		op := $3
-
-		num, err := strconv.ParseFloat(raw_value, 64)
+		
+		value, err := parseFloat(raw_value)
 		if err != nil {
-			rulelex.Error(fmt.Sprintf("parsing %q: %v", raw_value, err))
+			rulelex.Error(fmt.Sprintf("parsing float: %v", err))
 			return 1
 		}
 		
 		$$ = withNegate(negate, &nodeCompare{
 			predicate: predicate{field: field, raw_value: raw_value},
 			op: op,
-			value: num,
+			value: value,
 		})
 	}
 	| token_FIELD optional_negate eq_operator token_BOOL
@@ -216,14 +245,10 @@ predicate:
 		field, raw_value := string($1), string($4)
 		negate := $2
 		op := $3
-
-		var value bool
-		if strings.EqualFold(raw_value, "true") {
-			value = true
-		} else if strings.EqualFold(raw_value, "false") {
-			value = false
-		} else {
-			rulelex.Error(fmt.Sprintf("parsing boolean: unknown value %q", raw_value))
+		
+		value, err := parseBool(raw_value)
+		if err != nil {
+			rulelex.Error(err.Error())
 			return 1
 		}
 		
@@ -290,6 +315,21 @@ predicate:
 	{
 		$$ = &nodeNotZero{string($1)}
 	}
+	| token_FIELD optional_negate eq_operator token_LBRACKET array_values token_RBRACKET
+	{
+		field := string($1)
+		negate := $2
+		op := $3
+		values := $5
+		
+		raw_value := fmt.Sprintf("%v", values) // TODO
+		
+		$$ = withNegate(negate, &nodeCompare{
+			predicate: predicate{field: field, raw_value: raw_value},
+			op: op,
+			value: values,
+		})
+	}
 	;
 
 comparison_operator: ineq_operator | eq_operator;
@@ -310,5 +350,56 @@ eq_operator:
 optional_negate:
 	{ $$ = false }
 	| token_TEST_NOT { $$ = true };
+
+// Array handling rules with type-specific parsing
+array_values:
+	array_value
+	{
+		$$ = $1
+	}
+	| array_values token_COMMA array_value
+	{
+		$$ = append($1, $3...)
+	}
+	;
+
+array_value:
+	token_STRING
+	{
+		value, err := parseString($1)
+		if err != nil {
+			rulelex.Error(fmt.Sprintf("parsing array string: %v", err))
+			return 1
+		}
+		$$ = []any{value}
+	}
+	| token_INT
+	{
+		value, err := parseInt($1)
+		if err != nil {
+			rulelex.Error(err.Error())
+			return 1
+		}
+		$$ = []any{value}
+	}
+	| token_FLOAT
+	{
+		value, err := parseFloat($1)
+		if err != nil {
+			rulelex.Error(fmt.Sprintf("parsing array float: %v", err))
+			return 1
+		}
+		$$ = []any{value}
+	}
+	| token_BOOL
+	{
+		value, err := parseBool($1)
+		if err != nil {
+			rulelex.Error(err.Error())
+			return 1
+		}
+		$$ = []any{value}
+	}
+	;
 
 %%
