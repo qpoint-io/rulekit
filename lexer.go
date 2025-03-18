@@ -8,7 +8,7 @@ import (
 )
 
 
-//line lexer.go:11
+//line lexer.go:9
 var _ruleLexerImpl_actions []byte = []byte{
 	0, 1, 0, 1, 1, 1, 2, 1, 24, 
 	1, 25, 1, 26, 1, 27, 1, 28, 
@@ -874,7 +874,7 @@ type ruleLexerImpl struct {
 func newLex(line []byte) *ruleLexerImpl {
 	lexer := ruleLexerImpl{data: line}
 	
-//line lexer.go:877
+//line lexer.go:873
 	{
 	( lexer.cs) = ruleLexerImpl_start
 	( lexer.ts) = 0
@@ -891,7 +891,7 @@ func newLex(line []byte) *ruleLexerImpl {
 func (lexer *ruleLexerImpl) Lex(lval *ruleSymType) int {
     token_kind := 0
 	
-//line lexer.go:894
+//line lexer.go:888
 	{
 	var _klen int
 	var _trans int
@@ -911,7 +911,7 @@ _resume:
 //line NONE:1
 ( lexer.ts) = ( lexer.p)
 
-//line lexer.go:914
+//line lexer.go:908
 		}
 	}
 
@@ -1293,7 +1293,7 @@ _eof_trans:
         }
 	}
 	
-//line lexer.go:1296
+//line lexer.go:1290
 		}
 	}
 
@@ -1307,7 +1307,7 @@ _again:
 //line NONE:1
 ( lexer.ts) = 0
 
-//line lexer.go:1310
+//line lexer.go:1304
 		}
 	}
 

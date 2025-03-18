@@ -99,14 +99,23 @@ func (n *nodeNot) Eval(p map[string]any) Result {
 }
 
 func (n *nodeNot) String() string {
-	if nn, ok := n.right.(*nodeCompare); ok && nn.op == token_TEST_EQ {
-		// special formatting for !=
-		return nn.field + " != " + nn.raw_value
+	if nn, ok := n.right.(*nodeCompare); ok {
+		if nn.op == token_TEST_EQ {
+			// special formatting for !=
+			return nn.field + " != " + nn.raw_value
+		} else if nn.op == token_TEST_CONTAINS {
+			// special formatting for field not contains "item"
+			return nn.field + " not contains " + nn.raw_value
+		}
 	} else if nn, ok := n.right.(*nodeNotZero); ok {
 		// special formatting for !FIELD (no space between ! and field)
 		return "!" + nn.field
+	} else if nn, ok := n.right.(*nodeMatch); ok {
+		// special formatting for field not =~ /pattern/
+		return nn.field + " not =~ " + nn.raw_value
 	}
-	return "! " + n.right.String()
+
+	return "not (" + n.right.String() + ")"
 }
 
 // NOT ZERO

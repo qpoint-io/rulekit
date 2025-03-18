@@ -645,3 +645,51 @@ func (w *testWriter) Write(p []byte) (n int, err error) {
 	w.t.Log(strings.TrimRight(string(p), "\n"))
 	return len(p), nil
 }
+
+func TestOptionalNegate(t *testing.T) {
+	{
+		f, err := Parse("field matches /pattern/")
+		require.NoError(t, err)
+		require.Equal(t, "field =~ /pattern/", f.String())
+
+		require.True(t, f.Eval(map[string]any{"field": "pattern"}).PassStrict())
+		require.True(t, f.Eval(map[string]any{"field": "other"}).FailStrict())
+
+		r, ok := f.(*rule)
+		require.True(t, ok)
+		_, ok = r.Rule.(*nodeMatch)
+		require.True(t, ok)
+	}
+
+	{
+		f, err := Parse("field not matches /pattern/")
+		require.NoError(t, err)
+		require.Equal(t, "field not =~ /pattern/", f.String())
+
+		require.True(t, f.Eval(map[string]any{"field": "pattern"}).FailStrict())
+		require.True(t, f.Eval(map[string]any{"field": "other"}).PassStrict())
+
+		r, ok := f.(*rule)
+		require.True(t, ok)
+		n, ok := r.Rule.(*nodeNot)
+		require.True(t, ok)
+		_, ok = n.right.(*nodeMatch)
+		require.True(t, ok)
+	}
+
+	{
+		f, err := Parse(`field !contains "str"`)
+		require.NoError(t, err)
+		require.Equal(t, `field not contains "str"`, f.String())
+
+		require.True(t, f.Eval(map[string]any{"field": "string"}).FailStrict())
+		require.True(t, f.Eval(map[string]any{"field": "other"}).PassStrict())
+
+		r, ok := f.(*rule)
+		require.True(t, ok)
+		n, ok := r.Rule.(*nodeNot)
+		require.True(t, ok)
+		_, ok = n.right.(*nodeCompare)
+		require.True(t, ok)
+	}
+}
