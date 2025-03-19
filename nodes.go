@@ -10,8 +10,8 @@ import (
 )
 
 type predicate struct {
-	field     string
-	raw_value string
+	field string
+	raw   string
 }
 
 // AND
@@ -102,20 +102,20 @@ func (n *nodeNot) String() string {
 	if nn, ok := n.right.(*nodeCompare); ok {
 		if nn.op == op_EQ {
 			// special formatting for !=
-			return nn.field + " != " + nn.raw_value
+			return nn.field + " != " + nn.raw
 		} else if nn.op == op_CONTAINS {
 			// special formatting for field not contains "item"
-			return nn.field + " not contains " + nn.raw_value
+			return nn.field + " not contains " + nn.raw
 		}
 	} else if nn, ok := n.right.(*nodeNotZero); ok {
 		// special formatting for !FIELD (no space between ! and field)
 		return "!" + nn.field
 	} else if nn, ok := n.right.(*nodeMatch); ok {
 		// special formatting for field not =~ /pattern/
-		return nn.field + " not =~ " + nn.raw_value
+		return nn.field + " not =~ " + nn.raw
 	} else if nn, ok := n.right.(*nodeIn); ok {
 		// special formatting for field not in [1, "str", 3]
-		return nn.field + " not in " + nn.raw_value
+		return nn.field + " not in " + nn.raw
 	}
 
 	return "not (" + n.right.String() + ")"
@@ -191,7 +191,7 @@ func (n *nodeMatch) FieldName() string {
 }
 
 func (n *nodeMatch) String() string {
-	return n.field + " =~ " + n.raw_value
+	return n.field + " =~ " + n.raw
 }
 
 // Comparison node
@@ -223,7 +223,7 @@ func (n *nodeCompare) Eval(m map[string]any) Result {
 }
 
 func (n *nodeCompare) String() string {
-	return fmt.Sprintf("%s %s %s", n.field, operatorToString(n.op), n.raw_value)
+	return fmt.Sprintf("%s %s %s", n.field, operatorToString(n.op), n.raw)
 }
 
 // TEST_IN
@@ -250,7 +250,7 @@ func (n *nodeIn) Eval(p map[string]any) Result {
 }
 
 func (n *nodeIn) String() string {
-	return fmt.Sprintf("%s in %s", n.field, n.raw_value)
+	return fmt.Sprintf("%s in %s", n.field, n.raw)
 }
 
 func isZero(val any) bool {

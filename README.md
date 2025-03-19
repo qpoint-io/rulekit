@@ -102,7 +102,7 @@ The Result also provides additional helper methods:
 | Type | Used As | Example | Description |
 |------|---------|---------|-------------|
 | **bool** | VALUE, FIELD | `true` | Valid values: `true`, `false` |
-| **number** | VALUE, FIELD | `8080` | Parsed as either int64 or uint64 if out of range for int64. Floats are not supported. |
+| **number** | VALUE, FIELD | `8080` | Integer or float. Parsed as either int64 or uint64 if out of range for int64, or float64 if float. |
 | **string** | VALUE, FIELD | `"domain.com"` | A double-quoted string. Quotes may be escaped with a backslash: `"a string \"with\" quotes"`. Any quoted value is parsed as a string. |
 | **IP address** | VALUE, FIELD | `192.168.1.1`, `2001:db8:3333:4444:cccc:dddd:eeee:ffff` | An IPv4, IPv6, or an IPv6 dual address. Maps to Go type: `net.IP` |
 | **CIDR** | VALUE | `192.168.1.0/24`, `2001:db8:3333:4444:cccc:dddd:eeee:ffff/64` | An IPv4 or IPv6 CIDR block. Maps to Go type: `*net.IPNet` |
