@@ -193,6 +193,29 @@ func tokenTypeString(typ int) string {
 		return "unknown"
 	}
 }
+
+// Add these helper functions to the Go section
+func makeCompareNode(field string, negate bool, op int, elem parsedValue) Rule {
+	return withNegate(negate, &nodeCompare{
+		predicate: predicate{
+			field: field, 
+			raw_value: elem.raw_value,
+		},
+		op: op,
+		value: elem.value,
+	})
+}
+
+func makeArrayCompareNode(field string, negate bool, op int, elems []parsedValue) Rule {
+	return withNegate(negate, &nodeCompare{
+		predicate: predicate{
+			field: field,
+			raw_value: formatArrayRawValue(elems),
+		},
+		op: op,
+		value: extractValues(elems),
+	})
+}
 %}
 
 %union {
@@ -209,7 +232,7 @@ func tokenTypeString(typ int) string {
 %type <operator> comparison_operator ineq_operator eq_operator
 %type <negate> optional_negate
 %type <arrayElems> array_values array_value
-%type <tokType> array_token
+%type <tokType> value_token
 
 %token <data> token_FIELD
 %token <data> token_STRING token_HEX_STRING
@@ -266,144 +289,90 @@ search_condition:
 predicate:
 	token_FIELD optional_negate eq_operator token_STRING
 	{
-		field := string($1)
-		negate := $2
-		op := $3
-		
 		elem, err := parseToken(token_STRING, $4)
 		if err != nil {
 			rulelex.Error(err.Error())
 			return 1
 		}
-		
-		$$ = withNegate(negate, &nodeCompare{
-			predicate: predicate{field: field, raw_value: elem.raw_value},
-			op: op,
-			value: elem.value,
-		})
+		$$ = makeCompareNode(string($1), $2, $3, elem)
 	}
 	| token_FIELD optional_negate eq_operator token_HEX_STRING
 	{
-		field := string($1)
-		negate := $2
-		op := $3
-
 		elem, err := parseToken(token_HEX_STRING, $4)
 		if err != nil {
 			rulelex.Error(err.Error())
 			return 1
 		}
-		$$ = withNegate(negate, &nodeCompare{
-			predicate: predicate{field: field, raw_value: elem.raw_value},
-			op: op,
-			value: elem.value,
-		})
+		$$ = makeCompareNode(string($1), $2, $3, elem)
 	}
 	| token_FIELD optional_negate comparison_operator token_INT
 	{
-		field := string($1)
-		negate := $2
-		op := $3
-
 		elem, err := parseToken(token_INT, $4)
 		if err != nil {
 			rulelex.Error(err.Error())
 			return 1
 		}
 		
-		$$ = withNegate(negate, &nodeCompare{
-			predicate: predicate{field: field, raw_value: elem.raw_value},
-			op: op,
-			value: elem.value,
-		})
+		$$ = makeCompareNode(string($1), $2, $3, elem)
 	}
 	| token_FIELD optional_negate comparison_operator token_FLOAT
 	{
-		field := string($1)
-		negate := $2
-		op := $3
-
 		elem, err := parseToken(token_FLOAT, $4)
 		if err != nil {
 			rulelex.Error(err.Error())
 			return 1
 		}
-		
-		$$ = withNegate(negate, &nodeCompare{
-			predicate: predicate{field: field, raw_value: elem.raw_value},
-			op: op,
-			value: elem.value,
-		})
+
+		$$ = makeCompareNode(string($1), $2, $3, elem)
 	}
 	| token_FIELD optional_negate eq_operator token_BOOL
 	{
-		field := string($1)
-		negate := $2
-		op := $3
-
 		elem, err := parseToken(token_BOOL, $4)
 		if err != nil {
 			rulelex.Error(err.Error())
 			return 1
 		}
 		
-		$$ = withNegate(negate, &nodeCompare{
-			predicate: predicate{field: field, raw_value: elem.raw_value},
-			op: op,
-			value: elem.value,
-		})
+		$$ = makeCompareNode(string($1), $2, $3, elem)
 	}
 	| token_FIELD optional_negate eq_operator token_IP
 	{
-		field := string($1)
-		negate := $2
-		op := $3
-
 		elem, err := parseToken(token_IP, $4)
 		if err != nil {
 			rulelex.Error(err.Error())
 			return 1
 		}
 		
-		$$ = withNegate(negate, &nodeCompare{
-			predicate: predicate{field: field, raw_value: elem.raw_value},
-			op: op,
-			value: elem.value,
-		})
+		$$ = makeCompareNode(string($1), $2, $3, elem)
 	}
 	| token_FIELD optional_negate eq_operator token_IP_CIDR
 	{
-		field := string($1)
-		negate := $2
-		op := $3
-
 		elem, err := parseToken(token_IP_CIDR, $4)
 		if err != nil {
 			rulelex.Error(err.Error())
 			return 1
 		}
 		
-		$$ = withNegate(negate, &nodeCompare{
-			predicate: predicate{field: field, raw_value: elem.raw_value},
-			op: op,
-			value: elem.value,
-		})
+		$$ = makeCompareNode(string($1), $2, $3, elem)
 	}
 	| token_FIELD optional_negate op_MATCHES token_REGEX
 	{
-		field := string($1)
-		negate := $2
-		
 		elem, err := parseToken(token_REGEX, $4)
 		if err != nil {
 			rulelex.Error(err.Error())
 			return 1
 		}
-		
 
-		$$ = withNegate(negate, &nodeMatch{
-			predicate: predicate{field: field, raw_value: elem.raw_value},
-			reg_expr: elem.value.(*regexp.Regexp),
+		rgxp, ok := elem.value.(*regexp.Regexp)
+		if !ok {
+			// code error; parseToken should always return a *regexp.Regexp for a token_REGEX
+			rulelex.Error(fmt.Errorf("parser error while handling regex value %q", elem.raw_value).Error())
+			return 1
+		}
+
+		$$ = withNegate($2, &nodeMatch{
+			predicate: predicate{field: string($1), raw_value: elem.raw_value},
+			reg_expr: rgxp,
 		})
 	}
 	| token_FIELD
@@ -412,32 +381,16 @@ predicate:
 	}
 	| token_FIELD optional_negate eq_operator token_LBRACKET array_values token_RBRACKET
 	{
-		field := string($1)
-		negate := $2
-		op := $3
-		elements := $5
-		
-		$$ = withNegate(negate, &nodeCompare{
-			predicate: predicate{
-				field: field,
-				raw_value: formatArrayRawValue(elements),
-			},
-			op: op,
-			value: extractValues(elements),
-		})
+		$$ = makeArrayCompareNode(string($1), $2, $3, $5)
 	}
 	| token_FIELD optional_negate op_IN token_LBRACKET array_values token_RBRACKET
 	{
-		field := string($1)
-		negate := $2
-		elements := $5
-		
-		$$ = withNegate(negate, &nodeIn{
+		$$ = withNegate($2, &nodeIn{
 			predicate: predicate{
-				field: field,
-				raw_value: formatArrayRawValue(elements),
+				field: string($1),
+				raw_value: formatArrayRawValue($5),
 			},
-			values: extractValues(elements),
+			values: extractValues($5),
 		})
 	}
 	;
@@ -474,7 +427,7 @@ array_values:
 	;
 
 array_value:
-	array_token
+	value_token
 	{
 		elem, err := parseToken($1.typ, $1.data)
 		if err != nil {
@@ -485,7 +438,7 @@ array_value:
 	}
 	;
 
-array_token:
+value_token:
 	token_STRING
 	{
 		$$ = tokenType{typ: token_STRING, data: $1}
