@@ -108,70 +108,77 @@ func parseRegex[T interface{ string | []byte }](data T) (*regexp.Regexp, error) 
 	return regexp.Compile(pattern)
 }
 
-// Add a new type to represent parsed values
-type parsedValue struct {
+func newValueToken(token_type int, data []byte) (valueToken, error) {
+	v := valueToken{typ: token_type, raw_value: string(data)}
+	if err := v.Parse(); err != nil {
+		return valueToken{}, err
+	}
+	return v, nil
+}
+
+type valueToken struct {
+	typ int
 	raw_value string
-	value     any
+	value any
 }
 
-// Helper to format array raw value nicely
-func formatArrayRawValue(elements []parsedValue) string {
-	parts := make([]string, len(elements))
-	for i, elem := range elements {
-		parts[i] = elem.raw_value
-	}
-	return fmt.Sprintf("[%s]", strings.Join(parts, ", "))
-}
-
-func extractValues(elements []parsedValue) []any {
-	values := make([]any, len(elements))
-	for i, elem := range elements {
-		values[i] = elem.value
-	}
-	return values
-}
-
-func parseToken(token_type int, data []byte) (parsedValue, error) {
+func (v *valueToken) Parse() error {
 	var (
-		raw = string(data)
 		value any
 		err error
 	)
-	switch token_type {
+	switch v.typ {
 	case token_STRING:
-		value, err = parseString(data)
+		value, err = parseString(v.raw_value)
+		if err != nil {
+			err = ValueParseError{v.typ, v.raw_value, err}
+		}
 	case token_INT:
-		value, err = parseInt(data)
+		value, err = parseInt(v.raw_value)
+		if err != nil {
+			err = ValueParseError{v.typ, v.raw_value, err}
+		}
 	case token_FLOAT:
-		value, err = parseFloat(data)
+		value, err = parseFloat(v.raw_value)
+		if err != nil {
+			err = ValueParseError{v.typ, v.raw_value, err}
+		}
 	case token_BOOL:
-		value, err = parseBool(data)
+		value, err = parseBool(v.raw_value)
+		if err != nil {
+			err = ValueParseError{v.typ, v.raw_value, err}
+		}
 	case token_IP:
-		if value = net.ParseIP(raw); value == nil {
-			err = fmt.Errorf("invalid IP value %q", raw)
+		value = net.ParseIP(v.raw_value)
+		if value == nil {
+			err = ValueParseError{v.typ, v.raw_value, fmt.Errorf("invalid IP value %q", v.raw_value)}
 		}
 	case token_IP_CIDR:
-		_, value, err = net.ParseCIDR(raw)
+		_, value, err = net.ParseCIDR(v.raw_value)
+		if err != nil {
+			err = ValueParseError{v.typ, v.raw_value, err}
+		}
 	case token_HEX_STRING:
-		value, err = ParseHexString(raw)
+		value, err = ParseHexString(v.raw_value)
+		if err != nil {
+			err = ValueParseError{v.typ, v.raw_value, err}
+		}
 	case token_REGEX:
-		value, err = parseRegex(data)
+		value, err = parseRegex(v.raw_value)
+		if err != nil {
+			err = ValueParseError{v.typ, v.raw_value, err}
+		}
 	default:
-		err = fmt.Errorf("unsupported token type %d", token_type)
+		err = fmt.Errorf("unsupported token type %s", valueTokenString(v.typ))
 	}
 	if err != nil {
-		return parsedValue{}, fmt.Errorf("parsing %s: %v", tokenTypeString(token_type), err)
+		return err
 	}
-	return parsedValue{raw_value: raw, value: value}, nil
+	v.value = value
+	return nil
 }
 
-// Add token type struct for mid-rule actions
-type tokenType struct {
-	typ int
-	data []byte
-}
-
-func tokenTypeString(typ int) string {
+func valueTokenString(typ int) string {
 	switch typ {
 	case token_STRING:
 		return "string"
@@ -194,8 +201,7 @@ func tokenTypeString(typ int) string {
 	}
 }
 
-// Add these helper functions to the Go section
-func makeCompareNode(field string, negate bool, op int, elem parsedValue) Rule {
+func makeCompareNode(field string, negate bool, op int, elem valueToken) Rule {
 	return withNegate(negate, &nodeCompare{
 		predicate: predicate{
 			field: field, 
@@ -206,41 +212,44 @@ func makeCompareNode(field string, negate bool, op int, elem parsedValue) Rule {
 	})
 }
 
-func makeArrayCompareNode(field string, negate bool, op int, elems []parsedValue) Rule {
-	return withNegate(negate, &nodeCompare{
-		predicate: predicate{
-			field: field,
-			raw_value: formatArrayRawValue(elems),
-		},
-		op: op,
-		value: extractValues(elems),
-	})
+type ValueParseError struct {
+	TokenType int
+	Value     string
+	Err       error
+}
+
+func (e ValueParseError) Error() string {
+	return fmt.Sprintf("parsing %s value %q: %v", valueTokenString(e.TokenType), e.Value, e.Err)
 }
 %}
 
 %union {
-	rule      Rule
-	data      []byte
-	operator  int
-	negate    bool
-	arrayElems   []parsedValue  // Change type from []any to []parsedValue
-	tokType     tokenType    // Add new type for mid-rule actions
+	rule          Rule
+	valueLiteral  []byte
+	operator      int
+	negate        bool
+	arrayValue    []valueToken 
+	valueToken    valueToken
 }
 
 // Type declarations for non-terminals (rules)
 %type <rule> search_condition predicate
-%type <operator> comparison_operator ineq_operator eq_operator
+%type <operator> ineq_operator eq_operator
 %type <negate> optional_negate
-%type <arrayElems> array_values array_value
-%type <tokType> value_token
+%type <arrayValue> array_values
+// value tokens
+%type <valueToken> value_token // all values
+%type <valueToken> numeric_value_token // int or float values
+%type <valueToken> array_value_token // array values
+%type <valueToken> array_or_single_value_token // arrays or single values
 
-%token <data> token_FIELD
-%token <data> token_STRING token_HEX_STRING
-%token <data> token_INT token_FLOAT
-%token <data> token_BOOL
-%token <data> token_IP_CIDR
-%token <data> token_IP
-%token <data> token_REGEX
+%token <valueLiteral> token_FIELD
+%token <valueLiteral> token_STRING token_HEX_STRING
+%token <valueLiteral> token_INT token_FLOAT
+%token <valueLiteral> token_BOOL
+%token <valueLiteral> token_IP_CIDR
+%token <valueLiteral> token_IP
+%token <valueLiteral> token_REGEX
 
 // Tokens without values
 %token op_NOT op_AND op_OR
@@ -250,6 +259,7 @@ func makeArrayCompareNode(field string, negate bool, op int, elems []parsedValue
 %token op_EQ op_NE
 %token op_GT op_GE op_LT op_LE
 %token op_CONTAINS op_MATCHES op_IN
+%token token_ARRAY
 %token token_ERROR
 
 // Operator precedence
@@ -287,77 +297,20 @@ search_condition:
 	;
 
 predicate:
-	token_FIELD optional_negate eq_operator token_STRING
+	// numeric values accept additional inequality operators
+	token_FIELD optional_negate ineq_operator numeric_value_token
 	{
-		elem, err := parseToken(token_STRING, $4)
-		if err != nil {
-			rulelex.Error(err.Error())
-			return 1
-		}
-		$$ = makeCompareNode(string($1), $2, $3, elem)
+		$$ = makeCompareNode(string($1), $2, $3, $4)
 	}
-	| token_FIELD optional_negate eq_operator token_HEX_STRING
+	// all values including numeric accept equality operators
+	| token_FIELD optional_negate eq_operator array_or_single_value_token
 	{
-		elem, err := parseToken(token_HEX_STRING, $4)
-		if err != nil {
-			rulelex.Error(err.Error())
-			return 1
-		}
-		$$ = makeCompareNode(string($1), $2, $3, elem)
+		$$ = makeCompareNode(string($1), $2, $3, $4)
 	}
-	| token_FIELD optional_negate comparison_operator token_INT
-	{
-		elem, err := parseToken(token_INT, $4)
-		if err != nil {
-			rulelex.Error(err.Error())
-			return 1
-		}
-		
-		$$ = makeCompareNode(string($1), $2, $3, elem)
-	}
-	| token_FIELD optional_negate comparison_operator token_FLOAT
-	{
-		elem, err := parseToken(token_FLOAT, $4)
-		if err != nil {
-			rulelex.Error(err.Error())
-			return 1
-		}
-
-		$$ = makeCompareNode(string($1), $2, $3, elem)
-	}
-	| token_FIELD optional_negate eq_operator token_BOOL
-	{
-		elem, err := parseToken(token_BOOL, $4)
-		if err != nil {
-			rulelex.Error(err.Error())
-			return 1
-		}
-		
-		$$ = makeCompareNode(string($1), $2, $3, elem)
-	}
-	| token_FIELD optional_negate eq_operator token_IP
-	{
-		elem, err := parseToken(token_IP, $4)
-		if err != nil {
-			rulelex.Error(err.Error())
-			return 1
-		}
-		
-		$$ = makeCompareNode(string($1), $2, $3, elem)
-	}
-	| token_FIELD optional_negate eq_operator token_IP_CIDR
-	{
-		elem, err := parseToken(token_IP_CIDR, $4)
-		if err != nil {
-			rulelex.Error(err.Error())
-			return 1
-		}
-		
-		$$ = makeCompareNode(string($1), $2, $3, elem)
-	}
+	// op_MATCHES supports regex values
 	| token_FIELD optional_negate op_MATCHES token_REGEX
 	{
-		elem, err := parseToken(token_REGEX, $4)
+		elem, err := newValueToken(token_REGEX, $4)
 		if err != nil {
 			rulelex.Error(err.Error())
 			return 1
@@ -365,7 +318,7 @@ predicate:
 
 		rgxp, ok := elem.value.(*regexp.Regexp)
 		if !ok {
-			// code error; parseToken should always return a *regexp.Regexp for a token_REGEX
+			// code error; newValueToken should always return a *regexp.Regexp for a token_REGEX
 			rulelex.Error(fmt.Errorf("parser error while handling regex value %q", elem.raw_value).Error())
 			return 1
 		}
@@ -379,23 +332,24 @@ predicate:
 	{
 		$$ = &nodeNotZero{string($1)}
 	}
-	| token_FIELD optional_negate eq_operator token_LBRACKET array_values token_RBRACKET
+	// op_IN supports array values
+	| token_FIELD optional_negate op_IN array_value_token
 	{
-		$$ = makeArrayCompareNode(string($1), $2, $3, $5)
-	}
-	| token_FIELD optional_negate op_IN token_LBRACKET array_values token_RBRACKET
-	{
+		values, ok := $4.value.([]any)
+		if !ok {
+			rulelex.Error(fmt.Errorf("parser error while handling array value %q", $4.raw_value).Error())
+			return 1
+		}
+
 		$$ = withNegate($2, &nodeIn{
 			predicate: predicate{
 				field: string($1),
-				raw_value: formatArrayRawValue($5),
+				raw_value: $4.raw_value,
 			},
-			values: extractValues($5),
+			values: values,
 		})
 	}
 	;
-
-comparison_operator: ineq_operator | eq_operator;
 
 ineq_operator:
 	op_GT        { $$ = op_GT }
@@ -411,61 +365,123 @@ eq_operator:
 	;
 
 optional_negate:
-	{ $$ = false }
-	| op_NOT { $$ = true };
+	/* nothing */ { $$ = false }
+	| op_NOT      { $$ = true  }
+	;
 
 // Array handling rules
 array_values:
-	array_value
+	value_token
 	{
-		$$ = $1
+		$$ = []valueToken{$1}
 	}
-	| array_values token_COMMA array_value
+	| array_values token_COMMA value_token
 	{
-		$$ = append($1, $3...)
+		$$ = append($1, $3)
 	}
 	;
 
-array_value:
-	value_token
+array_value_token:
+	token_LBRACKET array_values token_RBRACKET
 	{
-		elem, err := parseToken($1.typ, $1.data)
+		raw_parts := make([]string, len($2))
+		values := make([]any, len($2))
+		for i, elem := range $2 {
+			raw_parts[i] = elem.raw_value
+			values[i] = elem.value
+		}
+		raw_value := fmt.Sprintf("[%s]", strings.Join(raw_parts, ", "))
+
+		$$ = valueToken{
+			typ: token_ARRAY,
+			raw_value: raw_value,
+			value: values,
+		}
+	}
+	;
+
+array_or_single_value_token:
+	value_token         { $$ = $1 }
+	| array_value_token { $$ = $1 }
+	;
+
+// value tokens
+value_token:
+	numeric_value_token { $$ = $1 }
+	| token_STRING
+	{
+		v, err := newValueToken(token_STRING, $1)	
 		if err != nil {
 			rulelex.Error(err.Error())
 			return 1
 		}
-		$$ = []parsedValue{elem}
-	}
-	;
-
-value_token:
-	token_STRING
-	{
-		$$ = tokenType{typ: token_STRING, data: $1}
-	}
-	| token_INT
-	{
-		$$ = tokenType{typ: token_INT, data: $1}
-	}
-	| token_FLOAT
-	{
-		$$ = tokenType{typ: token_FLOAT, data: $1}
+		$$ = v
 	}
 	| token_BOOL
 	{
-		$$ = tokenType{typ: token_BOOL, data: $1}
+		v, err := newValueToken(token_BOOL, $1)
+		if err != nil {
+			rulelex.Error(err.Error())
+			return 1
+		}
+		$$ = v
 	}
 	| token_IP
 	{
-		$$ = tokenType{typ: token_IP, data: $1}
+		v, err := newValueToken(token_IP, $1)
+		if err != nil {
+			rulelex.Error(err.Error())
+			return 1
+		}
+		$$ = v
 	}
 	| token_IP_CIDR
 	{
-		$$ = tokenType{typ: token_IP_CIDR, data: $1}
+		v, err := newValueToken(token_IP_CIDR, $1)
+		if err != nil {
+			rulelex.Error(err.Error())
+			return 1
+		}
+		$$ = v
 	}
 	| token_HEX_STRING
 	{
-		$$ = tokenType{typ: token_HEX_STRING, data: $1}
+		v, err := newValueToken(token_HEX_STRING, $1)
+		if err != nil {
+			rulelex.Error(err.Error())
+			return 1
+		}
+		$$ = v
+	}
+	| token_REGEX
+	{
+		v, err := newValueToken(token_REGEX, $1)
+		if err != nil {
+			rulelex.Error(err.Error())
+			return 1
+		}
+		$$ = v
+	}
+	;
+
+numeric_value_token:
+	token_INT
+	{
+		v, err := newValueToken(token_INT, $1)
+		if err != nil {
+			rulelex.Error(err.Error())
+			return 1
+		}
+		$$ = v
+	}
+	| token_FLOAT
+	{
+		v, err := newValueToken(token_FLOAT, $1)
+		if err != nil {
+			rulelex.Error(err.Error())
+			return 1
+		}
+		$$ = v
 	}
 	;
 

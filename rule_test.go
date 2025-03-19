@@ -697,6 +697,8 @@ func TestOptionalNegate(t *testing.T) {
 }
 
 func TestArray(t *testing.T) {
+	assertParseError(t, `field == [1,]`)
+	assertParseError(t, `field == [1, [1, 2], 3]`)
 	{
 		f := MustParse(`field == [1, "str", 3]`)
 		require.Equal(t, `field == [1, "str", 3]`, f.String())
@@ -789,9 +791,25 @@ func assertEval(t *testing.T, r Rule, input KV, pass bool) {
 	}
 }
 
+func assertParseError(t *testing.T, rule string) {
+	_, err := Parse(rule)
+	assert.Error(t, err)
+}
+
 func toJSON(t *testing.T, v any) string {
 	t.Helper()
 	b, err := json.Marshal(v)
 	require.NoError(t, err)
 	return string(b)
+}
+
+func TestOperationValidity(t *testing.T) {
+	assertParseError(t, `f >= "string"`)
+	assertParseError(t, `f < 1.2.3.4`)
+	assertParseError(t, `f > 01:02:03:04:05:06`)
+	assertParseError(t, `f <= true`)
+	assertParseError(t, `f > /pattern/`)
+
+	_ = MustParse(`f >= 1`)
+	_ = MustParse(`f < 1.5`)
 }

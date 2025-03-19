@@ -146,10 +146,10 @@ func (lexer *ruleLexerImpl) Lex(lval *ruleSymType) int {
     token_kind := 0
 	%% write exec;
     if lexer.cs != ruleLexerImpl_error {
-		lval.data = safeIndex(lexer.data, lexer.ts, lexer.te)
+		lval.valueLiteral = safeIndex(lexer.data, lexer.ts, lexer.te)
     }
 	if ruleDebug > 4 {
-		fmt.Printf("Token text: %s\n", string(lval.data))
+		fmt.Printf("Token text: %s\n", string(lval.valueLiteral))
 	}
 
 	return token_kind

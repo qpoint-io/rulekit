@@ -1357,10 +1357,10 @@ _again:
 
 //line lexer.rl:148
     if lexer.cs != ruleLexerImpl_error {
-		lval.data = safeIndex(lexer.data, lexer.ts, lexer.te)
+		lval.valueLiteral = safeIndex(lexer.data, lexer.ts, lexer.te)
     }
 	if ruleDebug > 4 {
-		fmt.Printf("Token text: %s\n", string(lval.data))
+		fmt.Printf("Token text: %s\n", string(lval.valueLiteral))
 	}
 
 	return token_kind

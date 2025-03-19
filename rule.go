@@ -220,6 +220,8 @@ func (e *ParseError) Error() string {
 			"token_FIELD", `"field name"`,
 			"token_STRING", `"string"`,
 			"token_HEX_STRING", `"hex"`,
+			"token_ARRAY", `"array"`,
+			"token_LBRACKET", `array`,
 		)
 		result += "\n" + replacer.Replace(e.Message)
 	}
