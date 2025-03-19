@@ -113,9 +113,19 @@ func Parse(str string) (Rule, error) {
 	}
 }
 
+func MustParse(str string) Rule {
+	r, err := Parse(str)
+	if err != nil {
+		panic(err)
+	}
+	return r
+}
+
+type KV = map[string]any
+
 type Rule interface {
 	// Checks whether the input fields match the rule.
-	Eval(map[string]any) Result
+	Eval(KV) Result
 	// String representation of the rule
 	String() string
 }
@@ -125,7 +135,7 @@ type rule struct {
 }
 
 // Eval overrides the rule's Eval() method to wrap the returned EvalutedRule so we can override the String() method.
-func (r *rule) Eval(fv map[string]any) Result {
+func (r *rule) Eval(fv KV) Result {
 	res := r.Rule.Eval(fv)
 	res.EvaluatedRule = &rule{Rule: res.EvaluatedRule}
 	return res

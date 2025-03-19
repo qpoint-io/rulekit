@@ -6,23 +6,29 @@ import (
 )
 
 func compare(left any, op int, right any) (ret bool) {
-	if arr, ok := right.([]any); ok {
+	// any ? []any
+	//      -> run the comparison for each element in the right array.
+	if rightArr, ok := right.([]any); ok {
 		defer func() {
 			debugResult(ret, "╰ cmp[]", "", left, op, right)
 		}()
-		for _, v := range arr {
-			if compare(left, op, v) {
-				return true
-			}
+
+		if op == token_TEST_CONTAINS {
+			// the contains operator does not support arrays on the right side.
+			// TODO: return error
+			return false
 		}
-		return false
+
+		return compareSlice(rightArr, op, func(rv any, op int) bool {
+			return compare(left, op, rv)
+		})
 	}
 
 	defer func() {
 		debugResult(ret, "╰ cmp", "", left, op, right)
 	}()
 
-	// the field type determines the comparison logic
+	// the left value type determines the comparison logic
 	switch lv := left.(type) {
 	case string:
 		// string ? any
@@ -112,39 +118,25 @@ func debugResult(result bool, prefix string, lname string, lv any, op int, rv an
 	return result
 }
 
-func compareSlice[T any](left []T, op int, fn func(lv T, op int) bool) bool {
+func compareSlice[T any](slice []T, op int, fn func(el T, op int) bool) bool {
+	if op == token_TEST_NE {
+		// []T != any
+		//      -> check if NONE of the slice elements are equal to the right value.
+		//         this is equivalent to !([]T == any)
+		return !compareSlice(slice, token_TEST_EQ, fn)
+	}
+
 	if op == token_TEST_CONTAINS {
 		// []T contains any
-		//      -> check if of the slice elements are equal to the right value
+		//      -> check if any of the slice elements are equal to the right value.
+		//         e.g. we don't want to do any substring matching here.
 		op = token_TEST_EQ
 	}
 
-	switch op {
-	case token_TEST_EQ,
-		token_TEST_GT, token_TEST_GE,
-		token_TEST_LT, token_TEST_LE:
-		// []T ==, >, >=, <, <= any
-		//      -> check if any of the slice elements are equal to the right value
-		for _, lv := range left {
-			// we need only one item to match
-			if fn(lv, op) {
-				return true
-			}
+	for _, el := range slice {
+		if fn(el, op) {
+			return true
 		}
-		return false
-
-	case token_TEST_NE:
-		// []T != any
-		//      -> check if NONE of the slice elements are equal to the right value
-		for _, lv := range left {
-			if fn(lv, token_TEST_EQ) {
-				// one item matches
-				return false
-			}
-		}
-		return true
-
-	default:
-		return false
 	}
+	return false
 }
