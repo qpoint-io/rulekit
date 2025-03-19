@@ -35,12 +35,12 @@ package rulekit
 			valid values: true, false
 
 		number: VALUE, FIELD
-			e.g. 8080
+			e.g. 8080, 1.35
 
 			numbers are parsed as either int64 or uint64 if out of range for int64
-			floats are not supported
+			floats are parsed as float64
 
-			Go type: int64 or uint64
+			Go type: int64, uint64, float64
 
 		string: VALUE, FIELD
 			e.g. "domain.com"
@@ -197,7 +197,7 @@ func (e *ParseError) Error() string {
 
 	if e.Message != "" {
 		replacer := strings.NewReplacer(
-			"token_ERROR", `"symbol"`,
+			"token_ERROR", `symbol`,
 			"token_LPAREN", `"("`,
 			"token_RPAREN", `")"`,
 			"op_NOT", `"!"`,
@@ -221,7 +221,7 @@ func (e *ParseError) Error() string {
 			"token_STRING", `"string"`,
 			"token_HEX_STRING", `"hex"`,
 			"token_ARRAY", `"array"`,
-			"token_LBRACKET", `array`,
+			"token_LBRACKET", `"array"`,
 		)
 		result += "\n" + replacer.Replace(e.Message)
 	}
@@ -255,12 +255,24 @@ func getLineColumn(input string, pos int) (line, col int) {
 // getSuggestion returns a helpful message based on the error
 func getSuggestion(err string) string {
 	switch {
-	case strings.Contains(err, "parsing string"):
-		return "string values must be properly quoted with matching quotes"
-	case strings.Contains(err, "parsing integer"):
-		return "integer values must be valid integers, no decimals allowed"
-	case strings.Contains(err, "parsing boolean"):
-		return "boolean values must be either 'true' or 'false'"
+	case strings.Contains(err, "parsing token_STRING"):
+		return "string values must be properly quoted with matching quotes (e.g. \"hello\")"
+	case strings.Contains(err, "parsing token_INT"):
+		return "integer values must be valid integers without decimals (e.g. 42)"
+	case strings.Contains(err, "parsing token_FLOAT"):
+		return "floating-point numbers must be in the format 1.23"
+	case strings.Contains(err, "parsing token_BOOL"):
+		return "boolean values must be either 'true' or 'false' (case insensitive)"
+	case strings.Contains(err, "parsing token_IP"):
+		return "IP addresses must be in valid IPv4 (e.g. 192.168.1.1) or IPv6 format"
+	case strings.Contains(err, "parsing token_IP_CIDR"):
+		return "CIDR blocks must be in valid format (e.g. 192.168.1.0/24)"
+	case strings.Contains(err, "parsing token_HEX_STRING"):
+		return "hex strings must contain valid hex digits optionally separated by colons"
+	case strings.Contains(err, "parsing token_REGEX"):
+		return "regex patterns must be surrounded by / or | and contain valid regex syntax"
+	case strings.Contains(err, "parsing token_FIELD"):
+		return "field names must be valid identifiers (e.g. 'field_name' or 'field.name')"
 	}
 	return ""
 }

@@ -65,26 +65,26 @@ func withNegate(negate bool, node Rule) Rule {
 
 // Add these type-specific parsing functions in the Go code section
 func parseString[T interface{ string | []byte }](data T) (string, error) {
-	raw_value := string(data)
-	if raw_value[0] == '\'' {
+	str := string(data)
+	if str[0] == '\'' {
 		// Convert single-quoted string to double-quoted
-		inner := raw_value[1:len(raw_value)-1]
-		escaped := strings.ReplaceAll(inner, `"`, "\\\"")
-		escaped = strings.ReplaceAll(escaped, `\'`, `'`)
-		raw_value = `"` + escaped + `"`
+		str = str[1:len(str)-1]
+		str = strings.ReplaceAll(str, `"`, "\\\"")
+		str = strings.ReplaceAll(str, `\'`, `'`)
+		str = `"` + str + `"`
 	}
-	return strconv.Unquote(raw_value)
+	return strconv.Unquote(str)
 }
 
 func parseInt[T interface{ string | []byte }](data T) (any, error) {
-	raw_value := string(data)
-	if n, err := strconv.ParseInt(raw_value, 0, 64); err == nil {
+	raw := string(data)
+	if n, err := strconv.ParseInt(raw, 0, 64); err == nil {
 		return n, nil
 	}
-	if n, err := strconv.ParseUint(raw_value, 0, 64); err == nil {
+	if n, err := strconv.ParseUint(raw, 0, 64); err == nil {
 		return n, nil
 	}
-	return nil, fmt.Errorf("parsing integer: invalid value %q", raw_value)
+	return nil, fmt.Errorf("parsing integer: invalid value %q", raw)
 }
 
 func parseFloat[T interface{ string | []byte }](data T) (float64, error) {
@@ -92,24 +92,24 @@ func parseFloat[T interface{ string | []byte }](data T) (float64, error) {
 }
 
 func parseBool[T interface{ string | []byte }](data T) (bool, error) {
-	raw_value := string(data)
-	if strings.EqualFold(raw_value, "true") {
+	raw := string(data)
+	if strings.EqualFold(raw, "true") {
 		return true, nil
 	}
-	if strings.EqualFold(raw_value, "false") {
+	if strings.EqualFold(raw, "false") {
 		return false, nil
 	}
-	return false, fmt.Errorf("parsing boolean: unknown value %q", raw_value)
+	return false, fmt.Errorf("parsing boolean: unknown value %q", raw)
 }
 
 func parseRegex[T interface{ string | []byte }](data T) (*regexp.Regexp, error) {
-	raw_value := string(data)
-	pattern := raw_value[1:len(raw_value)-1]  // Remove the forward slashes
+	raw := string(data)
+	pattern := raw[1:len(raw)-1]  // Remove the forward slashes
 	return regexp.Compile(pattern)
 }
 
 func newValueToken(token_type int, data []byte) (valueToken, error) {
-	v := valueToken{typ: token_type, raw_value: string(data)}
+	v := valueToken{typ: token_type, raw: string(data)}
 	if err := v.Parse(); err != nil {
 		return valueToken{}, err
 	}
@@ -118,7 +118,7 @@ func newValueToken(token_type int, data []byte) (valueToken, error) {
 
 type valueToken struct {
 	typ int
-	raw_value string
+	raw string
 	value any
 }
 
@@ -129,44 +129,44 @@ func (v *valueToken) Parse() error {
 	)
 	switch v.typ {
 	case token_STRING:
-		value, err = parseString(v.raw_value)
+		value, err = parseString(v.raw)
 		if err != nil {
-			err = ValueParseError{v.typ, v.raw_value, err}
+			err = ValueParseError{v.typ, v.raw, err}
 		}
 	case token_INT:
-		value, err = parseInt(v.raw_value)
+		value, err = parseInt(v.raw)
 		if err != nil {
-			err = ValueParseError{v.typ, v.raw_value, err}
+			err = ValueParseError{v.typ, v.raw, err}
 		}
 	case token_FLOAT:
-		value, err = parseFloat(v.raw_value)
+		value, err = parseFloat(v.raw)
 		if err != nil {
-			err = ValueParseError{v.typ, v.raw_value, err}
+			err = ValueParseError{v.typ, v.raw, err}
 		}
 	case token_BOOL:
-		value, err = parseBool(v.raw_value)
+		value, err = parseBool(v.raw)
 		if err != nil {
-			err = ValueParseError{v.typ, v.raw_value, err}
+			err = ValueParseError{v.typ, v.raw, err}
 		}
 	case token_IP:
-		value = net.ParseIP(v.raw_value)
+		value = net.ParseIP(v.raw)
 		if value == nil {
-			err = ValueParseError{v.typ, v.raw_value, fmt.Errorf("invalid IP value %q", v.raw_value)}
+			err = ValueParseError{v.typ, v.raw, fmt.Errorf("invalid IP value %q", v.raw)}
 		}
 	case token_IP_CIDR:
-		_, value, err = net.ParseCIDR(v.raw_value)
+		_, value, err = net.ParseCIDR(v.raw)
 		if err != nil {
-			err = ValueParseError{v.typ, v.raw_value, err}
+			err = ValueParseError{v.typ, v.raw, err}
 		}
 	case token_HEX_STRING:
-		value, err = ParseHexString(v.raw_value)
+		value, err = ParseHexString(v.raw)
 		if err != nil {
-			err = ValueParseError{v.typ, v.raw_value, err}
+			err = ValueParseError{v.typ, v.raw, err}
 		}
 	case token_REGEX:
-		value, err = parseRegex(v.raw_value)
+		value, err = parseRegex(v.raw)
 		if err != nil {
-			err = ValueParseError{v.typ, v.raw_value, err}
+			err = ValueParseError{v.typ, v.raw, err}
 		}
 	default:
 		err = fmt.Errorf("unsupported token type %s", valueTokenString(v.typ))
@@ -205,7 +205,7 @@ func makeCompareNode(field string, negate bool, op int, elem valueToken) Rule {
 	return withNegate(negate, &nodeCompare{
 		predicate: predicate{
 			field: field, 
-			raw_value: elem.raw_value,
+			raw: elem.raw,
 		},
 		op: op,
 		value: elem.value,
@@ -319,12 +319,12 @@ predicate:
 		rgxp, ok := elem.value.(*regexp.Regexp)
 		if !ok {
 			// code error; newValueToken should always return a *regexp.Regexp for a token_REGEX
-			rulelex.Error(fmt.Errorf("parser error while handling regex value %q", elem.raw_value).Error())
+			rulelex.Error(fmt.Errorf("parser error while handling regex value %q", elem.raw).Error())
 			return 1
 		}
 
 		$$ = withNegate($2, &nodeMatch{
-			predicate: predicate{field: string($1), raw_value: elem.raw_value},
+			predicate: predicate{field: string($1), raw: elem.raw},
 			reg_expr: rgxp,
 		})
 	}
@@ -337,14 +337,14 @@ predicate:
 	{
 		values, ok := $4.value.([]any)
 		if !ok {
-			rulelex.Error(fmt.Errorf("parser error while handling array value %q", $4.raw_value).Error())
+			rulelex.Error(fmt.Errorf("parser error while handling array value %q", $4.raw).Error())
 			return 1
 		}
 
 		$$ = withNegate($2, &nodeIn{
 			predicate: predicate{
 				field: string($1),
-				raw_value: $4.raw_value,
+				raw: $4.raw,
 			},
 			values: values,
 		})
@@ -387,14 +387,14 @@ array_value_token:
 		raw_parts := make([]string, len($2))
 		values := make([]any, len($2))
 		for i, elem := range $2 {
-			raw_parts[i] = elem.raw_value
+			raw_parts[i] = elem.raw
 			values[i] = elem.value
 		}
-		raw_value := fmt.Sprintf("[%s]", strings.Join(raw_parts, ", "))
+		raw := fmt.Sprintf("[%s]", strings.Join(raw_parts, ", "))
 
 		$$ = valueToken{
 			typ: token_ARRAY,
-			raw_value: raw_value,
+			raw: raw,
 			value: values,
 		}
 	}
