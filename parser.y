@@ -102,6 +102,12 @@ func parseBool[T interface{ string | []byte }](data T) (bool, error) {
 	return false, fmt.Errorf("parsing boolean: unknown value %q", raw_value)
 }
 
+func parseRegex[T interface{ string | []byte }](data T) (*regexp.Regexp, error) {
+	raw_value := string(data)
+	pattern := raw_value[1:len(raw_value)-1]  // Remove the forward slashes
+	return regexp.Compile(pattern)
+}
+
 // Add a new struct for array elements
 type arrayElement struct {
 	raw_value string
@@ -116,6 +122,79 @@ func formatArrayRawValue(elements []arrayElement) string {
 	}
 	return fmt.Sprintf("[%s]", strings.Join(parts, ", "))
 }
+
+func extractValues(elements []arrayElement) []any {
+	values := make([]any, len(elements))
+	for i, elem := range elements {
+		values[i] = elem.value
+	}
+	return values
+}
+
+// Add a new helper function to handle value parsing consistently
+func parseValue(token_type int, data []byte) (raw string, value any, err error) {
+	raw = string(data)  // Always set the raw value
+	switch token_type {
+	case token_STRING:
+		value, err = parseString(data)
+	case token_INT:
+		value, err = parseInt(data)
+	case token_FLOAT:
+		value, err = parseFloat(data)
+	case token_BOOL:
+		value, err = parseBool(data)
+	case token_IP:
+		if value = net.ParseIP(raw); value == nil {
+			err = fmt.Errorf("invalid IP value %q", raw)
+		}
+	case token_IP_CIDR:
+		_, value, err = net.ParseCIDR(raw)
+	case token_HEX_STRING:
+		value, err = ParseHexString(raw)
+	case token_REGEX:
+		value, err = parseRegex(data)
+	default:
+		err = fmt.Errorf("unsupported token type %d", token_type)
+	}
+	return
+}
+
+// Add helper for creating array elements
+func newArrayElement(token_type int, data []byte) (arrayElement, error) {
+	raw, value, err := parseValue(token_type, data)
+	if err != nil {
+		return arrayElement{}, fmt.Errorf("parsing %T: %v", token_type, err)
+	}
+	return arrayElement{raw_value: raw, value: value}, nil
+}
+
+// Add token type struct for mid-rule actions
+type tokenType struct {
+	typ int
+	data []byte
+}
+
+// Update error formatting for array values
+func formatParseError(typ int, err error) string {
+	typeStr := "value"
+	switch typ {
+	case token_STRING:
+		typeStr = "string"
+	case token_INT:
+		typeStr = "integer"
+	case token_FLOAT:
+		typeStr = "float"
+	case token_BOOL:
+		typeStr = "boolean"
+	case token_IP:
+		typeStr = "IP"
+	case token_IP_CIDR:
+		typeStr = "CIDR"
+	case token_HEX_STRING:
+		typeStr = "hex string"
+	}
+	return fmt.Sprintf("parsing array %s: %v", typeStr, err)
+}
 %}
 
 %union {
@@ -123,8 +202,8 @@ func formatArrayRawValue(elements []arrayElement) string {
 	data      []byte
 	operator  int
 	negate    bool
-	values    []any
 	arrayElems   []arrayElement  // Change type from []any to []arrayElement
+	tokType     tokenType    // Add new type for mid-rule actions
 }
 
 // Type declarations for non-terminals (rules)
@@ -132,6 +211,7 @@ func formatArrayRawValue(elements []arrayElement) string {
 %type <operator> comparison_operator ineq_operator eq_operator
 %type <negate> optional_negate
 %type <arrayElems> array_values array_value
+%type <tokType> array_token
 
 %token <data> token_FIELD
 %token <data> token_STRING token_HEX_STRING
@@ -188,144 +268,144 @@ search_condition:
 predicate:
 	token_FIELD optional_negate eq_operator token_STRING
 	{
-		field, raw_value := string($1), string($4)
+		field := string($1)
 		negate := $2
 		op := $3
 		
-		value, err := parseString(raw_value)
+		elem, err := newArrayElement(token_STRING, $4)
 		if err != nil {
-			rulelex.Error(fmt.Sprintf("parsing string: %v", err))
+			rulelex.Error(formatParseError(token_STRING, err))
 			return 1
 		}
 		
 		$$ = withNegate(negate, &nodeCompare{
-			predicate: predicate{field: field, raw_value: raw_value},
+			predicate: predicate{field: field, raw_value: elem.raw_value},
 			op: op,
-			value: value,
+			value: elem.value,
 		})
 	}
 	| token_FIELD optional_negate eq_operator token_HEX_STRING
 	{
-		field, raw_value := string($1), string($4)
+		field := string($1)
 		negate := $2
 		op := $3
 
-		hs, err := ParseHexString(raw_value)
+		elem, err := newArrayElement(token_HEX_STRING, $4)
 		if err != nil {
-			rulelex.Error(fmt.Sprintf("parsing hex string: %v", err))
+			rulelex.Error(formatParseError(token_HEX_STRING, err))
 			return 1
 		}
 		$$ = withNegate(negate, &nodeCompare{
-			predicate: predicate{field: field, raw_value: raw_value},
+			predicate: predicate{field: field, raw_value: elem.raw_value},
 			op: op,
-			value: hs,
+			value: elem.value,
 		})
 	}
 	| token_FIELD optional_negate comparison_operator token_INT
 	{
-		field, raw_value := string($1), string($4)
+		field := string($1)
 		negate := $2
 		op := $3
-		
-		value, err := parseInt(raw_value)
+
+		elem, err := newArrayElement(token_INT, $4)
 		if err != nil {
-			rulelex.Error(err.Error())
+			rulelex.Error(formatParseError(token_INT, err))
 			return 1
 		}
 		
 		$$ = withNegate(negate, &nodeCompare{
-			predicate: predicate{field: field, raw_value: raw_value},
+			predicate: predicate{field: field, raw_value: elem.raw_value},
 			op: op,
-			value: value,
+			value: elem.value,
 		})
 	}
 	| token_FIELD optional_negate comparison_operator token_FLOAT
 	{
-		field, raw_value := string($1), string($4)
+		field := string($1)
 		negate := $2
 		op := $3
-		
-		value, err := parseFloat(raw_value)
+
+		elem, err := newArrayElement(token_FLOAT, $4)
 		if err != nil {
-			rulelex.Error(fmt.Sprintf("parsing float: %v", err))
+			rulelex.Error(formatParseError(token_FLOAT, err))
 			return 1
 		}
 		
 		$$ = withNegate(negate, &nodeCompare{
-			predicate: predicate{field: field, raw_value: raw_value},
+			predicate: predicate{field: field, raw_value: elem.raw_value},
 			op: op,
-			value: value,
+			value: elem.value,
 		})
 	}
 	| token_FIELD optional_negate eq_operator token_BOOL
 	{
-		field, raw_value := string($1), string($4)
+		field := string($1)
 		negate := $2
 		op := $3
-		
-		value, err := parseBool(raw_value)
+
+		elem, err := newArrayElement(token_BOOL, $4)
 		if err != nil {
-			rulelex.Error(err.Error())
+			rulelex.Error(formatParseError(token_BOOL, err))
 			return 1
 		}
 		
 		$$ = withNegate(negate, &nodeCompare{
-			predicate: predicate{field: field, raw_value: raw_value},
+			predicate: predicate{field: field, raw_value: elem.raw_value},
 			op: op,
-			value: value,
+			value: elem.value,
 		})
 	}
 	| token_FIELD optional_negate eq_operator token_IP
 	{
-		field, raw_value := string($1), string($4)
+		field := string($1)
 		negate := $2
 		op := $3
 
-		ip := net.ParseIP(raw_value)
-		if ip == nil {
-			rulelex.Error(fmt.Sprintf("parsing IP: invalid value %q", raw_value))
+		elem, err := newArrayElement(token_IP, $4)
+		if err != nil {
+			rulelex.Error(formatParseError(token_IP, err))
 			return 1
 		}
 		
 		$$ = withNegate(negate, &nodeCompare{
-			predicate: predicate{field: field, raw_value: raw_value},
+			predicate: predicate{field: field, raw_value: elem.raw_value},
 			op: op,
-			value: ip,
+			value: elem.value,
 		})
 	}
 	| token_FIELD optional_negate eq_operator token_IP_CIDR
 	{
-		field, raw_value := string($1), string($4)
+		field := string($1)
 		negate := $2
 		op := $3
 
-		_, ipnet, err := net.ParseCIDR(raw_value)
+		elem, err := newArrayElement(token_IP_CIDR, $4)
 		if err != nil {
-			rulelex.Error(fmt.Sprintf("parsing CIDR: invalid value %v", raw_value))
+			rulelex.Error(formatParseError(token_IP_CIDR, err))
 			return 1
 		}
 		
 		$$ = withNegate(negate, &nodeCompare{
-			predicate: predicate{field: field, raw_value: raw_value},
+			predicate: predicate{field: field, raw_value: elem.raw_value},
 			op: op,
-			value: ipnet,
+			value: elem.value,
 		})
 	}
 	| token_FIELD optional_negate token_TEST_MATCHES token_REGEX
 	{
-		field, raw_value := string($1), string($4)
-		pattern := raw_value[1:len(raw_value)-1]  // Remove the forward slashes
+		field := string($1)
 		negate := $2
 		
-		r_expr, err := regexp.Compile(pattern)
+		elem, err := newArrayElement(token_REGEX, $4)
 		if err != nil {
-			rulelex.Error(fmt.Sprintf("parsing regular expression: %v", err))
+			rulelex.Error(formatParseError(token_REGEX, err))
 			return 1
 		}
 		
+
 		$$ = withNegate(negate, &nodeMatch{
-			predicate: predicate{field: field, raw_value: raw_value},
-			reg_expr: r_expr,
+			predicate: predicate{field: field, raw_value: elem.raw_value},
+			reg_expr: elem.value.(*regexp.Regexp),
 		})
 	}
 	| token_FIELD
@@ -339,16 +419,13 @@ predicate:
 		op := $3
 		elements := $5
 		
-		// Extract just the values for the node
-		values := make([]any, len(elements))
-		for i, elem := range elements {
-			values[i] = elem.value
-		}
-		
 		$$ = withNegate(negate, &nodeCompare{
-			predicate: predicate{field: field, raw_value: formatArrayRawValue(elements)},
+			predicate: predicate{
+				field: field,
+				raw_value: formatArrayRawValue(elements),
+			},
 			op: op,
-			value: values,
+			value: extractValues(elements),
 		})
 	}
 	| token_FIELD optional_negate token_TEST_IN token_LBRACKET array_values token_RBRACKET
@@ -357,15 +434,12 @@ predicate:
 		negate := $2
 		elements := $5
 		
-		// Extract just the values for the node
-		values := make([]any, len(elements))
-		for i, elem := range elements {
-			values[i] = elem.value
-		}
-		
 		$$ = withNegate(negate, &nodeIn{
-			predicate: predicate{field: field, raw_value: formatArrayRawValue(elements)},
-			values: values,
+			predicate: predicate{
+				field: field,
+				raw_value: formatArrayRawValue(elements),
+			},
+			values: extractValues(elements),
 		})
 	}
 	;
@@ -389,7 +463,7 @@ optional_negate:
 	{ $$ = false }
 	| token_TEST_NOT { $$ = true };
 
-// Array handling rules with type-specific parsing
+// Array handling rules
 array_values:
 	array_value
 	{
@@ -401,77 +475,46 @@ array_values:
 	}
 	;
 
-// TODO review parsing code & see if we can clean up this+above a little
 array_value:
-	token_STRING
+	array_token
 	{
-		raw_value := string($1)
-		value, err := parseString($1)
+		elem, err := newArrayElement($1.typ, $1.data)
 		if err != nil {
-			rulelex.Error(fmt.Sprintf("parsing array string: %v", err))
+			rulelex.Error(formatParseError($1.typ, err))
 			return 1
 		}
-		$$ = []arrayElement{{raw_value: raw_value, value: value}}
+		$$ = []arrayElement{elem}
+	}
+	;
+
+array_token:
+	token_STRING
+	{
+		$$ = tokenType{typ: token_STRING, data: $1}
 	}
 	| token_INT
 	{
-		raw_value := string($1)
-		value, err := parseInt($1)
-		if err != nil {
-			rulelex.Error(err.Error())
-			return 1
-		}
-		$$ = []arrayElement{{raw_value: raw_value, value: value}}
+		$$ = tokenType{typ: token_INT, data: $1}
 	}
 	| token_FLOAT
 	{
-		raw_value := string($1)
-		value, err := parseFloat($1)
-		if err != nil {
-			rulelex.Error(fmt.Sprintf("parsing array float: %v", err))
-			return 1
-		}
-		$$ = []arrayElement{{raw_value: raw_value, value: value}}
+		$$ = tokenType{typ: token_FLOAT, data: $1}
 	}
 	| token_BOOL
 	{
-		raw_value := string($1)
-		value, err := parseBool($1)
-		if err != nil {
-			rulelex.Error(err.Error())
-			return 1
-		}
-		$$ = []arrayElement{{raw_value: raw_value, value: value}}
+		$$ = tokenType{typ: token_BOOL, data: $1}
 	}
 	| token_IP
 	{
-		raw_value := string($1)
-		ip := net.ParseIP(raw_value)
-		if ip == nil {
-			rulelex.Error(fmt.Sprintf("parsing IP: invalid value %q", raw_value))
-			return 1
-		}
-		$$ = []arrayElement{{raw_value: raw_value, value: ip}}
+		$$ = tokenType{typ: token_IP, data: $1}
 	}
 	| token_IP_CIDR
 	{
-		raw_value := string($1)
-		_, ipnet, err := net.ParseCIDR(raw_value)
-		if err != nil {
-			rulelex.Error(fmt.Sprintf("parsing CIDR: invalid value %v", raw_value))
-			return 1
-		}
-		$$ = []arrayElement{{raw_value: raw_value, value: ipnet}}
+		$$ = tokenType{typ: token_IP_CIDR, data: $1}
 	}
 	| token_HEX_STRING
 	{
-		raw_value := string($1)
-		hs, err := ParseHexString(raw_value)
-		if err != nil {
-			rulelex.Error(fmt.Sprintf("parsing hex string: %v", err))
-			return 1
-		}
-		$$ = []arrayElement{{raw_value: raw_value, value: hs}}
+		$$ = tokenType{typ: token_HEX_STRING, data: $1}
 	}
 	;
 

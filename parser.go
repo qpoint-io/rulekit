@@ -109,6 +109,12 @@ func parseBool[T interface{ string | []byte }](data T) (bool, error) {
 	return false, fmt.Errorf("parsing boolean: unknown value %q", raw_value)
 }
 
+func parseRegex[T interface{ string | []byte }](data T) (*regexp.Regexp, error) {
+	raw_value := string(data)
+	pattern := raw_value[1 : len(raw_value)-1] // Remove the forward slashes
+	return regexp.Compile(pattern)
+}
+
 // Add a new struct for array elements
 type arrayElement struct {
 	raw_value string
@@ -124,15 +130,88 @@ func formatArrayRawValue(elements []arrayElement) string {
 	return fmt.Sprintf("[%s]", strings.Join(parts, ", "))
 }
 
-//line parser.y:121
+func extractValues(elements []arrayElement) []any {
+	values := make([]any, len(elements))
+	for i, elem := range elements {
+		values[i] = elem.value
+	}
+	return values
+}
+
+// Add a new helper function to handle value parsing consistently
+func parseValue(token_type int, data []byte) (raw string, value any, err error) {
+	raw = string(data) // Always set the raw value
+	switch token_type {
+	case token_STRING:
+		value, err = parseString(data)
+	case token_INT:
+		value, err = parseInt(data)
+	case token_FLOAT:
+		value, err = parseFloat(data)
+	case token_BOOL:
+		value, err = parseBool(data)
+	case token_IP:
+		if value = net.ParseIP(raw); value == nil {
+			err = fmt.Errorf("invalid IP value %q", raw)
+		}
+	case token_IP_CIDR:
+		_, value, err = net.ParseCIDR(raw)
+	case token_HEX_STRING:
+		value, err = ParseHexString(raw)
+	case token_REGEX:
+		value, err = parseRegex(data)
+	default:
+		err = fmt.Errorf("unsupported token type %d", token_type)
+	}
+	return
+}
+
+// Add helper for creating array elements
+func newArrayElement(token_type int, data []byte) (arrayElement, error) {
+	raw, value, err := parseValue(token_type, data)
+	if err != nil {
+		return arrayElement{}, fmt.Errorf("parsing %T: %v", token_type, err)
+	}
+	return arrayElement{raw_value: raw, value: value}, nil
+}
+
+// Add token type struct for mid-rule actions
+type tokenType struct {
+	typ  int
+	data []byte
+}
+
+// Update error formatting for array values
+func formatParseError(typ int, err error) string {
+	typeStr := "value"
+	switch typ {
+	case token_STRING:
+		typeStr = "string"
+	case token_INT:
+		typeStr = "integer"
+	case token_FLOAT:
+		typeStr = "float"
+	case token_BOOL:
+		typeStr = "boolean"
+	case token_IP:
+		typeStr = "IP"
+	case token_IP_CIDR:
+		typeStr = "CIDR"
+	case token_HEX_STRING:
+		typeStr = "hex string"
+	}
+	return fmt.Sprintf("parsing array %s: %v", typeStr, err)
+}
+
+//line parser.y:200
 type ruleSymType struct {
 	yys        int
 	rule       Rule
 	data       []byte
 	operator   int
 	negate     bool
-	values     []any
 	arrayElems []arrayElement // Change type from []any to []arrayElement
+	tokType    tokenType      // Add new type for mid-rule actions
 }
 
 const token_FIELD = 57346
@@ -202,7 +281,7 @@ const ruleEofCode = 1
 const ruleErrCode = 2
 const ruleInitialStackSize = 16
 
-//line parser.y:478
+//line parser.y:521
 
 //line yacctab:1
 var ruleExca = [...]int8{
@@ -223,47 +302,47 @@ const ruleLast = 55
 
 var ruleAct = [...]int8{
 	38, 19, 20, 23, 24, 25, 26, 21, 17, 18,
-	37, 27, 28, 49, 48, 29, 31, 30, 47, 48,
+	37, 27, 28, 50, 49, 29, 31, 30, 48, 49,
 	36, 5, 6, 7, 32, 14, 6, 7, 7, 11,
-	3, 35, 10, 4, 39, 45, 40, 41, 42, 44,
-	43, 33, 34, 15, 22, 16, 1, 46, 2, 50,
-	8, 9, 0, 12, 13,
+	3, 35, 39, 4, 40, 46, 41, 42, 43, 45,
+	44, 1, 33, 34, 10, 8, 9, 47, 12, 13,
+	51, 15, 22, 16, 2,
 }
 
 var rulePact = [...]int16{
 	17, 12, -1000, 17, 17, 16, 17, 17, -1000, 8,
-	-20, -1000, 13, -1000, -1000, 6, 34, 19, 2, -1000,
+	-20, -1000, 13, -1000, -1000, 6, 35, 19, 2, -1000,
 	-1000, -1000, -1000, -1000, -1000, -1000, -1000, -1000, -1000, -1000,
 	-1000, -1000, 29, -1000, -1000, -1000, 29, -1, -1000, -1000,
-	-1000, -1000, -1000, -1000, -1000, -1000, -6, -1000, 29, -1000,
-	-1000,
+	-1000, -1000, -1000, -1000, -1000, -1000, -1000, -6, -1000, 29,
+	-1000, -1000,
 }
 
 var rulePgo = [...]int8{
-	0, 46, 48, 45, 44, 43, 32, 10, 0,
+	0, 41, 54, 53, 52, 51, 44, 10, 0, 32,
 }
 
 var ruleR1 = [...]int8{
 	0, 1, 1, 1, 1, 1, 2, 2, 2, 2,
 	2, 2, 2, 2, 2, 2, 2, 3, 3, 4,
 	4, 4, 4, 5, 5, 5, 6, 6, 7, 7,
-	8, 8, 8, 8, 8, 8, 8,
+	8, 9, 9, 9, 9, 9, 9, 9,
 }
 
 var ruleR2 = [...]int8{
 	0, 1, 3, 3, 2, 3, 4, 4, 4, 4,
 	4, 4, 4, 4, 1, 6, 6, 1, 1, 1,
 	1, 1, 1, 1, 1, 1, 0, 1, 1, 3,
-	1, 1, 1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1, 1, 1, 1,
 }
 
 var ruleChk = [...]int16{
 	-1000, -1, -2, 13, 16, 4, 14, 15, -1, -1,
 	-6, 13, -1, -1, 17, -5, -3, 28, 29, 21,
 	22, 27, -4, 23, 24, 25, 26, 5, 6, 9,
-	11, 10, 18, 7, 8, 12, 18, -7, -8, 5,
-	7, 8, 9, 11, 10, 6, -7, 19, 20, 19,
-	-8,
+	11, 10, 18, 7, 8, 12, 18, -7, -8, -9,
+	5, 7, 8, 9, 11, 10, 6, -7, 19, 20,
+	19, -8,
 }
 
 var ruleDef = [...]int8{
@@ -271,8 +350,8 @@ var ruleDef = [...]int8{
 	0, 27, 2, 3, 5, 18, 0, 0, 0, 23,
 	24, 25, 17, 19, 20, 21, 22, 6, 7, 10,
 	11, 12, 0, 8, 9, 13, 0, 0, 28, 30,
-	31, 32, 33, 34, 35, 36, 0, 15, 0, 16,
-	29,
+	31, 32, 33, 34, 35, 36, 37, 0, 15, 0,
+	16, 29,
 }
 
 var ruleTok1 = [...]int8{
@@ -629,392 +708,354 @@ ruledefault:
 
 	case 1:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:162
+//line parser.y:242
 		{
 			ruleVAL.rule = ruleDollar[1].rule
 			rulelex.Result(ruleVAL.rule)
 		}
 	case 2:
 		ruleDollar = ruleS[rulept-3 : rulept+1]
-//line parser.y:167
+//line parser.y:247
 		{
 			ruleVAL.rule = &nodeAnd{left: ruleDollar[1].rule, right: ruleDollar[3].rule}
 			rulelex.Result(ruleVAL.rule)
 		}
 	case 3:
 		ruleDollar = ruleS[rulept-3 : rulept+1]
-//line parser.y:172
+//line parser.y:252
 		{
 			ruleVAL.rule = &nodeOr{left: ruleDollar[1].rule, right: ruleDollar[3].rule}
 			rulelex.Result(ruleVAL.rule)
 		}
 	case 4:
 		ruleDollar = ruleS[rulept-2 : rulept+1]
-//line parser.y:177
+//line parser.y:257
 		{
 			ruleVAL.rule = &nodeNot{right: ruleDollar[2].rule}
 			rulelex.Result(ruleVAL.rule)
 		}
 	case 5:
 		ruleDollar = ruleS[rulept-3 : rulept+1]
-//line parser.y:182
+//line parser.y:262
 		{
 			ruleVAL.rule = ruleDollar[2].rule
 			rulelex.Result(ruleVAL.rule)
 		}
 	case 6:
 		ruleDollar = ruleS[rulept-4 : rulept+1]
-//line parser.y:190
+//line parser.y:270
 		{
-			field, raw_value := string(ruleDollar[1].data), string(ruleDollar[4].data)
+			field := string(ruleDollar[1].data)
 			negate := ruleDollar[2].negate
 			op := ruleDollar[3].operator
 
-			value, err := parseString(raw_value)
+			elem, err := newArrayElement(token_STRING, ruleDollar[4].data)
 			if err != nil {
-				rulelex.Error(fmt.Sprintf("parsing string: %v", err))
+				rulelex.Error(formatParseError(token_STRING, err))
 				return 1
 			}
 
 			ruleVAL.rule = withNegate(negate, &nodeCompare{
-				predicate: predicate{field: field, raw_value: raw_value},
+				predicate: predicate{field: field, raw_value: elem.raw_value},
 				op:        op,
-				value:     value,
+				value:     elem.value,
 			})
 		}
 	case 7:
 		ruleDollar = ruleS[rulept-4 : rulept+1]
-//line parser.y:208
+//line parser.y:288
 		{
-			field, raw_value := string(ruleDollar[1].data), string(ruleDollar[4].data)
+			field := string(ruleDollar[1].data)
 			negate := ruleDollar[2].negate
 			op := ruleDollar[3].operator
 
-			hs, err := ParseHexString(raw_value)
+			elem, err := newArrayElement(token_HEX_STRING, ruleDollar[4].data)
 			if err != nil {
-				rulelex.Error(fmt.Sprintf("parsing hex string: %v", err))
+				rulelex.Error(formatParseError(token_HEX_STRING, err))
 				return 1
 			}
 			ruleVAL.rule = withNegate(negate, &nodeCompare{
-				predicate: predicate{field: field, raw_value: raw_value},
+				predicate: predicate{field: field, raw_value: elem.raw_value},
 				op:        op,
-				value:     hs,
+				value:     elem.value,
 			})
 		}
 	case 8:
 		ruleDollar = ruleS[rulept-4 : rulept+1]
-//line parser.y:225
+//line parser.y:305
 		{
-			field, raw_value := string(ruleDollar[1].data), string(ruleDollar[4].data)
+			field := string(ruleDollar[1].data)
 			negate := ruleDollar[2].negate
 			op := ruleDollar[3].operator
 
-			value, err := parseInt(raw_value)
+			elem, err := newArrayElement(token_INT, ruleDollar[4].data)
 			if err != nil {
-				rulelex.Error(err.Error())
+				rulelex.Error(formatParseError(token_INT, err))
 				return 1
 			}
 
 			ruleVAL.rule = withNegate(negate, &nodeCompare{
-				predicate: predicate{field: field, raw_value: raw_value},
+				predicate: predicate{field: field, raw_value: elem.raw_value},
 				op:        op,
-				value:     value,
+				value:     elem.value,
 			})
 		}
 	case 9:
 		ruleDollar = ruleS[rulept-4 : rulept+1]
-//line parser.y:243
+//line parser.y:323
 		{
-			field, raw_value := string(ruleDollar[1].data), string(ruleDollar[4].data)
+			field := string(ruleDollar[1].data)
 			negate := ruleDollar[2].negate
 			op := ruleDollar[3].operator
 
-			value, err := parseFloat(raw_value)
+			elem, err := newArrayElement(token_FLOAT, ruleDollar[4].data)
 			if err != nil {
-				rulelex.Error(fmt.Sprintf("parsing float: %v", err))
+				rulelex.Error(formatParseError(token_FLOAT, err))
 				return 1
 			}
 
 			ruleVAL.rule = withNegate(negate, &nodeCompare{
-				predicate: predicate{field: field, raw_value: raw_value},
+				predicate: predicate{field: field, raw_value: elem.raw_value},
 				op:        op,
-				value:     value,
+				value:     elem.value,
 			})
 		}
 	case 10:
 		ruleDollar = ruleS[rulept-4 : rulept+1]
-//line parser.y:261
+//line parser.y:341
 		{
-			field, raw_value := string(ruleDollar[1].data), string(ruleDollar[4].data)
+			field := string(ruleDollar[1].data)
 			negate := ruleDollar[2].negate
 			op := ruleDollar[3].operator
 
-			value, err := parseBool(raw_value)
+			elem, err := newArrayElement(token_BOOL, ruleDollar[4].data)
 			if err != nil {
-				rulelex.Error(err.Error())
+				rulelex.Error(formatParseError(token_BOOL, err))
 				return 1
 			}
 
 			ruleVAL.rule = withNegate(negate, &nodeCompare{
-				predicate: predicate{field: field, raw_value: raw_value},
+				predicate: predicate{field: field, raw_value: elem.raw_value},
 				op:        op,
-				value:     value,
+				value:     elem.value,
 			})
 		}
 	case 11:
 		ruleDollar = ruleS[rulept-4 : rulept+1]
-//line parser.y:279
+//line parser.y:359
 		{
-			field, raw_value := string(ruleDollar[1].data), string(ruleDollar[4].data)
+			field := string(ruleDollar[1].data)
 			negate := ruleDollar[2].negate
 			op := ruleDollar[3].operator
 
-			ip := net.ParseIP(raw_value)
-			if ip == nil {
-				rulelex.Error(fmt.Sprintf("parsing IP: invalid value %q", raw_value))
+			elem, err := newArrayElement(token_IP, ruleDollar[4].data)
+			if err != nil {
+				rulelex.Error(formatParseError(token_IP, err))
 				return 1
 			}
 
 			ruleVAL.rule = withNegate(negate, &nodeCompare{
-				predicate: predicate{field: field, raw_value: raw_value},
+				predicate: predicate{field: field, raw_value: elem.raw_value},
 				op:        op,
-				value:     ip,
+				value:     elem.value,
 			})
 		}
 	case 12:
 		ruleDollar = ruleS[rulept-4 : rulept+1]
-//line parser.y:297
+//line parser.y:377
 		{
-			field, raw_value := string(ruleDollar[1].data), string(ruleDollar[4].data)
+			field := string(ruleDollar[1].data)
 			negate := ruleDollar[2].negate
 			op := ruleDollar[3].operator
 
-			_, ipnet, err := net.ParseCIDR(raw_value)
+			elem, err := newArrayElement(token_IP_CIDR, ruleDollar[4].data)
 			if err != nil {
-				rulelex.Error(fmt.Sprintf("parsing CIDR: invalid value %v", raw_value))
+				rulelex.Error(formatParseError(token_IP_CIDR, err))
 				return 1
 			}
 
 			ruleVAL.rule = withNegate(negate, &nodeCompare{
-				predicate: predicate{field: field, raw_value: raw_value},
+				predicate: predicate{field: field, raw_value: elem.raw_value},
 				op:        op,
-				value:     ipnet,
+				value:     elem.value,
 			})
 		}
 	case 13:
 		ruleDollar = ruleS[rulept-4 : rulept+1]
-//line parser.y:315
+//line parser.y:395
 		{
-			field, raw_value := string(ruleDollar[1].data), string(ruleDollar[4].data)
-			pattern := raw_value[1 : len(raw_value)-1] // Remove the forward slashes
+			field := string(ruleDollar[1].data)
 			negate := ruleDollar[2].negate
 
-			r_expr, err := regexp.Compile(pattern)
+			elem, err := newArrayElement(token_REGEX, ruleDollar[4].data)
 			if err != nil {
-				rulelex.Error(fmt.Sprintf("parsing regular expression: %v", err))
+				rulelex.Error(formatParseError(token_REGEX, err))
 				return 1
 			}
 
 			ruleVAL.rule = withNegate(negate, &nodeMatch{
-				predicate: predicate{field: field, raw_value: raw_value},
-				reg_expr:  r_expr,
+				predicate: predicate{field: field, raw_value: elem.raw_value},
+				reg_expr:  elem.value.(*regexp.Regexp),
 			})
 		}
 	case 14:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:332
+//line parser.y:412
 		{
 			ruleVAL.rule = &nodeNotZero{string(ruleDollar[1].data)}
 		}
 	case 15:
 		ruleDollar = ruleS[rulept-6 : rulept+1]
-//line parser.y:336
+//line parser.y:416
 		{
 			field := string(ruleDollar[1].data)
 			negate := ruleDollar[2].negate
 			op := ruleDollar[3].operator
 			elements := ruleDollar[5].arrayElems
 
-			// Extract just the values for the node
-			values := make([]any, len(elements))
-			for i, elem := range elements {
-				values[i] = elem.value
-			}
-
 			ruleVAL.rule = withNegate(negate, &nodeCompare{
-				predicate: predicate{field: field, raw_value: formatArrayRawValue(elements)},
-				op:        op,
-				value:     values,
+				predicate: predicate{
+					field:     field,
+					raw_value: formatArrayRawValue(elements),
+				},
+				op:    op,
+				value: extractValues(elements),
 			})
 		}
 	case 16:
 		ruleDollar = ruleS[rulept-6 : rulept+1]
-//line parser.y:355
+//line parser.y:432
 		{
 			field := string(ruleDollar[1].data)
 			negate := ruleDollar[2].negate
 			elements := ruleDollar[5].arrayElems
 
-			// Extract just the values for the node
-			values := make([]any, len(elements))
-			for i, elem := range elements {
-				values[i] = elem.value
-			}
-
 			ruleVAL.rule = withNegate(negate, &nodeIn{
-				predicate: predicate{field: field, raw_value: formatArrayRawValue(elements)},
-				values:    values,
+				predicate: predicate{
+					field:     field,
+					raw_value: formatArrayRawValue(elements),
+				},
+				values: extractValues(elements),
 			})
 		}
 	case 19:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:376
+//line parser.y:450
 		{
 			ruleVAL.operator = token_TEST_GT
 		}
 	case 20:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:377
+//line parser.y:451
 		{
 			ruleVAL.operator = token_TEST_GE
 		}
 	case 21:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:378
+//line parser.y:452
 		{
 			ruleVAL.operator = token_TEST_LT
 		}
 	case 22:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:379
+//line parser.y:453
 		{
 			ruleVAL.operator = token_TEST_LE
 		}
 	case 23:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:383
+//line parser.y:457
 		{
 			ruleVAL.operator = token_TEST_EQ
 		}
 	case 24:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:384
+//line parser.y:458
 		{
 			ruleVAL.operator = token_TEST_NE
 		}
 	case 25:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:385
+//line parser.y:459
 		{
 			ruleVAL.operator = token_TEST_CONTAINS
 		}
 	case 26:
 		ruleDollar = ruleS[rulept-0 : rulept+1]
-//line parser.y:389
+//line parser.y:463
 		{
 			ruleVAL.negate = false
 		}
 	case 27:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:390
+//line parser.y:464
 		{
 			ruleVAL.negate = true
 		}
 	case 28:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:395
+//line parser.y:469
 		{
 			ruleVAL.arrayElems = ruleDollar[1].arrayElems
 		}
 	case 29:
 		ruleDollar = ruleS[rulept-3 : rulept+1]
-//line parser.y:399
+//line parser.y:473
 		{
 			ruleVAL.arrayElems = append(ruleDollar[1].arrayElems, ruleDollar[3].arrayElems...)
 		}
 	case 30:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:407
+//line parser.y:480
 		{
-			raw_value := string(ruleDollar[1].data)
-			value, err := parseString(ruleDollar[1].data)
+			elem, err := newArrayElement(ruleDollar[1].tokType.typ, ruleDollar[1].tokType.data)
 			if err != nil {
-				rulelex.Error(fmt.Sprintf("parsing array string: %v", err))
+				rulelex.Error(formatParseError(ruleDollar[1].tokType.typ, err))
 				return 1
 			}
-			ruleVAL.arrayElems = []arrayElement{{raw_value: raw_value, value: value}}
+			ruleVAL.arrayElems = []arrayElement{elem}
 		}
 	case 31:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:417
+//line parser.y:492
 		{
-			raw_value := string(ruleDollar[1].data)
-			value, err := parseInt(ruleDollar[1].data)
-			if err != nil {
-				rulelex.Error(err.Error())
-				return 1
-			}
-			ruleVAL.arrayElems = []arrayElement{{raw_value: raw_value, value: value}}
+			ruleVAL.tokType = tokenType{typ: token_STRING, data: ruleDollar[1].data}
 		}
 	case 32:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:427
+//line parser.y:496
 		{
-			raw_value := string(ruleDollar[1].data)
-			value, err := parseFloat(ruleDollar[1].data)
-			if err != nil {
-				rulelex.Error(fmt.Sprintf("parsing array float: %v", err))
-				return 1
-			}
-			ruleVAL.arrayElems = []arrayElement{{raw_value: raw_value, value: value}}
+			ruleVAL.tokType = tokenType{typ: token_INT, data: ruleDollar[1].data}
 		}
 	case 33:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:437
+//line parser.y:500
 		{
-			raw_value := string(ruleDollar[1].data)
-			value, err := parseBool(ruleDollar[1].data)
-			if err != nil {
-				rulelex.Error(err.Error())
-				return 1
-			}
-			ruleVAL.arrayElems = []arrayElement{{raw_value: raw_value, value: value}}
+			ruleVAL.tokType = tokenType{typ: token_FLOAT, data: ruleDollar[1].data}
 		}
 	case 34:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:447
+//line parser.y:504
 		{
-			raw_value := string(ruleDollar[1].data)
-			ip := net.ParseIP(raw_value)
-			if ip == nil {
-				rulelex.Error(fmt.Sprintf("parsing IP: invalid value %q", raw_value))
-				return 1
-			}
-			ruleVAL.arrayElems = []arrayElement{{raw_value: raw_value, value: ip}}
+			ruleVAL.tokType = tokenType{typ: token_BOOL, data: ruleDollar[1].data}
 		}
 	case 35:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:457
+//line parser.y:508
 		{
-			raw_value := string(ruleDollar[1].data)
-			_, ipnet, err := net.ParseCIDR(raw_value)
-			if err != nil {
-				rulelex.Error(fmt.Sprintf("parsing CIDR: invalid value %v", raw_value))
-				return 1
-			}
-			ruleVAL.arrayElems = []arrayElement{{raw_value: raw_value, value: ipnet}}
+			ruleVAL.tokType = tokenType{typ: token_IP, data: ruleDollar[1].data}
 		}
 	case 36:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:467
+//line parser.y:512
 		{
-			raw_value := string(ruleDollar[1].data)
-			hs, err := ParseHexString(raw_value)
-			if err != nil {
-				rulelex.Error(fmt.Sprintf("parsing hex string: %v", err))
-				return 1
-			}
-			ruleVAL.arrayElems = []arrayElement{{raw_value: raw_value, value: hs}}
+			ruleVAL.tokType = tokenType{typ: token_IP_CIDR, data: ruleDollar[1].data}
+		}
+	case 37:
+		ruleDollar = ruleS[rulept-1 : rulept+1]
+//line parser.y:516
+		{
+			ruleVAL.tokType = tokenType{typ: token_HEX_STRING, data: ruleDollar[1].data}
 		}
 	}
 	goto rulestack /* stack new state and value */
