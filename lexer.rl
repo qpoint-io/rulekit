@@ -7,18 +7,26 @@ import (
 %%{
 	machine ruleLexerImpl;
 
-	# Primitive types
+	# Basic types
+	# ---
+
 	int    = ('-' | '+')? digit+;
 	float  = ('-' | '+')? digit* '.' digit+;
 	bool   = 'true'i | 'false'i;
 	
-	# Quoted strings
+	# String types
+	# ---
+
 	dstring = '"' ([^"] | '\\n' | '\\t' | '\\r' | '\\"')* '"';
 	sstring = "'" ([^'] | '\\n' | '\\t' | '\\r' | '\\\'')* "'";
 	string  = dstring | sstring;
-	
-	# IP addresses
+	# hex values e.g. 47:45:54 == "GET"
 	hex   = [0-9a-fA-F];
+	hex_string = hex{2} (':' hex{2})*;
+	
+	# Network types
+	# ---
+	
 	octet = digit | ( 0x31..0x39 digit ) | ( "1" digit{2} ) |( "2" 0x30..0x34 digit ) | ( "25" 0x30..0x35 );
 	ipv4  = octet '.' octet '.' octet '.' octet;
 	h16   = hex{1,4};
@@ -35,12 +43,13 @@ import (
 	ip = ipv4 | ipv6;
 	ip_cidr = ip '/' digit{1,2};
 	
-	# hex values e.g. 47:45:54 == "GET"
-	hex_string = hex{2} (':' hex{2})*;
 	# MAC addresses e.g. 47:45:54 or 47-45-54
 	# mac_delim = ':' | '-';
 	# mac = hex{2} (mac_delim hex{2}){5,6};
 
+	# Regex types
+	# ---
+	
 	escaped_regex_char = '\\' any;
 	# /some\/thing/ -style regex literal
     not_slash_or_escape = any - ('/' | '\\');
@@ -52,37 +61,44 @@ import (
     regex_pattern = regex_forward_slash | regex_pipe;
 
 	# Whitespace and comments
+	# ---
+	
 	ws = [ \t\n\r];
 	comment_line  = '--' [^\n]* '\n'?;
     comment_block = '/*' (any - '*/')* '*/';
 
-	#field_part = (alpha | '_') (alpha | digit | '_')*;  # Each part must start with alpha/_
-	#field = field_part ('.' field_part)*;               # Parts can be separated by single dots
-	field = (alpha | digit | [._])+;
+	field_char = alpha | digit | '_' | '.';
+    field = (alpha | '_') field_char*;  # Must start with alpha or underscore
+	
+	# --- lexer logic ---
 	
 	main := |*
         # Skip comments and whitespace
         comment_line | comment_block | ws => { /* skip */ };
 
 		# Control
-		'(' => { token_kind = token_LPAREN; fbreak; };
-		')' => { token_kind = token_RPAREN; fbreak; };
+		'(' => { token_kind = token_LPAREN;   fbreak; };
+		')' => { token_kind = token_RPAREN;   fbreak; };
+		'[' => { token_kind = token_LBRACKET; fbreak; };
+		']' => { token_kind = token_RBRACKET; fbreak; };
+		',' => { token_kind = token_COMMA;    fbreak; };
 
 		# Logical operators
-		('!' | 'not'i)  => { token_kind = token_TEST_NOT; fbreak; };
-		('&&' | 'and'i) => { token_kind = token_TEST_AND; fbreak; };
-		('||' | 'or'i)  => { token_kind = token_TEST_OR;  fbreak; };
+		('!' | 'not'i)  => { token_kind = op_NOT; fbreak; };
+		('&&' | 'and'i) => { token_kind = op_AND; fbreak; };
+		('||' | 'or'i)  => { token_kind = op_OR;  fbreak; };
 
 		# Comparison operators
-		('==' | 'eq'i) => { token_kind = token_TEST_EQ; fbreak; };
-		('!=' | 'ne'i) => { token_kind = token_TEST_NE; fbreak; };
-		('<' | 'lt'i)  => { token_kind = token_TEST_LT; fbreak; };
-		('<=' | 'le'i) => { token_kind = token_TEST_LE; fbreak; };
-		('>' | 'gt'i)  => { token_kind = token_TEST_GT; fbreak; };
-		('>=' | 'ge'i) => { token_kind = token_TEST_GE; fbreak; };
+		('==' | 'eq'i) => { token_kind = op_EQ; fbreak; };
+		('!=' | 'ne'i) => { token_kind = op_NE; fbreak; };
+		('<' | 'lt'i)  => { token_kind = op_LT; fbreak; };
+		('<=' | 'le'i) => { token_kind = op_LE; fbreak; };
+		('>' | 'gt'i)  => { token_kind = op_GT; fbreak; };
+		('>=' | 'ge'i) => { token_kind = op_GE; fbreak; };
 
-		'contains'i         => { token_kind = token_TEST_CONTAINS; fbreak; };
-		('=~' | 'matches'i) => { token_kind = token_TEST_MATCHES;  fbreak; };
+		'contains'i         => { token_kind = op_CONTAINS; fbreak; };
+		('=~' | 'matches'i) => { token_kind = op_MATCHES;  fbreak; };
+		'in'i               => { token_kind = op_IN;       fbreak; };
 
 		# Values
 		int    => { token_kind = token_INT;    fbreak; };
@@ -142,10 +158,10 @@ func (lexer *ruleLexerImpl) Lex(lval *ruleSymType) int {
     token_kind := 0
 	%% write exec;
     if lexer.cs != ruleLexerImpl_error {
-		lval.data = safeIndex(lexer.data, lexer.ts, lexer.te)
+		lval.valueLiteral = safeIndex(lexer.data, lexer.ts, lexer.te)
     }
 	if ruleDebug > 4 {
-		fmt.Printf("Token text: %s\n", string(lval.data))
+		fmt.Printf("Token text: %s\n", string(lval.valueLiteral))
 	}
 
 	return token_kind

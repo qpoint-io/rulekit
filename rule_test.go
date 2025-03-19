@@ -1,6 +1,8 @@
 package rulekit
 
 import (
+	"encoding/json"
+	"fmt"
 	"net"
 	"os"
 	"reflect"
@@ -652,8 +654,8 @@ func TestOptionalNegate(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "field =~ /pattern/", f.String())
 
-		require.True(t, f.Eval(map[string]any{"field": "pattern"}).PassStrict())
-		require.True(t, f.Eval(map[string]any{"field": "other"}).FailStrict())
+		assertEval(t, f, map[string]any{"field": "pattern"}, true)
+		assertEval(t, f, map[string]any{"field": "other"}, false)
 
 		r, ok := f.(*rule)
 		require.True(t, ok)
@@ -666,8 +668,8 @@ func TestOptionalNegate(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "field not =~ /pattern/", f.String())
 
-		require.True(t, f.Eval(map[string]any{"field": "pattern"}).FailStrict())
-		require.True(t, f.Eval(map[string]any{"field": "other"}).PassStrict())
+		assertEval(t, f, map[string]any{"field": "pattern"}, false)
+		assertEval(t, f, map[string]any{"field": "other"}, true)
 
 		r, ok := f.(*rule)
 		require.True(t, ok)
@@ -682,8 +684,8 @@ func TestOptionalNegate(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, `field not contains "str"`, f.String())
 
-		require.True(t, f.Eval(map[string]any{"field": "string"}).FailStrict())
-		require.True(t, f.Eval(map[string]any{"field": "other"}).PassStrict())
+		assertEval(t, f, map[string]any{"field": "string"}, false)
+		assertEval(t, f, map[string]any{"field": "other"}, true)
 
 		r, ok := f.(*rule)
 		require.True(t, ok)
@@ -692,4 +694,122 @@ func TestOptionalNegate(t *testing.T) {
 		_, ok = n.right.(*nodeCompare)
 		require.True(t, ok)
 	}
+}
+
+func TestArray(t *testing.T) {
+	assertParseError(t, `field == [1,]`)
+	assertParseError(t, `field == [1, [1, 2], 3]`)
+	{
+		f := MustParse(`field == [1, "str", 3]`)
+		require.Equal(t, `field == [1, "str", 3]`, f.String())
+
+		assertEval(t, f, KV{"field": 3}, true)
+		assertEval(t, f, KV{"field": 4}, false)
+		assertEval(t, f, KV{"field": "str"}, true)
+	}
+
+	{
+		f := MustParse(`field contains [1, "str", 3]`)
+		require.Equal(t, `field contains [1, "str", 3]`, f.String())
+
+		// contains does not support arrays on the right side
+		assertEval(t, f, KV{"field": "string"}, false)
+		assertEval(t, f, KV{"field": "str"}, false)
+		assertEval(t, f, KV{"field": 123}, false)
+	}
+
+	{
+		f := MustParse(`field contains "str"`)
+		require.Equal(t, `field contains "str"`, f.String())
+
+		assertEval(t, f, KV{"field": "string"}, true) // substring
+		assertEval(t, f, KV{"field": []any{"str", 123}}, true)
+		assertEval(t, f, KV{"field": []any{"test", "string"}}, false)
+	}
+
+	assertParseEval(t, `f == "string"`, KV{"f": []any{1, "str", 3}}, false)       // false (no element equals "string")
+	assertParseEval(t, `f != "string"`, KV{"f": []any{1, "str", 3}}, true)        // true  (no element equals "string")
+	assertParseEval(t, `f contains "string"`, KV{"f": []any{1, "str", 3}}, false) // false (array doesn't contain "string")
+}
+
+func TestIn(t *testing.T) {
+	{
+		f := MustParse(`field in [1, "str", 3]`)
+		require.Equal(t, `field in [1, "str", 3]`, f.String())
+
+		assertEval(t, f, KV{"field": "string"}, false)
+		assertEval(t, f, KV{"field": "str"}, true)
+		assertEval(t, f, KV{"field": "s"}, false)
+		assertEval(t, f, KV{"field": 123}, false)
+	}
+
+	{
+		f := MustParse(`field not in [1.1.1.1, 192.168.0.0/16]`)
+		require.Equal(t, `field not in [1.1.1.1, 192.168.0.0/16]`, f.String())
+
+		for ip, want := range map[string]bool{
+			"1.1.1.1":     false,
+			"192.168.0.0": false,
+			"192.168.0.1": false,
+			"192.0.1.1":   true,
+			"1.1.1.2":     true,
+		} {
+			v := net.ParseIP(ip)
+			assertEval(t, f, KV{"field": v}, want)
+		}
+	}
+}
+
+func assertParseEval(t *testing.T, rule string, input KV, pass bool) {
+	r := MustParse(rule)
+	assertEval(t, r, input, pass)
+}
+
+// assertEval is a helper function to assert the result of a rule evaluation.
+// It enforces strict evaluation.
+func assertEval(t *testing.T, r Rule, input KV, pass bool) {
+	t.Helper()
+	res := r.Eval(input)
+
+	var (
+		ll   []string
+		fail bool
+	)
+	if res.Pass != pass {
+		fail = true
+		ll = append(ll, fmt.Sprintf("⛑️  wanted [%t] got [%t]", pass, res.Pass))
+	}
+	if !res.Strict() {
+		fail = true
+		ll = append(ll, fmt.Sprintf("⛑️  missing fields: %v", res.MissingFields.Items()))
+	}
+	if fail {
+		ll = append(ll, fmt.Sprintf("rule:\t%s", r.String()))
+		ll = append(ll, fmt.Sprintf("eval:\t%s", res.EvaluatedRule.String()))
+		ll = append(ll, fmt.Sprintf("input:\t%s", toJSON(t, input)))
+		t.Errorf("%s\n%s", "FAIL", strings.Join(ll, "\n"))
+	}
+}
+
+func assertParseError(t *testing.T, rule string) {
+	_, err := Parse(rule)
+	assert.Error(t, err)
+}
+
+func toJSON(t *testing.T, v any) string {
+	t.Helper()
+	b, err := json.Marshal(v)
+	require.NoError(t, err)
+	return string(b)
+}
+
+func TestOperationValidity(t *testing.T) {
+	assertParseError(t, `f >= "string"`)
+	assertParseError(t, `f < 1.2.3.4`)
+	assertParseError(t, `f > 01:02:03:04:05:06`)
+	assertParseError(t, `f <= true`)
+	assertParseError(t, `f > /pattern/`)
+
+	_ = MustParse(`f >= 1`)
+	_ = MustParse(`f < 1.5`)
 }
