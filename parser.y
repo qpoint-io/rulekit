@@ -108,14 +108,14 @@ func parseRegex[T interface{ string | []byte }](data T) (*regexp.Regexp, error) 
 	return regexp.Compile(pattern)
 }
 
-// Add a new struct for array elements
-type arrayElement struct {
+// Add a new type to represent parsed values
+type parsedValue struct {
 	raw_value string
 	value     any
 }
 
 // Helper to format array raw value nicely
-func formatArrayRawValue(elements []arrayElement) string {
+func formatArrayRawValue(elements []parsedValue) string {
 	parts := make([]string, len(elements))
 	for i, elem := range elements {
 		parts[i] = elem.raw_value
@@ -123,7 +123,7 @@ func formatArrayRawValue(elements []arrayElement) string {
 	return fmt.Sprintf("[%s]", strings.Join(parts, ", "))
 }
 
-func extractValues(elements []arrayElement) []any {
+func extractValues(elements []parsedValue) []any {
 	values := make([]any, len(elements))
 	for i, elem := range elements {
 		values[i] = elem.value
@@ -131,9 +131,12 @@ func extractValues(elements []arrayElement) []any {
 	return values
 }
 
-// Add a new helper function to handle value parsing consistently
-func parseValue(token_type int, data []byte) (raw string, value any, err error) {
-	raw = string(data)  // Always set the raw value
+func parseToken(token_type int, data []byte) (parsedValue, error) {
+	var (
+		raw = string(data)
+		value any
+		err error
+	)
 	switch token_type {
 	case token_STRING:
 		value, err = parseString(data)
@@ -156,16 +159,10 @@ func parseValue(token_type int, data []byte) (raw string, value any, err error) 
 	default:
 		err = fmt.Errorf("unsupported token type %d", token_type)
 	}
-	return
-}
-
-// Add helper for creating array elements
-func newArrayElement(token_type int, data []byte) (arrayElement, error) {
-	raw, value, err := parseValue(token_type, data)
 	if err != nil {
-		return arrayElement{}, fmt.Errorf("parsing %T: %v", token_type, err)
+		return parsedValue{}, fmt.Errorf("parsing %s: %v", tokenTypeString(token_type), err)
 	}
-	return arrayElement{raw_value: raw, value: value}, nil
+	return parsedValue{raw_value: raw, value: value}, nil
 }
 
 // Add token type struct for mid-rule actions
@@ -174,26 +171,27 @@ type tokenType struct {
 	data []byte
 }
 
-// Update error formatting for array values
-func formatParseError(typ int, err error) string {
-	typeStr := "value"
+func tokenTypeString(typ int) string {
 	switch typ {
 	case token_STRING:
-		typeStr = "string"
+		return "string"
 	case token_INT:
-		typeStr = "integer"
+		return "integer"
 	case token_FLOAT:
-		typeStr = "float"
+		return "float"
 	case token_BOOL:
-		typeStr = "boolean"
+		return "boolean"
 	case token_IP:
-		typeStr = "IP"
+		return "IP"
 	case token_IP_CIDR:
-		typeStr = "CIDR"
+		return "CIDR"
 	case token_HEX_STRING:
-		typeStr = "hex string"
+		return "hex string"
+	case token_REGEX:
+		return "regex"
+	default:
+		return "unknown"
 	}
-	return fmt.Sprintf("parsing array %s: %v", typeStr, err)
 }
 %}
 
@@ -202,7 +200,7 @@ func formatParseError(typ int, err error) string {
 	data      []byte
 	operator  int
 	negate    bool
-	arrayElems   []arrayElement  // Change type from []any to []arrayElement
+	arrayElems   []parsedValue  // Change type from []any to []parsedValue
 	tokType     tokenType    // Add new type for mid-rule actions
 }
 
@@ -272,9 +270,9 @@ predicate:
 		negate := $2
 		op := $3
 		
-		elem, err := newArrayElement(token_STRING, $4)
+		elem, err := parseToken(token_STRING, $4)
 		if err != nil {
-			rulelex.Error(formatParseError(token_STRING, err))
+			rulelex.Error(err.Error())
 			return 1
 		}
 		
@@ -290,9 +288,9 @@ predicate:
 		negate := $2
 		op := $3
 
-		elem, err := newArrayElement(token_HEX_STRING, $4)
+		elem, err := parseToken(token_HEX_STRING, $4)
 		if err != nil {
-			rulelex.Error(formatParseError(token_HEX_STRING, err))
+			rulelex.Error(err.Error())
 			return 1
 		}
 		$$ = withNegate(negate, &nodeCompare{
@@ -307,9 +305,9 @@ predicate:
 		negate := $2
 		op := $3
 
-		elem, err := newArrayElement(token_INT, $4)
+		elem, err := parseToken(token_INT, $4)
 		if err != nil {
-			rulelex.Error(formatParseError(token_INT, err))
+			rulelex.Error(err.Error())
 			return 1
 		}
 		
@@ -325,9 +323,9 @@ predicate:
 		negate := $2
 		op := $3
 
-		elem, err := newArrayElement(token_FLOAT, $4)
+		elem, err := parseToken(token_FLOAT, $4)
 		if err != nil {
-			rulelex.Error(formatParseError(token_FLOAT, err))
+			rulelex.Error(err.Error())
 			return 1
 		}
 		
@@ -343,9 +341,9 @@ predicate:
 		negate := $2
 		op := $3
 
-		elem, err := newArrayElement(token_BOOL, $4)
+		elem, err := parseToken(token_BOOL, $4)
 		if err != nil {
-			rulelex.Error(formatParseError(token_BOOL, err))
+			rulelex.Error(err.Error())
 			return 1
 		}
 		
@@ -361,9 +359,9 @@ predicate:
 		negate := $2
 		op := $3
 
-		elem, err := newArrayElement(token_IP, $4)
+		elem, err := parseToken(token_IP, $4)
 		if err != nil {
-			rulelex.Error(formatParseError(token_IP, err))
+			rulelex.Error(err.Error())
 			return 1
 		}
 		
@@ -379,9 +377,9 @@ predicate:
 		negate := $2
 		op := $3
 
-		elem, err := newArrayElement(token_IP_CIDR, $4)
+		elem, err := parseToken(token_IP_CIDR, $4)
 		if err != nil {
-			rulelex.Error(formatParseError(token_IP_CIDR, err))
+			rulelex.Error(err.Error())
 			return 1
 		}
 		
@@ -396,9 +394,9 @@ predicate:
 		field := string($1)
 		negate := $2
 		
-		elem, err := newArrayElement(token_REGEX, $4)
+		elem, err := parseToken(token_REGEX, $4)
 		if err != nil {
-			rulelex.Error(formatParseError(token_REGEX, err))
+			rulelex.Error(err.Error())
 			return 1
 		}
 		
@@ -478,12 +476,12 @@ array_values:
 array_value:
 	array_token
 	{
-		elem, err := newArrayElement($1.typ, $1.data)
+		elem, err := parseToken($1.typ, $1.data)
 		if err != nil {
-			rulelex.Error(formatParseError($1.typ, err))
+			rulelex.Error(err.Error())
 			return 1
 		}
-		$$ = []arrayElement{elem}
+		$$ = []parsedValue{elem}
 	}
 	;
 
