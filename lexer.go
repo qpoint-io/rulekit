@@ -1090,37 +1090,37 @@ _eof_trans:
 		case 31:
 //line lexer.rl:76
 ( lexer.te) = ( lexer.p)+1
-{ token_kind = token_TEST_AND; ( lexer.p)++; goto _out
+{ token_kind = op_AND; ( lexer.p)++; goto _out
  }
 		case 32:
 //line lexer.rl:77
 ( lexer.te) = ( lexer.p)+1
-{ token_kind = token_TEST_OR;  ( lexer.p)++; goto _out
+{ token_kind = op_OR;  ( lexer.p)++; goto _out
  }
 		case 33:
 //line lexer.rl:80
 ( lexer.te) = ( lexer.p)+1
-{ token_kind = token_TEST_EQ; ( lexer.p)++; goto _out
+{ token_kind = op_EQ; ( lexer.p)++; goto _out
  }
 		case 34:
 //line lexer.rl:81
 ( lexer.te) = ( lexer.p)+1
-{ token_kind = token_TEST_NE; ( lexer.p)++; goto _out
+{ token_kind = op_NE; ( lexer.p)++; goto _out
  }
 		case 35:
 //line lexer.rl:83
 ( lexer.te) = ( lexer.p)+1
-{ token_kind = token_TEST_LE; ( lexer.p)++; goto _out
+{ token_kind = op_LE; ( lexer.p)++; goto _out
  }
 		case 36:
 //line lexer.rl:85
 ( lexer.te) = ( lexer.p)+1
-{ token_kind = token_TEST_GE; ( lexer.p)++; goto _out
+{ token_kind = op_GE; ( lexer.p)++; goto _out
  }
 		case 37:
 //line lexer.rl:88
 ( lexer.te) = ( lexer.p)+1
-{ token_kind = token_TEST_MATCHES;  ( lexer.p)++; goto _out
+{ token_kind = op_MATCHES;  ( lexer.p)++; goto _out
  }
 		case 38:
 //line lexer.rl:95
@@ -1153,19 +1153,19 @@ _eof_trans:
 //line lexer.rl:75
 ( lexer.te) = ( lexer.p)
 ( lexer.p)--
-{ token_kind = token_TEST_NOT; ( lexer.p)++; goto _out
+{ token_kind = op_NOT; ( lexer.p)++; goto _out
  }
 		case 44:
 //line lexer.rl:82
 ( lexer.te) = ( lexer.p)
 ( lexer.p)--
-{ token_kind = token_TEST_LT; ( lexer.p)++; goto _out
+{ token_kind = op_LT; ( lexer.p)++; goto _out
  }
 		case 45:
 //line lexer.rl:84
 ( lexer.te) = ( lexer.p)
 ( lexer.p)--
-{ token_kind = token_TEST_GT; ( lexer.p)++; goto _out
+{ token_kind = op_GT; ( lexer.p)++; goto _out
  }
 		case 46:
 //line lexer.rl:92
@@ -1236,51 +1236,51 @@ _eof_trans:
  /* skip */ }
 	case 7:
 	{( lexer.p) = (( lexer.te)) - 1
- token_kind = token_TEST_NOT; ( lexer.p)++; goto _out
+ token_kind = op_NOT; ( lexer.p)++; goto _out
  }
 	case 8:
 	{( lexer.p) = (( lexer.te)) - 1
- token_kind = token_TEST_AND; ( lexer.p)++; goto _out
+ token_kind = op_AND; ( lexer.p)++; goto _out
  }
 	case 9:
 	{( lexer.p) = (( lexer.te)) - 1
- token_kind = token_TEST_OR;  ( lexer.p)++; goto _out
+ token_kind = op_OR;  ( lexer.p)++; goto _out
  }
 	case 10:
 	{( lexer.p) = (( lexer.te)) - 1
- token_kind = token_TEST_EQ; ( lexer.p)++; goto _out
+ token_kind = op_EQ; ( lexer.p)++; goto _out
  }
 	case 11:
 	{( lexer.p) = (( lexer.te)) - 1
- token_kind = token_TEST_NE; ( lexer.p)++; goto _out
+ token_kind = op_NE; ( lexer.p)++; goto _out
  }
 	case 12:
 	{( lexer.p) = (( lexer.te)) - 1
- token_kind = token_TEST_LT; ( lexer.p)++; goto _out
+ token_kind = op_LT; ( lexer.p)++; goto _out
  }
 	case 13:
 	{( lexer.p) = (( lexer.te)) - 1
- token_kind = token_TEST_LE; ( lexer.p)++; goto _out
+ token_kind = op_LE; ( lexer.p)++; goto _out
  }
 	case 14:
 	{( lexer.p) = (( lexer.te)) - 1
- token_kind = token_TEST_GT; ( lexer.p)++; goto _out
+ token_kind = op_GT; ( lexer.p)++; goto _out
  }
 	case 15:
 	{( lexer.p) = (( lexer.te)) - 1
- token_kind = token_TEST_GE; ( lexer.p)++; goto _out
+ token_kind = op_GE; ( lexer.p)++; goto _out
  }
 	case 16:
 	{( lexer.p) = (( lexer.te)) - 1
- token_kind = token_TEST_CONTAINS; ( lexer.p)++; goto _out
+ token_kind = op_CONTAINS; ( lexer.p)++; goto _out
  }
 	case 17:
 	{( lexer.p) = (( lexer.te)) - 1
- token_kind = token_TEST_MATCHES;  ( lexer.p)++; goto _out
+ token_kind = op_MATCHES;  ( lexer.p)++; goto _out
  }
 	case 18:
 	{( lexer.p) = (( lexer.te)) - 1
- token_kind = token_TEST_IN;       ( lexer.p)++; goto _out
+ token_kind = op_IN;       ( lexer.p)++; goto _out
  }
 	case 19:
 	{( lexer.p) = (( lexer.te)) - 1

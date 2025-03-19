@@ -72,21 +72,21 @@ import (
 		',' => { token_kind = token_COMMA; fbreak; };
 
 		# Logical operators
-		('!' | 'not'i)  => { token_kind = token_TEST_NOT; fbreak; };
-		('&&' | 'and'i) => { token_kind = token_TEST_AND; fbreak; };
-		('||' | 'or'i)  => { token_kind = token_TEST_OR;  fbreak; };
+		('!' | 'not'i)  => { token_kind = op_NOT; fbreak; };
+		('&&' | 'and'i) => { token_kind = op_AND; fbreak; };
+		('||' | 'or'i)  => { token_kind = op_OR;  fbreak; };
 
 		# Comparison operators
-		('==' | 'eq'i) => { token_kind = token_TEST_EQ; fbreak; };
-		('!=' | 'ne'i) => { token_kind = token_TEST_NE; fbreak; };
-		('<' | 'lt'i)  => { token_kind = token_TEST_LT; fbreak; };
-		('<=' | 'le'i) => { token_kind = token_TEST_LE; fbreak; };
-		('>' | 'gt'i)  => { token_kind = token_TEST_GT; fbreak; };
-		('>=' | 'ge'i) => { token_kind = token_TEST_GE; fbreak; };
+		('==' | 'eq'i) => { token_kind = op_EQ; fbreak; };
+		('!=' | 'ne'i) => { token_kind = op_NE; fbreak; };
+		('<' | 'lt'i)  => { token_kind = op_LT; fbreak; };
+		('<=' | 'le'i) => { token_kind = op_LE; fbreak; };
+		('>' | 'gt'i)  => { token_kind = op_GT; fbreak; };
+		('>=' | 'ge'i) => { token_kind = op_GE; fbreak; };
 
-		'contains'i         => { token_kind = token_TEST_CONTAINS; fbreak; };
-		('=~' | 'matches'i) => { token_kind = token_TEST_MATCHES;  fbreak; };
-		'in'i               => { token_kind = token_TEST_IN;       fbreak; };
+		'contains'i         => { token_kind = op_CONTAINS; fbreak; };
+		('=~' | 'matches'i) => { token_kind = op_MATCHES;  fbreak; };
+		'in'i               => { token_kind = op_IN;       fbreak; };
 
 		# Values
 		int    => { token_kind = token_INT;    fbreak; };

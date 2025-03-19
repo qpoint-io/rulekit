@@ -33,23 +33,23 @@ func SetErrorVerbose(verbose bool) {
 
 func operatorToString(op int) string {
 	switch op {
-	case token_TEST_EQ:
+	case op_EQ:
 		return "=="
-	case token_TEST_NE:
+	case op_NE:
 		return "!="
-	case token_TEST_GT:
+	case op_GT:
 		return ">"
-	case token_TEST_GE:
+	case op_GE:
 		return ">="
-	case token_TEST_LT:
+	case op_LT:
 		return "<"
-	case token_TEST_LE:
+	case op_LE:
 		return "<="
-	case token_TEST_CONTAINS:
+	case op_CONTAINS:
 		return "contains"
-	case token_TEST_MATCHES:
+	case op_MATCHES:
 		return "matches"
-	case token_TEST_IN:
+	case op_IN:
 		return "in"
 	default:
 		return "unknown"
@@ -220,19 +220,19 @@ func tokenTypeString(typ int) string {
 %token <data> token_REGEX
 
 // Tokens without values
-%token token_TEST_NOT token_TEST_AND token_TEST_OR
+%token op_NOT op_AND op_OR
 %token token_LPAREN token_RPAREN
 %token token_LBRACKET token_RBRACKET
 %token token_COMMA
-%token token_TEST_EQ token_TEST_NE
-%token token_TEST_GT token_TEST_GE token_TEST_LT token_TEST_LE
-%token token_TEST_CONTAINS token_TEST_MATCHES token_TEST_IN
+%token op_EQ op_NE
+%token op_GT op_GE op_LT op_LE
+%token op_CONTAINS op_MATCHES op_IN
 %token token_ERROR
 
 // Operator precedence
-%left token_TEST_AND
-%left token_TEST_OR
-%left token_TEST_NOT
+%left op_AND
+%left op_OR
+%left op_NOT
 
 %%
 search_condition:
@@ -241,17 +241,17 @@ search_condition:
 		$$ = $1
 		rulelex.Result($$)
 	}
-	| search_condition token_TEST_AND search_condition
+	| search_condition op_AND search_condition
 	{
 		$$ = &nodeAnd{left: $1, right: $3}
 		rulelex.Result($$)
 	}
-	| search_condition token_TEST_OR search_condition
+	| search_condition op_OR search_condition
 	{
 		$$ = &nodeOr{left: $1, right: $3}
 		rulelex.Result($$)
 	}
-	| token_TEST_NOT search_condition
+	| op_NOT search_condition
 	{
 		$$ = &nodeNot{right: $2}
 		rulelex.Result($$)
@@ -389,7 +389,7 @@ predicate:
 			value: elem.value,
 		})
 	}
-	| token_FIELD optional_negate token_TEST_MATCHES token_REGEX
+	| token_FIELD optional_negate op_MATCHES token_REGEX
 	{
 		field := string($1)
 		negate := $2
@@ -426,7 +426,7 @@ predicate:
 			value: extractValues(elements),
 		})
 	}
-	| token_FIELD optional_negate token_TEST_IN token_LBRACKET array_values token_RBRACKET
+	| token_FIELD optional_negate op_IN token_LBRACKET array_values token_RBRACKET
 	{
 		field := string($1)
 		negate := $2
@@ -445,21 +445,21 @@ predicate:
 comparison_operator: ineq_operator | eq_operator;
 
 ineq_operator:
-	token_TEST_GT        { $$ = token_TEST_GT }
-	| token_TEST_GE      { $$ = token_TEST_GE }
-	| token_TEST_LT      { $$ = token_TEST_LT }
-	| token_TEST_LE      { $$ = token_TEST_LE }
+	op_GT        { $$ = op_GT }
+	| op_GE      { $$ = op_GE }
+	| op_LT      { $$ = op_LT }
+	| op_LE      { $$ = op_LE }
 	;
 
 eq_operator:
-	token_TEST_EQ         { $$ = token_TEST_EQ       }
-	| token_TEST_NE       { $$ = token_TEST_NE       }
-	| token_TEST_CONTAINS { $$ = token_TEST_CONTAINS }
+	op_EQ         { $$ = op_EQ       }
+	| op_NE       { $$ = op_NE       }
+	| op_CONTAINS { $$ = op_CONTAINS }
 	;
 
 optional_negate:
 	{ $$ = false }
-	| token_TEST_NOT { $$ = true };
+	| op_NOT { $$ = true };
 
 // Array handling rules
 array_values:

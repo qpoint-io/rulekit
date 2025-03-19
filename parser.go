@@ -40,23 +40,23 @@ func SetErrorVerbose(verbose bool) {
 
 func operatorToString(op int) string {
 	switch op {
-	case token_TEST_EQ:
+	case op_EQ:
 		return "=="
-	case token_TEST_NE:
+	case op_NE:
 		return "!="
-	case token_TEST_GT:
+	case op_GT:
 		return ">"
-	case token_TEST_GE:
+	case op_GE:
 		return ">="
-	case token_TEST_LT:
+	case op_LT:
 		return "<"
-	case token_TEST_LE:
+	case op_LE:
 		return "<="
-	case token_TEST_CONTAINS:
+	case op_CONTAINS:
 		return "contains"
-	case token_TEST_MATCHES:
+	case op_MATCHES:
 		return "matches"
-	case token_TEST_IN:
+	case op_IN:
 		return "in"
 	default:
 		return "unknown"
@@ -221,23 +221,23 @@ const token_BOOL = 57351
 const token_IP_CIDR = 57352
 const token_IP = 57353
 const token_REGEX = 57354
-const token_TEST_NOT = 57355
-const token_TEST_AND = 57356
-const token_TEST_OR = 57357
+const op_NOT = 57355
+const op_AND = 57356
+const op_OR = 57357
 const token_LPAREN = 57358
 const token_RPAREN = 57359
 const token_LBRACKET = 57360
 const token_RBRACKET = 57361
 const token_COMMA = 57362
-const token_TEST_EQ = 57363
-const token_TEST_NE = 57364
-const token_TEST_GT = 57365
-const token_TEST_GE = 57366
-const token_TEST_LT = 57367
-const token_TEST_LE = 57368
-const token_TEST_CONTAINS = 57369
-const token_TEST_MATCHES = 57370
-const token_TEST_IN = 57371
+const op_EQ = 57363
+const op_NE = 57364
+const op_GT = 57365
+const op_GE = 57366
+const op_LT = 57367
+const op_LE = 57368
+const op_CONTAINS = 57369
+const op_MATCHES = 57370
+const op_IN = 57371
 const token_ERROR = 57372
 
 var ruleToknames = [...]string{
@@ -253,23 +253,23 @@ var ruleToknames = [...]string{
 	"token_IP_CIDR",
 	"token_IP",
 	"token_REGEX",
-	"token_TEST_NOT",
-	"token_TEST_AND",
-	"token_TEST_OR",
+	"op_NOT",
+	"op_AND",
+	"op_OR",
 	"token_LPAREN",
 	"token_RPAREN",
 	"token_LBRACKET",
 	"token_RBRACKET",
 	"token_COMMA",
-	"token_TEST_EQ",
-	"token_TEST_NE",
-	"token_TEST_GT",
-	"token_TEST_GE",
-	"token_TEST_LT",
-	"token_TEST_LE",
-	"token_TEST_CONTAINS",
-	"token_TEST_MATCHES",
-	"token_TEST_IN",
+	"op_EQ",
+	"op_NE",
+	"op_GT",
+	"op_GE",
+	"op_LT",
+	"op_LE",
+	"op_CONTAINS",
+	"op_MATCHES",
+	"op_IN",
 	"token_ERROR",
 }
 
@@ -940,43 +940,43 @@ ruledefault:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
 //line parser.y:448
 		{
-			ruleVAL.operator = token_TEST_GT
+			ruleVAL.operator = op_GT
 		}
 	case 20:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
 //line parser.y:449
 		{
-			ruleVAL.operator = token_TEST_GE
+			ruleVAL.operator = op_GE
 		}
 	case 21:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
 //line parser.y:450
 		{
-			ruleVAL.operator = token_TEST_LT
+			ruleVAL.operator = op_LT
 		}
 	case 22:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
 //line parser.y:451
 		{
-			ruleVAL.operator = token_TEST_LE
+			ruleVAL.operator = op_LE
 		}
 	case 23:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
 //line parser.y:455
 		{
-			ruleVAL.operator = token_TEST_EQ
+			ruleVAL.operator = op_EQ
 		}
 	case 24:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
 //line parser.y:456
 		{
-			ruleVAL.operator = token_TEST_NE
+			ruleVAL.operator = op_NE
 		}
 	case 25:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
 //line parser.y:457
 		{
-			ruleVAL.operator = token_TEST_CONTAINS
+			ruleVAL.operator = op_CONTAINS
 		}
 	case 26:
 		ruleDollar = ruleS[rulept-0 : rulept+1]

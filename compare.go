@@ -13,7 +13,7 @@ func compare(left any, op int, right any) (ret bool) {
 			debugResult(ret, "╰ cmp[]", "", left, op, right)
 		}()
 
-		if op == token_TEST_CONTAINS {
+		if op == op_CONTAINS {
 			// the contains operator does not support arrays on the right side.
 			// TODO: return error
 			return false
@@ -119,18 +119,18 @@ func debugResult(result bool, prefix string, lname string, lv any, op int, rv an
 }
 
 func compareSlice[T any](slice []T, op int, fn func(el T, op int) bool) bool {
-	if op == token_TEST_NE {
+	if op == op_NE {
 		// []T != any
 		//      -> check if NONE of the slice elements are equal to the right value.
 		//         this is equivalent to !([]T == any)
-		return !compareSlice(slice, token_TEST_EQ, fn)
+		return !compareSlice(slice, op_EQ, fn)
 	}
 
-	if op == token_TEST_CONTAINS {
+	if op == op_CONTAINS {
 		// []T contains any
 		//      -> check if any of the slice elements are equal to the right value.
 		//         e.g. we don't want to do any substring matching here.
-		op = token_TEST_EQ
+		op = op_EQ
 	}
 
 	for _, el := range slice {

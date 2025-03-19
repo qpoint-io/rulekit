@@ -35,11 +35,11 @@ func compareStringString(left string, op int, right string) (ret bool) {
 		debugResult(ret, "│  cmpStrStr", "", left, op, right)
 	}()
 	switch op {
-	case token_TEST_EQ:
+	case op_EQ:
 		return left == right
-	case token_TEST_NE:
+	case op_NE:
 		return left != right
-	case token_TEST_CONTAINS:
+	case op_CONTAINS:
 		return strings.Contains(left, right)
 	}
 	return false
@@ -50,9 +50,9 @@ func compareStringRegex(left string, op int, right *regexp.Regexp) (ret bool) {
 		debugResult(ret, "│ cmpStrRegex", "", left, op, right)
 	}()
 	switch op {
-	case token_TEST_EQ, token_TEST_CONTAINS:
+	case op_EQ, op_CONTAINS:
 		return right.MatchString(left)
-	case token_TEST_NE:
+	case op_NE:
 		return !right.MatchString(left)
 	}
 	return false
@@ -62,13 +62,13 @@ func compareStringSlice(left []string, op int, right any) (ret bool) {
 	defer func() {
 		debugResult(ret, "│ cmp[]Str", "", left, op, right)
 	}()
-	if op == token_TEST_CONTAINS {
+	if op == op_CONTAINS {
 		// possible options:
 		// []string{...} contains string
 		// 		-> check if the slice contains the string, not if any of the slice elements contains the string as a substring
 		// []string{...} contains regexp
 		// 		-> check if the slice contains any element that matches the regexp
-		op = token_TEST_EQ
+		op = op_EQ
 	}
 
 	switch right := right.(type) {

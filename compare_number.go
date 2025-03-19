@@ -101,17 +101,17 @@ func compareWithOp(cmpResult int, op int) bool {
 	}
 
 	switch op {
-	case token_TEST_EQ:
+	case op_EQ:
 		return cmpResult == cmpResultEqual
-	case token_TEST_NE:
+	case op_NE:
 		return cmpResult != cmpResultEqual
-	case token_TEST_GT:
+	case op_GT:
 		return cmpResult == cmpResultGreater
-	case token_TEST_GE:
+	case op_GE:
 		return cmpResult == cmpResultGreater || cmpResult == cmpResultEqual
-	case token_TEST_LT:
+	case op_LT:
 		return cmpResult == cmpResultLess
-	case token_TEST_LE:
+	case op_LE:
 		return cmpResult == cmpResultLess || cmpResult == cmpResultEqual
 	}
 	return false

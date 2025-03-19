@@ -100,10 +100,10 @@ func (n *nodeNot) Eval(p map[string]any) Result {
 
 func (n *nodeNot) String() string {
 	if nn, ok := n.right.(*nodeCompare); ok {
-		if nn.op == token_TEST_EQ {
+		if nn.op == op_EQ {
 			// special formatting for !=
 			return nn.field + " != " + nn.raw_value
-		} else if nn.op == token_TEST_CONTAINS {
+		} else if nn.op == op_CONTAINS {
 			// special formatting for field not contains "item"
 			return nn.field + " not contains " + nn.raw_value
 		}
@@ -197,7 +197,7 @@ func (n *nodeMatch) String() string {
 // Comparison node
 type nodeCompare struct {
 	predicate
-	op    int // token_TEST_EQ, NE, GT, GE, LT, LE, CONTAINS
+	op    int // op_EQ, NE, GT, GE, LT, LE, CONTAINS
 	value any
 }
 
@@ -209,7 +209,7 @@ func (n *nodeCompare) Eval(m map[string]any) Result {
 			EvaluatedRule: n,
 		}
 		// if the operator is !=, we may return true if the field is not present as undefined != any
-		if n.op == token_TEST_NE {
+		if n.op == op_NE {
 			r.Pass = true
 		}
 		return r
@@ -242,7 +242,7 @@ func (n *nodeIn) Eval(p map[string]any) Result {
 	}
 
 	// `FIELD in ARR` == `ARR contains FIELD`
-	pass := compare(n.values, token_TEST_CONTAINS, val)
+	pass := compare(n.values, op_CONTAINS, val)
 	return Result{
 		Pass:          pass,
 		EvaluatedRule: n,

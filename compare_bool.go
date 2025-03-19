@@ -5,9 +5,9 @@ func compareBool(left bool, op int, right bool) (ret bool) {
 		debugResult(ret, "│ cmpBool", "", left, op, right)
 	}()
 	switch op {
-	case token_TEST_EQ:
+	case op_EQ:
 		return left == right
-	case token_TEST_NE:
+	case op_NE:
 		return left != right
 	}
 	return false
