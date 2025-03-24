@@ -5,10 +5,10 @@ import (
 	"net"
 )
 
-func compare(left any, op int, right any) (ret bool) {
+func compare(left Valuer, op int, right Valuer) (ret bool) {
 	// any ? []any
 	//      -> run the comparison for each element in the right array.
-	if rightArr, ok := right.([]any); ok {
+	if rightArr, ok := right.Value().([]any); ok {
 		defer func() {
 			debugResult(ret, "╰ cmp[]", "", left, op, right)
 		}()

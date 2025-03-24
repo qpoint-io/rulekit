@@ -13,7 +13,7 @@ func compareMac(left net.HardwareAddr, op int, right any) (ret bool) {
 	case net.HardwareAddr:
 		// mac ? mac
 		return compareBytesBytes(left, op, right)
-	case HexString:
+	case []byte:
 		// mac ? hex
 		// in this case, treat the hex string as a literal
 		return compareStringString(strings.ToLower(left.String()), op, strings.ToLower(right.String()))

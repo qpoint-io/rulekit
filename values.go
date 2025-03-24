@@ -7,8 +7,27 @@ import (
 	"github.com/qpoint-io/rulekit/set"
 )
 
-type Valuer interface {
+type KVValuer interface {
 	Value(map[string]any) (any, bool)
+	String() string
+}
+
+type kvRefValuer struct {
+	KVValuer
+	kv map[string]any
+}
+
+func (v *kvRefValuer) Value() any {
+	rv, _ := v.KVValuer.Value(v.kv)
+	return rv
+}
+
+func (v *kvRefValuer) String() string {
+	return v.String()
+}
+
+type Valuer interface {
+	Value() any
 	String() string
 }
 
@@ -35,7 +54,7 @@ func (l LiteralValue[T]) String() string {
 	return l.raw
 }
 
-func valuerToMissingFields(rv Valuer) set.Set[string] {
+func valuerToMissingFields(rv KVValuer) set.Set[string] {
 	if v, ok := rv.(FieldValue); ok {
 		return set.NewSet(string(v))
 	}

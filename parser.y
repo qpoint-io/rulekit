@@ -2,6 +2,7 @@
 package rulekit
 
 import (
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
@@ -159,7 +160,7 @@ func (v *valueToken) Parse() error {
 			err = ValueParseError{v.typ, v.raw, err}
 		}
 	case token_HEX_STRING:
-		value, err = ParseHexString(v.raw)
+		value, err = hex.DecodeString(strings.ReplaceAll(v.raw, ":", ""))
 		if err != nil {
 			err = ValueParseError{v.typ, v.raw, err}
 		}

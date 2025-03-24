@@ -116,7 +116,7 @@ func (n *nodeNot) String() string {
 
 // NOT ZERO
 type nodeNotZero struct {
-	rv Valuer
+	rv KVValuer
 }
 
 func (n *nodeNotZero) Eval(p map[string]any) Result {
@@ -142,8 +142,8 @@ func (n *nodeNotZero) String() string {
 
 // TEST_MATCHES
 type nodeMatch struct {
-	lv Valuer
-	rv Valuer
+	lv KVValuer
+	rv KVValuer
 }
 
 func (n *nodeMatch) Eval(p map[string]any) Result {
@@ -192,9 +192,9 @@ func (n *nodeMatch) String() string {
 
 // Comparison node
 type nodeCompare struct {
-	lv Valuer
+	lv KVValuer
 	op int // op_EQ, NE, GT, GE, LT, LE, CONTAINS
-	rv Valuer
+	rv KVValuer
 }
 
 func (n *nodeCompare) Eval(m map[string]any) Result {
@@ -225,8 +225,8 @@ func (n *nodeCompare) String() string {
 
 // TEST_IN
 type nodeIn struct {
-	lv Valuer
-	rv Valuer
+	lv KVValuer
+	rv KVValuer
 }
 
 func (n *nodeIn) Eval(p map[string]any) Result {
