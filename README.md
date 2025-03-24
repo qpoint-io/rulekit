@@ -24,7 +24,14 @@ When evaluated against:
 - `map[string]any{"domain": "example.com"}` → returns **true**
 - `map[string]any{"domain": "qpoint.io"}` → returns **false**
 
-In this document, `domain` is referred to as the **field** and `/example\.com$/` as the **value**.
+In this document, `domain` is referred to as a **field** and `/example\.com$/` as a **value**.
+
+RuleKit supports a flexible syntax where fields and values may appear on either side of an operator:
+
+- `field operator value` (e.g., `domain == "example.com"`)
+- `value operator field` (e.g., `"example.com" == domain`)
+- `value operator value` (e.g., `123 == 123`)
+- `field operator field` (e.g., `src.port == dst.port`)
 
 A field on its own (without an operator) will check if the field contains a non-zero value. For example: `hash && version > 1` will check if the hash field is non-zero and the version is greater than 1.
 
