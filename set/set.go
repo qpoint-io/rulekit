@@ -43,8 +43,14 @@ func (s Set[T]) Merge(other Set[T]) {
 }
 
 func Union[T comparable](sets ...Set[T]) Set[T] {
-	union := NewSet[T]()
+	var union Set[T]
 	for _, set := range sets {
+		if set == nil {
+			continue
+		}
+		if union == nil {
+			union = NewSetSize[T](len(set))
+		}
 		union.Merge(set)
 	}
 	return union

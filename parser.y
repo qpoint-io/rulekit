@@ -178,6 +178,13 @@ func (v *valueToken) Parse() error {
 	return nil
 }
 
+func (v *valueToken) Valuer() Valuer {
+	return LiteralValue[any]{
+		raw: v.raw,
+		value: v.value,
+	}
+}
+
 func valueTokenString(typ int) string {
 	switch typ {
 	case token_STRING:
@@ -203,12 +210,9 @@ func valueTokenString(typ int) string {
 
 func makeCompareNode(field string, negate bool, op int, elem valueToken) Rule {
 	return withNegate(negate, &nodeCompare{
-		predicate: predicate{
-			field: field, 
-			raw: elem.raw,
-		},
+		lv: FieldValue(field),
 		op: op,
-		value: elem.value,
+		rv: elem.Valuer(),
 	})
 }
 
@@ -316,21 +320,14 @@ predicate:
 			return 1
 		}
 
-		rgxp, ok := elem.value.(*regexp.Regexp)
-		if !ok {
-			// code error; newValueToken should always return a *regexp.Regexp for a token_REGEX
-			rulelex.Error(fmt.Errorf("parser error while handling regex value %q", elem.raw).Error())
-			return 1
-		}
-
 		$$ = withNegate($2, &nodeMatch{
-			predicate: predicate{field: string($1), raw: elem.raw},
-			reg_expr: rgxp,
+			lv: FieldValue(string($1)),
+			rv: elem.Valuer(),
 		})
 	}
 	| token_FIELD
 	{
-		$$ = &nodeNotZero{string($1)}
+		$$ = &nodeNotZero{FieldValue(string($1))}
 	}
 	// op_IN supports array values
 	| token_FIELD optional_negate op_IN array_value_token
@@ -342,11 +339,11 @@ predicate:
 		}
 
 		$$ = withNegate($2, &nodeIn{
-			predicate: predicate{
-				field: string($1),
+			lv: FieldValue(string($1)),
+			rv: LiteralValue[[]any]{
 				raw: $4.raw,
+				value: values,
 			},
-			values: values,
 		})
 	}
 	;
