@@ -14,16 +14,23 @@ package rulekit
 			map[string]any{"domain": "example.com"} -> true
 			map[string]any{"domain": "qpoint.io"}   -> false
 
-	Operations always follow the syntax FIELD OPERATOR VALUE.
-		In the example expression:
-			FIELD:     domain
-			OPERATOR:  matches
-			VALUE:     /example\.com$/
+		In this example,
+			domain				is a FIELD,
+			matches				is the OPERATOR,
+			/example\.com$/		is the VALUE.
 
-	Additionally, a FIELD on its own without an operator will check if the field contains a non-zero value.
+	A FIELD or VALUE may appear on either side of an operator.
+		For example, all of the following expressions are valid:
+			- port == 8080
+			- 8080 == port
+			- src.port == dst.port
+			- 500 > 2
+
+	A FIELD or VALUE on its own without an operator will check if the field contains a non-zero value.
+		For example: `bool_field && string_field`
 
 	Supported operators:
-		== (eq), != (ne), > (gt), >= (ge), < (lt), <= (le), contains, matches
+		== (eq), != (ne), > (gt), >= (ge), < (lt), <= (le), contains, matches, in
 		or (||), and (&&), not (!)
 		() parentheses for grouping
 
