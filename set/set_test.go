@@ -173,4 +173,12 @@ func TestUnion(t *testing.T) {
 			require.ElementsMatch(t, tt.expected, result.Items())
 		})
 	}
+
+	t.Run("union with nil set", func(t *testing.T) {
+		result := Union(nil, NewSet(1, 2, 3))
+		require.ElementsMatch(t, []int{1, 2, 3}, result.Items())
+
+		result = Union[int](nil, nil)
+		require.Nil(t, result)
+	})
 }

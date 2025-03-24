@@ -2,17 +2,10 @@ package rulekit
 
 import (
 	"fmt"
-	"net"
 	"regexp"
-	"strings"
 
 	"github.com/qpoint-io/rulekit/set"
 )
-
-type predicate struct {
-	field string
-	raw   string
-}
 
 // AND
 type nodeAnd struct {
@@ -102,20 +95,20 @@ func (n *nodeNot) String() string {
 	if nn, ok := n.right.(*nodeCompare); ok {
 		if nn.op == op_EQ {
 			// special formatting for !=
-			return nn.field + " != " + nn.raw
+			return nn.lv.String() + " != " + nn.rv.String()
 		} else if nn.op == op_CONTAINS {
 			// special formatting for field not contains "item"
-			return nn.field + " not contains " + nn.raw
+			return nn.lv.String() + " not contains " + nn.rv.String()
 		}
 	} else if nn, ok := n.right.(*nodeNotZero); ok {
 		// special formatting for !FIELD (no space between ! and field)
-		return "!" + nn.field
+		return "!" + nn.rv.String()
 	} else if nn, ok := n.right.(*nodeMatch); ok {
 		// special formatting for field not =~ /pattern/
-		return nn.field + " not =~ " + nn.raw
+		return nn.lv.String() + " not =~ " + nn.rv.String()
 	} else if nn, ok := n.right.(*nodeIn); ok {
 		// special formatting for field not in [1, "str", 3]
-		return nn.field + " not in " + nn.raw
+		return nn.lv.String() + " not in " + nn.rv.String()
 	}
 
 	return "not (" + n.right.String() + ")"
@@ -123,16 +116,16 @@ func (n *nodeNot) String() string {
 
 // NOT ZERO
 type nodeNotZero struct {
-	field string
+	rv Valuer
 }
 
 func (n *nodeNotZero) Eval(p map[string]any) Result {
-	val, ok := mapPath(p, n.field)
+	val, ok := n.rv.Value(p)
 	if !ok {
 		return Result{
 			// missing field == zero value
 			Pass:          false,
-			MissingFields: set.NewSet(n.field),
+			MissingFields: valuerToMissingFields(n.rv),
 			EvaluatedRule: n,
 		}
 	}
@@ -144,41 +137,44 @@ func (n *nodeNotZero) Eval(p map[string]any) Result {
 }
 
 func (n *nodeNotZero) String() string {
-	return n.field
+	return n.rv.String()
 }
 
 // TEST_MATCHES
 type nodeMatch struct {
-	predicate
-	reg_expr *regexp.Regexp
+	lv Valuer
+	rv Valuer
 }
 
 func (n *nodeMatch) Eval(p map[string]any) Result {
-	val, ok := mapPath(p, n.field)
-	if !ok {
+	lv, lvOk := n.lv.Value(p)
+	rv, rvOk := n.rv.Value(p)
+	if !lvOk || !rvOk {
 		return Result{
 			Pass:          false,
-			MissingFields: set.NewSet(n.field),
+			MissingFields: set.Union(valuerToMissingFields(n.lv), valuerToMissingFields(n.rv)),
 			EvaluatedRule: n,
 		}
 	}
 
 	return Result{
-		Pass:          n.apply(val),
+		Pass:          n.apply(lv, rv),
 		EvaluatedRule: n,
 	}
 }
 
-func (n *nodeMatch) apply(fv any) bool {
-	if n.reg_expr == nil {
+func (n *nodeMatch) apply(lv any, rv any) bool {
+	r, ok := rv.(*regexp.Regexp)
+	if !ok || r == nil {
 		return false
 	}
-	switch val := fv.(type) {
+
+	switch val := lv.(type) {
 	case string:
-		return n.reg_expr.MatchString(val)
+		return r.MatchString(val)
 	case []string:
 		for _, s := range val {
-			if n.reg_expr.MatchString(s) {
+			if r.MatchString(s) {
 				return true
 			}
 		}
@@ -187,25 +183,26 @@ func (n *nodeMatch) apply(fv any) bool {
 }
 
 func (n *nodeMatch) FieldName() string {
-	return n.field
+	return n.lv.String()
 }
 
 func (n *nodeMatch) String() string {
-	return n.field + " =~ " + n.raw
+	return n.lv.String() + " =~ " + n.rv.String()
 }
 
 // Comparison node
 type nodeCompare struct {
-	predicate
-	op    int // op_EQ, NE, GT, GE, LT, LE, CONTAINS
-	value any
+	lv Valuer
+	op int // op_EQ, NE, GT, GE, LT, LE, CONTAINS
+	rv Valuer
 }
 
 func (n *nodeCompare) Eval(m map[string]any) Result {
-	value, ok := mapPath(m, n.field)
-	if !ok {
+	lv, lvOk := n.lv.Value(m)
+	rv, rvOk := n.rv.Value(m)
+	if !lvOk || !rvOk {
 		r := Result{
-			MissingFields: set.NewSet(n.field),
+			MissingFields: set.Union(valuerToMissingFields(n.lv), valuerToMissingFields(n.rv)),
 			EvaluatedRule: n,
 		}
 		// if the operator is !=, we may return true if the field is not present as undefined != any
@@ -215,7 +212,7 @@ func (n *nodeCompare) Eval(m map[string]any) Result {
 		return r
 	}
 
-	pass := compare(value, n.op, n.value)
+	pass := compare(lv, n.op, rv)
 	return Result{
 		Pass:          pass,
 		EvaluatedRule: n,
@@ -223,26 +220,36 @@ func (n *nodeCompare) Eval(m map[string]any) Result {
 }
 
 func (n *nodeCompare) String() string {
-	return fmt.Sprintf("%s %s %s", n.field, operatorToString(n.op), n.raw)
+	return n.lv.String() + " " + operatorToString(n.op) + " " + n.rv.String()
 }
 
 // TEST_IN
 type nodeIn struct {
-	predicate
-	values []any
+	lv Valuer
+	rv Valuer
 }
 
 func (n *nodeIn) Eval(p map[string]any) Result {
-	val, ok := mapPath(p, n.field)
-	if !ok {
+	lv, lvOk := n.lv.Value(p)
+	rv, rvOk := n.rv.Value(p)
+	if !lvOk || !rvOk {
 		return Result{
-			MissingFields: set.NewSet(n.field),
+			MissingFields: set.Union(valuerToMissingFields(n.lv), valuerToMissingFields(n.rv)),
+			EvaluatedRule: n,
+		}
+	}
+
+	rvArr, ok := rv.([]any)
+	if !ok {
+		// the right value must be an array
+		return Result{
+			Pass:          false,
 			EvaluatedRule: n,
 		}
 	}
 
 	// `FIELD in ARR` == `ARR contains FIELD`
-	pass := compare(n.values, op_CONTAINS, val)
+	pass := compare(rvArr, op_CONTAINS, lv)
 	return Result{
 		Pass:          pass,
 		EvaluatedRule: n,
@@ -250,79 +257,5 @@ func (n *nodeIn) Eval(p map[string]any) Result {
 }
 
 func (n *nodeIn) String() string {
-	return fmt.Sprintf("%s in %s", n.field, n.raw)
-}
-
-func isZero(val any) bool {
-	switch v := val.(type) {
-	case bool:
-		return !v
-	case int:
-		return v == 0
-	case int64:
-		return v == 0
-	case uint:
-		return v == 0
-	case uint64:
-		return v == 0
-	case float32:
-		return v == 0
-	case float64:
-		return v == 0
-	case string:
-		return v == ""
-	case []byte:
-		return len(v) == 0
-	case net.IP:
-		return len(v) == 0
-	case net.HardwareAddr:
-		return len(v) == 0
-	case *net.IPNet:
-		return v == nil || v.IP == nil
-	}
-	return false
-}
-
-// mapPath gets element key from a map, interpreting it as a path if it contains a period.
-func mapPath(m map[string]any, key string) (any, bool) {
-	// Iterative approach to traverse the path
-	currentMap := m
-	start := 0
-
-	for {
-		part := key[start:]
-		// First check for direct key match (most common case)
-		if val, ok := currentMap[part]; ok {
-			return val, true
-		}
-
-		// Find the next period
-		idx := strings.IndexByte(part, '.')
-		if idx == -1 {
-			// No more periods, this is the last part
-			part = key[start:]
-			val, ok := currentMap[part]
-			return val, ok
-		}
-
-		// Adjust idx to be relative to the full string
-		idx += start
-		part = key[start:idx]
-
-		// Get the value for this part
-		val, ok := currentMap[part]
-		if !ok {
-			return nil, false
-		}
-
-		// Convert to map for next iteration
-		nextMap, ok := val.(map[string]any)
-		if !ok {
-			return nil, false
-		}
-		currentMap = nextMap
-
-		// Move to the next part
-		start = idx + 1
-	}
+	return n.lv.String() + " in " + n.rv.String()
 }
