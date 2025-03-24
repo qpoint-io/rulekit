@@ -168,8 +168,10 @@ func (v *valueToken) Parse() error {
 		if err != nil {
 			err = ValueParseError{v.typ, v.raw, err}
 		}
+	case token_FIELD:
+		// no-op
 	default:
-		err = fmt.Errorf("unsupported token type %s", valueTokenString(v.typ))
+		err = fmt.Errorf("unsupported token type %s for value %q", valueTokenString(v.typ), v.raw)
 	}
 	if err != nil {
 		return err
@@ -179,6 +181,9 @@ func (v *valueToken) Parse() error {
 }
 
 func (v *valueToken) Valuer() Valuer {
+	if v.typ == token_FIELD {
+		return FieldValue(string(v.raw))
+	}
 	return LiteralValue[any]{
 		raw: v.raw,
 		value: v.value,
@@ -208,14 +213,6 @@ func valueTokenString(typ int) string {
 	}
 }
 
-func makeCompareNode(field string, negate bool, op int, elem valueToken) Rule {
-	return withNegate(negate, &nodeCompare{
-		lv: FieldValue(field),
-		op: op,
-		rv: elem.Valuer(),
-	})
-}
-
 type ValueParseError struct {
 	TokenType int
 	Value     string
@@ -225,6 +222,7 @@ type ValueParseError struct {
 func (e ValueParseError) Error() string {
 	return fmt.Sprintf("parsing %s value %q: %v", valueTokenString(e.TokenType), e.Value, e.Err)
 }
+
 %}
 
 %union {
@@ -269,7 +267,7 @@ func (e ValueParseError) Error() string {
 // Operator precedence
 %left op_AND
 %left op_OR
-%left op_NOT
+%right op_NOT
 
 %%
 search_condition:
@@ -302,17 +300,25 @@ search_condition:
 
 predicate:
 	// numeric values accept additional inequality operators
-	token_FIELD optional_negate ineq_operator numeric_value_token
+	numeric_value_token optional_negate ineq_operator numeric_value_token
 	{
-		$$ = makeCompareNode(string($1), $2, $3, $4)
+		$$ = withNegate($2, &nodeCompare{
+			lv: $1.Valuer(),
+			op: $3,
+			rv: $4.Valuer(),
+		})
 	}
 	// all values including numeric accept equality operators
-	| token_FIELD optional_negate eq_operator array_or_single_value_token
+	| array_or_single_value_token optional_negate eq_operator array_or_single_value_token
 	{
-		$$ = makeCompareNode(string($1), $2, $3, $4)
+		$$ = withNegate($2, &nodeCompare{
+			lv: $1.Valuer(),
+			op: $3,
+			rv: $4.Valuer(),
+		})
 	}
 	// op_MATCHES supports regex values
-	| token_FIELD optional_negate op_MATCHES token_REGEX
+	| array_or_single_value_token optional_negate op_MATCHES token_REGEX
 	{
 		elem, err := newValueToken(token_REGEX, $4)
 		if err != nil {
@@ -321,16 +327,16 @@ predicate:
 		}
 
 		$$ = withNegate($2, &nodeMatch{
-			lv: FieldValue(string($1)),
+			lv: $1.Valuer(),
 			rv: elem.Valuer(),
 		})
 	}
-	| token_FIELD
+	| array_or_single_value_token
 	{
-		$$ = &nodeNotZero{FieldValue(string($1))}
+		$$ = &nodeNotZero{$1.Valuer()}
 	}
 	// op_IN supports array values
-	| token_FIELD optional_negate op_IN array_value_token
+	| array_or_single_value_token optional_negate op_IN array_value_token
 	{
 		values, ok := $4.value.([]any)
 		if !ok {
@@ -339,7 +345,7 @@ predicate:
 		}
 
 		$$ = withNegate($2, &nodeIn{
-			lv: FieldValue(string($1)),
+			lv: $1.Valuer(),
 			rv: LiteralValue[[]any]{
 				raw: $4.raw,
 				value: values,
@@ -474,6 +480,15 @@ numeric_value_token:
 	| token_FLOAT
 	{
 		v, err := newValueToken(token_FLOAT, $1)
+		if err != nil {
+			rulelex.Error(err.Error())
+			return 1
+		}
+		$$ = v
+	}
+	| token_FIELD
+	{
+		v, err := newValueToken(token_FIELD, $1)
 		if err != nil {
 			rulelex.Error(err.Error())
 			return 1
