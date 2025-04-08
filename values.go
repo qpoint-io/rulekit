@@ -68,6 +68,8 @@ func isZero(val any) bool {
 		return len(v) == 0
 	case *net.IPNet:
 		return v == nil || v.IP == nil
+	case []any:
+		return len(v) == 0
 	}
 	return false
 }
