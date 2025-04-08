@@ -648,69 +648,70 @@ func (w *testWriter) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-func TestOptionalNegate(t *testing.T) {
-	{
-		f, err := Parse("field matches /pattern/")
-		require.NoError(t, err)
-		require.Equal(t, "field =~ /pattern/", f.String())
+// NOTE: This is no longer supported due to changes made in https://github.com/qpoint-io/rulekit/pull/8
+// func TestOptionalNegate(t *testing.T) {
+// 	{
+// 		f, err := Parse("field matches /pattern/")
+// 		require.NoError(t, err)
+// 		require.Equal(t, "field =~ /pattern/", f.String())
 
-		assertEval(t, f, map[string]any{"field": "pattern"}, true)
-		assertEval(t, f, map[string]any{"field": "other"}, false)
+// 		assertEval(t, f, map[string]any{"field": "pattern"}, true)
+// 		assertEval(t, f, map[string]any{"field": "other"}, false)
 
-		r, ok := f.(*rule)
-		require.True(t, ok)
-		_, ok = r.Rule.(*nodeMatch)
-		require.True(t, ok)
-	}
+// 		r, ok := f.(*rule)
+// 		require.True(t, ok)
+// 		_, ok = r.Rule.(*nodeMatch)
+// 		require.True(t, ok)
+// 	}
 
-	{
-		f, err := Parse("field not matches /pattern/")
-		require.NoError(t, err)
-		require.Equal(t, "field not =~ /pattern/", f.String())
+// 	{
+// 		f, err := Parse("field not matches /pattern/")
+// 		require.NoError(t, err)
+// 		require.Equal(t, "field not =~ /pattern/", f.String())
 
-		assertEval(t, f, map[string]any{"field": "pattern"}, false)
-		assertEval(t, f, map[string]any{"field": "other"}, true)
+// 		assertEval(t, f, map[string]any{"field": "pattern"}, false)
+// 		assertEval(t, f, map[string]any{"field": "other"}, true)
 
-		r, ok := f.(*rule)
-		require.True(t, ok)
-		n, ok := r.Rule.(*nodeNot)
-		require.True(t, ok)
-		_, ok = n.right.(*nodeMatch)
-		require.True(t, ok)
-	}
+// 		r, ok := f.(*rule)
+// 		require.True(t, ok)
+// 		n, ok := r.Rule.(*nodeNot)
+// 		require.True(t, ok)
+// 		_, ok = n.right.(*nodeMatch)
+// 		require.True(t, ok)
+// 	}
 
-	{
-		f, err := Parse(`field !contains "str"`)
-		require.NoError(t, err)
-		require.Equal(t, `field not contains "str"`, f.String())
+// 	{
+// 		f, err := Parse(`field !contains "str"`)
+// 		require.NoError(t, err)
+// 		require.Equal(t, `field not contains "str"`, f.String())
 
-		assertEval(t, f, map[string]any{"field": "string"}, false)
-		assertEval(t, f, map[string]any{"field": "other"}, true)
+// 		assertEval(t, f, map[string]any{"field": "string"}, false)
+// 		assertEval(t, f, map[string]any{"field": "other"}, true)
 
-		r, ok := f.(*rule)
-		require.True(t, ok)
-		n, ok := r.Rule.(*nodeNot)
-		require.True(t, ok)
-		_, ok = n.right.(*nodeCompare)
-		require.True(t, ok)
-	}
+// 		r, ok := f.(*rule)
+// 		require.True(t, ok)
+// 		n, ok := r.Rule.(*nodeNot)
+// 		require.True(t, ok)
+// 		_, ok = n.right.(*nodeCompare)
+// 		require.True(t, ok)
+// 	}
 
-	{
-		f := MustParse(`field not in [1.1.1.1, 192.168.0.0/16]`)
-		require.Equal(t, `field not in [1.1.1.1, 192.168.0.0/16]`, f.String())
+// 	{
+// 		f := MustParse(`field not in [1.1.1.1, 192.168.0.0/16]`)
+// 		require.Equal(t, `field not in [1.1.1.1, 192.168.0.0/16]`, f.String())
 
-		for ip, want := range map[string]bool{
-			"1.1.1.1":     false,
-			"192.168.0.0": false,
-			"192.168.0.1": false,
-			"192.0.1.1":   true,
-			"1.1.1.2":     true,
-		} {
-			v := net.ParseIP(ip)
-			assertEval(t, f, KV{"field": v}, want)
-		}
-	}
-}
+// 		for ip, want := range map[string]bool{
+// 			"1.1.1.1":     false,
+// 			"192.168.0.0": false,
+// 			"192.168.0.1": false,
+// 			"192.0.1.1":   true,
+// 			"1.1.1.2":     true,
+// 		} {
+// 			v := net.ParseIP(ip)
+// 			assertEval(t, f, KV{"field": v}, want)
+// 		}
+// 	}
+// }
 
 func TestArray(t *testing.T) {
 	assertParseError(t, `field == [1,]`)
