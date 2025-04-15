@@ -4,11 +4,11 @@
   <img alt="Rulekit icon" src="./readme_assets/rule-kit-icon-light.svg">
 </picture>
 
-# RuleKit
+# Rulekit
 
-RuleKit is a flexible expression-based rules engine for Go, providing a simple and expressive syntax for defining business rules that can be evaluated against key-value data.
+Rulekit is a flexible expression-based rules engine for Go, providing a simple and expressive syntax for defining business rules that can be evaluated against key-value data.
 
-![RuleKit Demo](./readme_assets/demo.gif)
+![Rulekit Demo](./readme_assets/demo.gif)
 
 ## Overview
 
@@ -26,7 +26,7 @@ When evaluated against:
 
 In this document, `domain` is referred to as a **field** and `/example\.com$/` as a **value**.
 
-RuleKit supports a flexible syntax where fields and values may appear on either side of an operator:
+Rulekit supports a flexible syntax where fields and values may appear on either side of an operator:
 
 - `field operator value` (e.g., `domain == "example.com"`)
 - `value operator field` (e.g., `"example.com" == domain`)

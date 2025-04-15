@@ -1,4 +1,4 @@
-# RuleKit CLI Demo
+# Rulekit CLI Demo
 
 A terminal-based demonstration tool for the [rulekit](https://github.com/qpoint-io/rulekit) package.
 
@@ -52,7 +52,7 @@ Press Ctrl+P to load any of these examples and see rulekit in action.
 
 ## Screenshot
 
-![RuleKit Demo](../../readme_assets/demo.gif)
+![Rulekit Demo](../../readme_assets/demo.gif)
 
 ## About
 
