@@ -657,7 +657,7 @@ func (m model) View() string {
 	var sb strings.Builder
 
 	// Title
-	sb.WriteString(titleStyle.Render("RuleKit Demo") + "\n\n")
+	sb.WriteString(titleStyle.Render("Rulekit Demo") + "\n\n")
 
 	// If in help mode, show the help modal
 	if m.mode == modeHelp {
@@ -838,7 +838,7 @@ func (m model) renderRightColumn() string {
 func (m *model) generateHelpContent() string {
 	var sb strings.Builder
 
-	sb.WriteString(titleStyle.Render("RuleKit Help") + "\n\n")
+	sb.WriteString(titleStyle.Render("Rulekit Help") + "\n\n")
 
 	// Basic Navigation
 	sb.WriteString(headerStyle.Render("Basic Navigation") + "\n")

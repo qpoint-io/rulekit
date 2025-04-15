@@ -189,28 +189,12 @@ func (v *valueToken) Parse() error {
 
 func (v *valueToken) Valuer() Valuer {
 	if v.typ == token_FIELD {
-		return newFieldValue(string(v.raw))
+		return FieldValue(string(v.raw))
 	}
 	return LiteralValue[any]{
 		raw:   v.raw,
 		value: v.value,
 	}
-}
-
-func newFieldValue(field string) Valuer {
-	// `true` and `false` are special boolean field names
-	if strings.EqualFold(field, "true") {
-		return LiteralValue[bool]{
-			raw:   field,
-			value: true,
-		}
-	} else if strings.EqualFold(field, "false") {
-		return LiteralValue[bool]{
-			raw:   field,
-			value: false,
-		}
-	}
-	return FieldValue(field)
 }
 
 func valueTokenString(typ int) string {
@@ -246,7 +230,7 @@ func (e ValueParseError) Error() string {
 	return fmt.Sprintf("parsing %s value %q: %v", valueTokenString(e.TokenType), e.Value, e.Err)
 }
 
-//line parser.y:244
+//line parser.y:228
 type ruleSymType struct {
 	yys          int
 	rule         Rule
@@ -326,7 +310,7 @@ const ruleEofCode = 1
 const ruleErrCode = 2
 const ruleInitialStackSize = 16
 
-//line parser.y:516
+//line parser.y:500
 
 //line yacctab:1
 var ruleExca = [...]int8{
@@ -760,42 +744,42 @@ ruledefault:
 
 	case 1:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:291
+//line parser.y:275
 		{
 			ruleVAL.rule = ruleDollar[1].rule
 			rulelex.Result(ruleVAL.rule)
 		}
 	case 2:
 		ruleDollar = ruleS[rulept-3 : rulept+1]
-//line parser.y:296
+//line parser.y:280
 		{
 			ruleVAL.rule = &nodeAnd{left: ruleDollar[1].rule, right: ruleDollar[3].rule}
 			rulelex.Result(ruleVAL.rule)
 		}
 	case 3:
 		ruleDollar = ruleS[rulept-3 : rulept+1]
-//line parser.y:301
+//line parser.y:285
 		{
 			ruleVAL.rule = &nodeOr{left: ruleDollar[1].rule, right: ruleDollar[3].rule}
 			rulelex.Result(ruleVAL.rule)
 		}
 	case 4:
 		ruleDollar = ruleS[rulept-2 : rulept+1]
-//line parser.y:306
+//line parser.y:290
 		{
 			ruleVAL.rule = &nodeNot{right: ruleDollar[2].rule}
 			rulelex.Result(ruleVAL.rule)
 		}
 	case 5:
 		ruleDollar = ruleS[rulept-3 : rulept+1]
-//line parser.y:311
+//line parser.y:295
 		{
 			ruleVAL.rule = ruleDollar[2].rule
 			rulelex.Result(ruleVAL.rule)
 		}
 	case 6:
 		ruleDollar = ruleS[rulept-4 : rulept+1]
-//line parser.y:320
+//line parser.y:304
 		{
 			ruleVAL.rule = withNegate(ruleDollar[2].negate, &nodeCompare{
 				lv: ruleDollar[1].valueToken.Valuer(),
@@ -805,7 +789,7 @@ ruledefault:
 		}
 	case 7:
 		ruleDollar = ruleS[rulept-4 : rulept+1]
-//line parser.y:329
+//line parser.y:313
 		{
 			ruleVAL.rule = withNegate(ruleDollar[2].negate, &nodeCompare{
 				lv: ruleDollar[1].valueToken.Valuer(),
@@ -815,7 +799,7 @@ ruledefault:
 		}
 	case 8:
 		ruleDollar = ruleS[rulept-4 : rulept+1]
-//line parser.y:338
+//line parser.y:322
 		{
 			elem, err := newValueToken(token_REGEX, ruleDollar[4].valueLiteral)
 			if err != nil {
@@ -830,13 +814,13 @@ ruledefault:
 		}
 	case 9:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:351
+//line parser.y:335
 		{
 			ruleVAL.rule = &nodeNotZero{ruleDollar[1].valueToken.Valuer()}
 		}
 	case 10:
 		ruleDollar = ruleS[rulept-4 : rulept+1]
-//line parser.y:356
+//line parser.y:340
 		{
 			values, ok := ruleDollar[4].valueToken.value.([]any)
 			if !ok {
@@ -854,73 +838,73 @@ ruledefault:
 		}
 	case 11:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:374
+//line parser.y:358
 		{
 			ruleVAL.operator = op_GT
 		}
 	case 12:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:375
+//line parser.y:359
 		{
 			ruleVAL.operator = op_GE
 		}
 	case 13:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:376
+//line parser.y:360
 		{
 			ruleVAL.operator = op_LT
 		}
 	case 14:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:377
+//line parser.y:361
 		{
 			ruleVAL.operator = op_LE
 		}
 	case 15:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:381
+//line parser.y:365
 		{
 			ruleVAL.operator = op_EQ
 		}
 	case 16:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:382
+//line parser.y:366
 		{
 			ruleVAL.operator = op_NE
 		}
 	case 17:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:383
+//line parser.y:367
 		{
 			ruleVAL.operator = op_CONTAINS
 		}
 	case 18:
 		ruleDollar = ruleS[rulept-0 : rulept+1]
-//line parser.y:387
+//line parser.y:371
 		{
 			ruleVAL.negate = false
 		}
 	case 19:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:388
+//line parser.y:372
 		{
 			ruleVAL.negate = true
 		}
 	case 20:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:394
+//line parser.y:378
 		{
 			ruleVAL.arrayValue = []valueToken{ruleDollar[1].valueToken}
 		}
 	case 21:
 		ruleDollar = ruleS[rulept-3 : rulept+1]
-//line parser.y:398
+//line parser.y:382
 		{
 			ruleVAL.arrayValue = append(ruleDollar[1].arrayValue, ruleDollar[3].valueToken)
 		}
 	case 22:
 		ruleDollar = ruleS[rulept-3 : rulept+1]
-//line parser.y:405
+//line parser.y:389
 		{
 			raw_parts := make([]string, len(ruleDollar[2].arrayValue))
 			values := make([]any, len(ruleDollar[2].arrayValue))
@@ -938,25 +922,25 @@ ruledefault:
 		}
 	case 23:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:423
+//line parser.y:407
 		{
 			ruleVAL.valueToken = ruleDollar[1].valueToken
 		}
 	case 24:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:424
+//line parser.y:408
 		{
 			ruleVAL.valueToken = ruleDollar[1].valueToken
 		}
 	case 25:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:429
+//line parser.y:413
 		{
 			ruleVAL.valueToken = ruleDollar[1].valueToken
 		}
 	case 26:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:431
+//line parser.y:415
 		{
 			v, err := newValueToken(token_STRING, ruleDollar[1].valueLiteral)
 			if err != nil {
@@ -967,7 +951,7 @@ ruledefault:
 		}
 	case 27:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:440
+//line parser.y:424
 		{
 			v, err := newValueToken(token_BOOL, ruleDollar[1].valueLiteral)
 			if err != nil {
@@ -978,7 +962,7 @@ ruledefault:
 		}
 	case 28:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:449
+//line parser.y:433
 		{
 			v, err := newValueToken(token_IP, ruleDollar[1].valueLiteral)
 			if err != nil {
@@ -989,7 +973,7 @@ ruledefault:
 		}
 	case 29:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:458
+//line parser.y:442
 		{
 			v, err := newValueToken(token_IP_CIDR, ruleDollar[1].valueLiteral)
 			if err != nil {
@@ -1000,7 +984,7 @@ ruledefault:
 		}
 	case 30:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:467
+//line parser.y:451
 		{
 			v, err := newValueToken(token_HEX_STRING, ruleDollar[1].valueLiteral)
 			if err != nil {
@@ -1011,7 +995,7 @@ ruledefault:
 		}
 	case 31:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:476
+//line parser.y:460
 		{
 			v, err := newValueToken(token_REGEX, ruleDollar[1].valueLiteral)
 			if err != nil {
@@ -1022,7 +1006,7 @@ ruledefault:
 		}
 	case 32:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:488
+//line parser.y:472
 		{
 			v, err := newValueToken(token_INT, ruleDollar[1].valueLiteral)
 			if err != nil {
@@ -1033,7 +1017,7 @@ ruledefault:
 		}
 	case 33:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:497
+//line parser.y:481
 		{
 			v, err := newValueToken(token_FLOAT, ruleDollar[1].valueLiteral)
 			if err != nil {
@@ -1044,7 +1028,7 @@ ruledefault:
 		}
 	case 34:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:506
+//line parser.y:490
 		{
 			v, err := newValueToken(token_FIELD, ruleDollar[1].valueLiteral)
 			if err != nil {
