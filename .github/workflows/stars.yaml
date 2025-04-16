@@ -1,0 +1,57 @@
+name: Star Notification
+
+on:
+  workflow_dispatch:
+  watch:
+    types: [started]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send to Slack
+        uses: slackapi/slack-github-action@v1.23.0
+        with:
+          # For posting a rich message using Block Kit
+          payload: |
+            {
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "🌟 New GitHub Star! 🌟",
+                    "emoji": true
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*${{ github.repository }}* was just starred by _${{ github.actor }}_!\n\n*Total Stars:* ${{ github.event.repository.stargazers_count }}"
+                  },
+                  "accessory": {
+                    "type": "image",
+                    "image_url": "${{ github.event.sender.avatar_url }}",
+                    "alt_text": "${{ github.actor }}'s avatar"
+                  }
+                },
+                {
+                  "type": "context",
+                  "elements": [
+                    {
+                      "type": "image",
+                      "image_url": "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png",
+                      "alt_text": "GitHub"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "GitHub Star Notification • ${{ github.repository }}"
+                    }
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_BOT_ENGINEERING }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
