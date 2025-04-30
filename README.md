@@ -103,6 +103,9 @@ The Result also provides additional helper methods:
 | `contains` | | Check if a value contains another value |
 | `in` | | Check if a value is contained within another value |
 | `matches` | | Match against a regular expression |
+| `starts_with` | | Check if a string starts with another string |
+| `ends_with` | | Check if a string ends with another string |
+| `subdomain_of` | | Check if a domain is identical to or is a subdomain of another domain (using public suffix rules) |
 
 ## Supported Types
 

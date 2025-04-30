@@ -51,6 +51,12 @@ func operatorToString(op int) string {
 		return "matches"
 	case op_IN:
 		return "in"
+	case op_STARTS_WITH:
+		return "starts_with"
+	case op_ENDS_WITH:
+		return "ends_with"
+	case op_SUBDOMAIN_OF:
+		return "subdomain_of"
 	default:
 		return "unknown"
 	}
@@ -261,6 +267,7 @@ func (e ValueParseError) Error() string {
 %token op_EQ op_NE
 %token op_GT op_GE op_LT op_LE
 %token op_CONTAINS op_MATCHES op_IN
+%token op_STARTS_WITH op_ENDS_WITH op_SUBDOMAIN_OF
 %token token_ARRAY
 %token token_ERROR
 
@@ -362,9 +369,12 @@ ineq_operator:
 	;
 
 eq_operator:
-	op_EQ         { $$ = op_EQ       }
-	| op_NE       { $$ = op_NE       }
-	| op_CONTAINS { $$ = op_CONTAINS }
+	op_EQ              { $$ = op_EQ           }
+	| op_NE            { $$ = op_NE           }
+	| op_CONTAINS      { $$ = op_CONTAINS     }
+	| op_STARTS_WITH   { $$ = op_STARTS_WITH  }
+	| op_ENDS_WITH     { $$ = op_ENDS_WITH    }
+	| op_SUBDOMAIN_OF  { $$ = op_SUBDOMAIN_OF }
 	;
 
 optional_negate:
