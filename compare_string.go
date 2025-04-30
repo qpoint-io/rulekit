@@ -4,6 +4,8 @@ import (
 	"net"
 	"regexp"
 	"strings"
+
+	"golang.org/x/net/publicsuffix"
 )
 
 func compareString(left string, op int, right any) (ret bool) {
@@ -41,6 +43,23 @@ func compareStringString(left string, op int, right string) (ret bool) {
 		return left != right
 	case op_CONTAINS:
 		return strings.Contains(left, right)
+	case op_STARTS_WITH:
+		return strings.HasPrefix(left, right)
+	case op_ENDS_WITH:
+		return strings.HasSuffix(left, right)
+	case op_SUBDOMAIN_OF:
+		// Get the effective TLD+1 for both domains
+		leftETLDPlusOne, err := publicsuffix.EffectiveTLDPlusOne(left)
+		if err != nil {
+			return false
+		}
+		rightETLDPlusOne, err := publicsuffix.EffectiveTLDPlusOne(right)
+		if err != nil {
+			return false
+		}
+
+		// Check if left is a subdomain of right
+		return leftETLDPlusOne == rightETLDPlusOne && (strings.HasSuffix(left, "."+right) || left == right)
 	}
 	return false
 }

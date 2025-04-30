@@ -96,9 +96,12 @@ import (
 		('>' | 'gt'i)  => { token_kind = op_GT; fbreak; };
 		('>=' | 'ge'i) => { token_kind = op_GE; fbreak; };
 
-		'contains'i         => { token_kind = op_CONTAINS; fbreak; };
-		('=~' | 'matches'i) => { token_kind = op_MATCHES;  fbreak; };
-		'in'i               => { token_kind = op_IN;       fbreak; };
+		'contains'i         => { token_kind = op_CONTAINS;     fbreak; };
+		('=~' | 'matches'i) => { token_kind = op_MATCHES;      fbreak; };
+		'in'i               => { token_kind = op_IN;           fbreak; };
+		'starts_with'i      => { token_kind = op_STARTS_WITH;  fbreak; };
+		'ends_with'i        => { token_kind = op_ENDS_WITH;    fbreak; };
+		'subdomain_of'i     => { token_kind = op_SUBDOMAIN_OF; fbreak; };
 
 		# Values
 		int    => { token_kind = token_INT;    fbreak; };

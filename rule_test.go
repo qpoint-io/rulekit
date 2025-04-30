@@ -470,6 +470,36 @@ func TestFilterMatchString(t *testing.T) {
 	}
 }
 
+func TestFilterMatchStringOperators(t *testing.T) {
+	tests := []struct {
+		rule  string
+		value string
+		pass  bool
+	}{
+		{"f_string starts_with \"prefix\"", "prefix123", true},
+		{"f_string starts_with \"prefix\"", "noprefix123", false},
+		{"f_string ends_with \"suffix\"", "123suffix", true},
+		{"f_string ends_with \"suffix\"", "123no", false},
+		{"f_string subdomain_of \"example.com\"", "nested.sub.example.com", true},
+		{"f_string subdomain_of \"example.com\"", "sub.example.org", false},
+		{"f_string subdomain_of \"example.com\"", "example.com", true},
+		{"f_string subdomain_of \"example.com\"", "notadomain", false},
+	}
+
+	for _, test := range tests {
+		f, err := Parse(test.rule)
+		if err != nil {
+			t.Errorf("parse error for %q: %v", test.rule, err)
+			continue
+		}
+
+		result := f.Eval(map[string]any{"f_string": test.value})
+		if result.Pass != test.pass {
+			t.Errorf("rule %q with value %q: expected %v, got %v", test.rule, test.value, test.pass, result.Pass)
+		}
+	}
+}
+
 func TestFilterMatchIP(t *testing.T) {
 	f, err := Parse("ip.src==192.168.1.1 and ip.dst==192.168.1.1")
 	require.NoError(t, err)
