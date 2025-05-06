@@ -122,6 +122,28 @@ type valueToken struct {
 	value any
 }
 
+// tryParseAs attempts to parse a string value as a more specific type
+func tryParseAs(str string) (any, bool) {
+	// Try IP address
+	if ip := net.ParseIP(str); ip != nil {
+		return ip, true
+	}
+
+	// Try CIDR notation
+	if _, ipnet, err := net.ParseCIDR(str); err == nil {
+		return ipnet, true
+	}
+
+	// Try MAC address (if it looks like a MAC address format)
+	if strings.Count(str, ":") == 5 || strings.Count(str, ":") == 7 {
+		if mac, err := net.ParseMAC(str); err == nil {
+			return mac, true
+		}
+	}
+
+	return nil, false
+}
+
 func (v *valueToken) Parse() error {
 	var (
 		value any
@@ -129,9 +151,16 @@ func (v *valueToken) Parse() error {
 	)
 	switch v.typ {
 	case token_STRING:
-		value, err = parseString(v.raw)
+		strValue, err := parseString(v.raw)
 		if err != nil {
-			err = ValueParseError{v.typ, v.raw, err}
+			return ValueParseError{v.typ, v.raw, err}
+		}
+		
+		// Try to parse string value as a more specific type
+		if specialValue, ok := tryParseAs(strValue); ok {
+			value = specialValue
+		} else {
+			value = strValue
 		}
 	case token_INT:
 		value, err = parseInt(v.raw)
