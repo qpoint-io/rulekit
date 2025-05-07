@@ -154,7 +154,11 @@ func (r *rule) String() string {
 	if r.Rule == nil {
 		return "<empty>"
 	}
-	return strings.TrimSuffix(strings.TrimPrefix(r.Rule.String(), "("), ")")
+	s := r.Rule.String()
+	if len(s) > 0 && s[0] == '(' {
+		return strings.TrimSuffix(s[1:], ")")
+	}
+	return s
 }
 
 type Result struct {

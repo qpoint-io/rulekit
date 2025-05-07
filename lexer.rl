@@ -70,6 +70,10 @@ import (
 	field_char = alpha | digit | '_' | '.';
     field = (alpha | '_') field_char*;  # Must start with alpha or underscore
 	
+	# Function names (similar to fields but can't contain dots)
+	function_char = alpha | digit | '_';
+	function = (alpha | '_') function_char*;  # Must start with alpha or underscore
+	
 	# --- lexer logic ---
 	
 	main := |*
@@ -110,6 +114,8 @@ import (
 		ip_cidr       => { token_kind = token_IP_CIDR;    fbreak; };
 		hex_string    => { token_kind = token_HEX_STRING; fbreak; };
 		regex_pattern => { token_kind = token_REGEX;      fbreak; };
+
+		function => { token_kind = token_FUNCTION; fbreak; };
 
 		# Field names (allow alphanumeric and dots with restrictions)
 		field => { token_kind = token_FIELD; fbreak; };

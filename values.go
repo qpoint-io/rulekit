@@ -1,6 +1,7 @@
 package rulekit
 
 import (
+	"fmt"
 	"net"
 	"strings"
 
@@ -27,11 +28,11 @@ type LiteralValue[T any] struct {
 	value T
 }
 
-func (l LiteralValue[T]) Value(m map[string]any) (any, bool) {
+func (l *LiteralValue[T]) Value(m map[string]any) (any, bool) {
 	return l.value, true
 }
 
-func (l LiteralValue[T]) String() string {
+func (l *LiteralValue[T]) String() string {
 	return l.raw
 }
 
@@ -40,6 +41,25 @@ func valuerToMissingFields(rv Valuer) set.Set[string] {
 		return set.NewSet(string(v))
 	}
 	return nil
+}
+
+type FunctionValue struct {
+	fn   string
+	args []Valuer
+	raw  string
+}
+
+func (f *FunctionValue) Value(m map[string]any) (any, bool) {
+	// WIP testing function parsing
+	fmt.Printf("%s(...)\n", f.fn)
+	for _, arg := range f.args {
+		fmt.Printf(": %T %s\n", arg, arg.String())
+	}
+	return nil, false
+}
+
+func (f *FunctionValue) String() string {
+	return f.raw
 }
 
 func isZero(val any) bool {

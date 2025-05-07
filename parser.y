@@ -56,14 +56,6 @@ func operatorToString(op int) string {
 	}
 }
 
-func withNegate(negate bool, node Rule) Rule {
-	if negate {
-		return &nodeNot{right: node}
-	}
-	return node
-}
-
-// Add these type-specific parsing functions in the Go code section
 func parseString[T interface{ string | []byte }](data T) (string, error) {
 	str := string(data)
 	if str[0] == '\'' {
@@ -199,6 +191,8 @@ func (v *valueToken) Parse() error {
 		}
 	case token_FIELD:
 		// no-op
+	case token_FUNCTION:
+		// no-op
 	default:
 		err = fmt.Errorf("unsupported token type %s for value %q", valueTokenString(v.typ), v.raw)
 	}
@@ -210,12 +204,20 @@ func (v *valueToken) Parse() error {
 }
 
 func (v *valueToken) Valuer() Valuer {
-	if v.typ == token_FIELD {
+	switch v.typ {
+	case token_FIELD:
 		return FieldValue(string(v.raw))
-	}
-	return LiteralValue[any]{
-		raw: v.raw,
-		value: v.value,
+	case token_FUNCTION:
+		fv, ok := v.value.(*FunctionValue)
+		if !ok {
+			panic("code error; a token_FUNCTION valueToken MUST carry a *FunctionValue")
+		}
+		return fv
+	default:
+		return &LiteralValue[any]{
+			raw: v.raw,
+			value: v.value,
+		}
 	}
 }
 
@@ -237,6 +239,20 @@ func valueTokenString(typ int) string {
 		return "hex string"
 	case token_REGEX:
 		return "regex"
+	case token_FIELD:
+		return "field"
+	case token_FUNCTION:
+		return "function"
+	case token_LPAREN:
+		return `"("`
+	case token_RPAREN:
+		return `")"`
+	case token_LBRACKET:
+		return `"["`
+	case token_RBRACKET:
+		return `"]"`
+	case token_COMMA:
+		return `","`
 	default:
 		return "unknown"
 	}
@@ -252,29 +268,37 @@ func (e ValueParseError) Error() string {
 	return fmt.Sprintf("parsing %s value %q: %v", valueTokenString(e.TokenType), e.Value, e.Err)
 }
 
+type functionCall struct {
+	fn string
+	args []valueToken
+}
+
 %}
 
 %union {
 	rule          Rule
 	valueLiteral  []byte
 	operator      int
-	negate        bool
 	arrayValue    []valueToken 
 	valueToken    valueToken
+	functionCall  functionCall
 }
 
 // Type declarations for non-terminals (rules)
 %type <rule> search_condition predicate
+// %type <nodeFunction> function_call
+%type <valueToken> function_call
 %type <operator> ineq_operator eq_operator
-%type <negate> optional_negate
 %type <arrayValue> array_values
 // value tokens
 %type <valueToken> value_token // all values
 %type <valueToken> numeric_value_token // int or float values
 %type <valueToken> array_value_token // array values
 %type <valueToken> array_or_single_value_token // arrays or single values
+%type <arrayValue> function_arguments // function arguments
 
 %token <valueLiteral> token_FIELD
+%token <valueLiteral> token_FUNCTION
 %token <valueLiteral> token_STRING token_HEX_STRING
 %token <valueLiteral> token_INT token_FLOAT
 %token <valueLiteral> token_BOOL
@@ -329,57 +353,57 @@ search_condition:
 
 predicate:
 	// numeric values accept additional inequality operators
-	numeric_value_token optional_negate ineq_operator numeric_value_token
+	numeric_value_token ineq_operator numeric_value_token
 	{
-		$$ = withNegate($2, &nodeCompare{
+		$$ = &nodeCompare{
 			lv: $1.Valuer(),
-			op: $3,
-			rv: $4.Valuer(),
-		})
+			op: $2,
+			rv: $3.Valuer(),
+		}
 	}
 	// all values including numeric accept equality operators
-	| array_or_single_value_token optional_negate eq_operator array_or_single_value_token
+	| array_or_single_value_token eq_operator array_or_single_value_token
 	{
-		$$ = withNegate($2, &nodeCompare{
+		$$ = &nodeCompare{
 			lv: $1.Valuer(),
-			op: $3,
-			rv: $4.Valuer(),
-		})
+			op: $2,
+			rv: $3.Valuer(),
+		}
 	}
 	// op_MATCHES supports regex values
-	| array_or_single_value_token optional_negate op_MATCHES token_REGEX
+	| array_or_single_value_token op_MATCHES token_REGEX
 	{
-		elem, err := newValueToken(token_REGEX, $4)
+		elem, err := newValueToken(token_REGEX, $3)
 		if err != nil {
 			rulelex.Error(err.Error())
 			return 1
 		}
 
-		$$ = withNegate($2, &nodeMatch{
+		$$ = &nodeMatch{
 			lv: $1.Valuer(),
 			rv: elem.Valuer(),
-		})
+		}
 	}
 	| array_or_single_value_token
 	{
 		$$ = &nodeNotZero{$1.Valuer()}
 	}
 	// op_IN supports array values
-	| array_or_single_value_token optional_negate op_IN array_value_token
+	| array_or_single_value_token op_IN array_value_token
 	{
-		values, ok := $4.value.([]any)
+		values, ok := $3.value.([]any)
 		if !ok {
-			rulelex.Error(fmt.Errorf("parser error while handling array value %q", $4.raw).Error())
+			rulelex.Error(fmt.Errorf("parser error while handling array value %q", $3.raw).Error())
 			return 1
 		}
 
-		$$ = withNegate($2, &nodeIn{
+		$$ = &nodeIn{
 			lv: $1.Valuer(),
-			rv: LiteralValue[[]any]{
-				raw: $4.raw,
+			rv: &LiteralValue[[]any]{
+				raw: $3.raw,
 				value: values,
 			},
-		})
+		}
 	}
 	;
 
@@ -394,11 +418,6 @@ eq_operator:
 	op_EQ         { $$ = op_EQ       }
 	| op_NE       { $$ = op_NE       }
 	| op_CONTAINS { $$ = op_CONTAINS }
-	;
-
-optional_negate:
-	/* nothing */ { $$ = false }
-	| op_NOT      { $$ = true  }
 	;
 
 // Array handling rules
@@ -433,8 +452,9 @@ array_value_token:
 	;
 
 array_or_single_value_token:
-	value_token         { $$ = $1 }
-	| array_value_token { $$ = $1 }
+	function_call         { $$ = $1 }
+	| value_token         { $$ = $1 }
+	| array_value_token   { $$ = $1 }
 	;
 
 // value tokens
@@ -523,6 +543,58 @@ numeric_value_token:
 			return 1
 		}
 		$$ = v
+	}
+	| token_FUNCTION
+	{
+		// there is no syntatic difference between a function call and a field name
+		// so an isolated function name is treated as a field name
+		v, err := newValueToken(token_FIELD, $1)
+		if err != nil {
+			rulelex.Error(err.Error())
+			return 1
+		}
+		$$ = v
+	}
+	;
+
+function_call:
+	token_FUNCTION token_LPAREN function_arguments token_RPAREN
+	{
+		args := $3
+		raw_parts := make([]string, len(args))
+		for i, elem := range args {
+			raw_parts[i] = elem.raw
+		}
+		raw := fmt.Sprintf("%s(%s)", $1, strings.Join(raw_parts, ", "))
+
+		argValuers := make([]Valuer, len(args))
+		for i, elem := range args {
+			argValuers[i] = elem.Valuer()
+		}
+		$$ = valueToken{
+			typ: token_FUNCTION,
+			raw: raw,
+			value: &FunctionValue{
+				fn: string($1),
+				args: argValuers,
+				raw: raw,
+			},
+		}
+	}
+	;
+
+function_arguments:
+	array_or_single_value_token
+	{
+		$$ = []valueToken{$1}
+	}
+	| function_arguments token_COMMA array_or_single_value_token
+	{
+		$$ = append($1, $3)
+	}
+	| /* nothing */
+	{
+		$$ = ([]valueToken)(nil)
 	}
 	;
 
