@@ -649,8 +649,8 @@ func (w *testWriter) Write(p []byte) (n int, err error) {
 }
 
 func TestArray(t *testing.T) {
-	assertParseError(t, `field == [1,]`)
-	assertParseError(t, `field == [1, [1, 2], 3]`)
+	assertParseError(t, `field == [1,]`)           // trailing commas are not allowed
+	assertParseError(t, `field == [1, [1, 2], 3]`) // nested arrays are not allowed
 	{
 		f := MustParse(`field == [1, "str", 3]`)
 		require.Equal(t, `field == [1, "str", 3]`, f.String())
@@ -843,4 +843,21 @@ func TestSpecialBooleanFields(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFnFQDN(t *testing.T) {
+	assertParseEval(t, `no_args() == true`, KV{}, true)
+	// WIP testing function parsing
+	assertParseEval(t, `fqdn(host) == to_fqdn(str_join("test.com", "."))`, KV{"host": "example.com"}, true)
+	fmt.Println()
+	assertParseEval(t, `domain(host) == to_fqdn("test.com")`, KV{"host": "example.com"}, true)
+	assertParseEval(t, `arr_arg([1, 2, 3])`, KV{"arr": []any{1, 2, 3}}, true)
+	assertParseEval(t, `multi_arg(1, 2, "string")`, KV{"arg1": 1, "arg2": 2, "arg3": "string"}, true)
+	assertParseEval(t, `mixed_arg(1, "string", [1, 2, 3])`, KV{"arg1": 1, "arg2": "string", "arg3": []any{1, 2, 3}}, true)
+	assertParseEval(t, `tags(tags, ",")`, KV{"tags": []any{"example", "com"}}, true)
+	// TODO: make all nodes Valuers. most of them should return true/false
+	rule := MustParse(`str_join(["example", "com"], ".")`)
+	assertEval(t, rule, KV{"host": "example.com"}, true)
+	assertEval(t, rule, KV{"host": "sub.example.com"}, true)
+	assertEval(t, rule, KV{"host": "google.com"}, false)
 }
