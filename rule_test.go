@@ -21,7 +21,7 @@ func init() {
 
 // TestResult mirrors Result but with EvaluatedRule as a string for easier testing
 type TestResult struct {
-	Pass          bool
+	Value         any
 	MissingFields []string
 	EvaluatedRule string // stores the string representation of the rule
 }
@@ -31,7 +31,7 @@ func toTestResult(r Result) TestResult {
 	mf := r.MissingFields.Items()
 	slices.Sort(mf)
 	tr := TestResult{
-		Pass:          r.Pass,
+		Value:         r.Value,
 		MissingFields: mf,
 	}
 	if r.EvaluatedRule != nil {
@@ -51,35 +51,35 @@ func TestEngineExample(t *testing.T) {
 	`)
 	require.NoError(t, err)
 
-	assert.True(t, filter.Eval(map[string]any{
+	assertRule(t, filter, KV{
 		"tags":   []string{"db-svc", "internal-vlan", "unprivileged-user"},
 		"domain": "example.com",
-		"process": map[string]any{
+		"process": KV{
 			"uid":  1000,
 			"path": "/usr/bin/some-other-process",
 		},
 		"port": 8080,
-	}).Pass)
+	}).Ok().Value(true)
 
-	assert.True(t, filter.Eval(map[string]any{
-		"destination": map[string]any{
+	assertRule(t, filter, KV{
+		"destination": KV{
 			"ip":   net.ParseIP("192.168.2.37"),
 			"port": 22,
 		},
-	}).Pass)
+	}).Ok().Pass()
 
-	assert.False(t, filter.Eval(map[string]any{
+	assertRule(t, filter, KV{
 		"destination.ip":   net.ParseIP("1.1.1.1"),
 		"destination.port": 22,
-	}).Pass)
+	}).Ok().Pass()
 
-	assert.True(t, filter.Eval(map[string]any{
+	assertRule(t, filter, KV{
 		"src.process.path": "/usr/bin/some-other-process",
-	}).Pass)
+	}).Ok().Pass()
 
-	assert.False(t, filter.Eval(map[string]any{
+	assertRule(t, filter, KV{
 		"src.process.path": "/opt/go",
-	}).Pass)
+	}).Ok().Fail()
 }
 
 func TestEval(t *testing.T) {
@@ -92,15 +92,15 @@ func TestEval(t *testing.T) {
 			filter: `tls_version == 1.2`,
 			tests: map[*map[string]any]TestResult{
 				{"tls_version": 1.2}: {
-					Pass:          true,
+					Value:         true,
 					EvaluatedRule: "tls_version == 1.2",
 				},
 				{"tls_version": 1.1}: {
-					Pass:          false,
+					Value:         false,
 					EvaluatedRule: "tls_version == 1.2",
 				},
 				{}: {
-					Pass:          false,
+					Value:         false,
 					MissingFields: []string{"tls_version"},
 					EvaluatedRule: "tls_version == 1.2",
 				},
@@ -111,7 +111,7 @@ func TestEval(t *testing.T) {
 			tests: map[*map[string]any]TestResult{
 				// special handling for the != operator returns true even if the field is missing
 				{}: {
-					Pass:          true,
+					Value:         true,
 					MissingFields: []string{"tls_version"},
 					EvaluatedRule: "tls_version != 5",
 				},
@@ -122,7 +122,7 @@ func TestEval(t *testing.T) {
 			tests: map[*map[string]any]TestResult{
 				// special handling for the !FIELD operator returns true even if the field is missing
 				{}: {
-					Pass:          true,
+					Value:         true,
 					MissingFields: []string{"tls_version"},
 					EvaluatedRule: "!tls_version",
 				},
@@ -132,15 +132,15 @@ func TestEval(t *testing.T) {
 			filter: `domain matches /example\.com$/ OR tags == "db-svc"`,
 			tests: map[*map[string]any]TestResult{
 				{"domain": "example.com"}: {
-					Pass:          true,
+					Value:         true,
 					EvaluatedRule: `domain =~ /example\.com$/`,
 				},
 				{"tags": "db-svc"}: {
-					Pass:          true,
+					Value:         true,
 					EvaluatedRule: `tags == "db-svc"`,
 				},
 				{"domain": "other.com"}: {
-					Pass:          false,
+					Value:         false,
 					EvaluatedRule: `domain =~ /example\.com$/ or tags == "db-svc"`,
 					MissingFields: []string{"tags"},
 				},
@@ -150,25 +150,25 @@ func TestEval(t *testing.T) {
 			filter: `domain == "example.com" AND tags == "db-svc"`,
 			tests: map[*map[string]any]TestResult{
 				{"domain": "example.com"}: {
-					Pass:          false,
+					Value:         false,
 					EvaluatedRule: `domain == "example.com" and tags == "db-svc"`,
 					MissingFields: []string{"tags"},
 				},
 				{"tags": "db-svc"}: {
-					Pass:          false,
+					Value:         false,
 					EvaluatedRule: `domain == "example.com" and tags == "db-svc"`,
 					MissingFields: []string{"domain"},
 				},
 				{"domain": "example.com", "tags": []string{"test", "db-svc"}}: {
-					Pass:          true,
+					Value:         true,
 					EvaluatedRule: `domain == "example.com" and tags == "db-svc"`,
 				},
 				{"domain": "qpoint.io"}: {
-					Pass:          false,
+					Value:         false,
 					EvaluatedRule: `domain == "example.com"`,
 				},
 				{"tags": []string{}}: {
-					Pass:          false,
+					Value:         false,
 					EvaluatedRule: `tags == "db-svc"`,
 				},
 			},
@@ -189,7 +189,7 @@ func TestEval(t *testing.T) {
 					"dst.ip":      net.ParseIP("1.1.1.1"),
 					"dst.port":    443,
 				}: {
-					Pass:          true,
+					Value:         true,
 					EvaluatedRule: `dst.ip == 1.1.1.1 and (dst.port == 443 and tls.enabled)`,
 				},
 			},
@@ -422,11 +422,11 @@ func TestFilterMatchIntUint(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !f.Eval(map[string]any{"f_int": 1, "f_uint": uint(13)}).Pass {
+	if !f.Eval(map[string]any{"f_int": 1, "f_uint": uint(13)}).Pass() {
 		t.Error("Packet must pass")
 	}
 
-	if f.Eval(map[string]any{"f_int": 1, "f_uint": uint(14)}).Pass {
+	if f.Eval(map[string]any{"f_int": 1, "f_uint": uint(14)}).Pass() {
 		t.Error("Packet must not pass")
 	}
 
@@ -435,11 +435,11 @@ func TestFilterMatchIntUint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !f2.Eval(map[string]any{"f_int": []int{1, 3, 4}}).Pass {
+	if !f2.Eval(map[string]any{"f_int": []int{1, 3, 4}}).Pass() {
 		t.Error("Packet must pass")
 	}
 
-	if f2.Eval(map[string]any{"f_int": []int{1, 2, 3, 4}}).Pass {
+	if f2.Eval(map[string]any{"f_int": []int{1, 2, 3, 4}}).Pass() {
 		t.Error("Packet must not pass")
 	}
 }
@@ -449,11 +449,11 @@ func TestFilterMatchString(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !f.Eval(map[string]any{"f_string.1": "1", "f_string.2": "GET", "f_string.3": "abc123"}).Pass {
+	if !f.Eval(map[string]any{"f_string.1": "1", "f_string.2": "GET", "f_string.3": "abc123"}).Pass() {
 		t.Error("Packet must pass")
 	}
 
-	if f.Eval(map[string]any{"f_string.1": "2", "f_string.2": "GET", "f_string.3": "abc123"}).Pass {
+	if f.Eval(map[string]any{"f_string.1": "2", "f_string.2": "GET", "f_string.3": "abc123"}).Pass() {
 		t.Error("Packet must not pass")
 	}
 
@@ -461,11 +461,11 @@ func TestFilterMatchString(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !f2.Eval(map[string]any{"f_string.1": "asdf1asdf", "f_string.2": "text - GET ---", "f_string.3": "asf fffabc123"}).Pass {
+	if !f2.Eval(map[string]any{"f_string.1": "asdf1asdf", "f_string.2": "text - GET ---", "f_string.3": "asf fffabc123"}).Pass() {
 		t.Error("Packet must pass")
 	}
 
-	if f2.Eval(map[string]any{"f_string.1": "test234test", "f_string.2": "xxxxETyyy", "f_string.3": "abc125"}).Pass {
+	if f2.Eval(map[string]any{"f_string.1": "test234test", "f_string.2": "xxxxETyyy", "f_string.3": "abc125"}).Pass() {
 		t.Error("Packet must not pass")
 	}
 }
@@ -479,18 +479,18 @@ func TestFilterMatchIP(t *testing.T) {
 			"ip.src": net.ParseIP("192.168.1.1"),
 			"ip.dst": net.ParseIP("192.168.1.1"),
 		}: {
-			Pass:          true,
+			Value:         true,
 			EvaluatedRule: "ip.src == 192.168.1.1 and ip.dst == 192.168.1.1",
 		},
 		{
 			"ip.src": net.ParseIP("192.168.1.2"),
 			"ip.dst": net.ParseIP("192.168.1.1"),
 		}: {
-			Pass:          false,
+			Value:         false,
 			EvaluatedRule: "ip.src == 192.168.1.1",
 		},
 		{}: {
-			Pass:          false,
+			Value:         false,
 			MissingFields: []string{"ip.dst", "ip.src"},
 			EvaluatedRule: "ip.src == 192.168.1.1 and ip.dst == 192.168.1.1",
 		},
@@ -510,18 +510,18 @@ func TestFilterMatchIP(t *testing.T) {
 			"ip.src": net.ParseIP("192.168.100.1"),
 			"ip.dst": net.ParseIP("192.168.1.1"),
 		}: {
-			Pass:          true,
+			Value:         true,
 			EvaluatedRule: "ip.src == 192.168.0.0/16",
 		},
 		{
 			"ip.src": net.ParseIP("172.16.0.1"),
 			"ip.dst": net.ParseIP("10.0.0.1"),
 		}: {
-			Pass:          false,
+			Value:         false,
 			EvaluatedRule: "ip.src == 192.168.0.0/16",
 		},
 		{}: {
-			Pass:          false,
+			Value:         false,
 			MissingFields: []string{"ip.src"},
 			EvaluatedRule: "ip.src == 192.168.0.0/16",
 		},
@@ -544,17 +544,17 @@ func TestFilterMatchMac(t *testing.T) {
 		{
 			"f_mac": h1,
 		}: {
-			Pass:          true,
+			Value:         true,
 			EvaluatedRule: "f_mac == ab:3b:06:07:b2:ef",
 		},
 		{
 			"f_mac": h2,
 		}: {
-			Pass:          false,
+			Value:         false,
 			EvaluatedRule: "f_mac == ab:3b:06:07:b2:ef",
 		},
 		{}: {
-			Pass:          false,
+			Value:         false,
 			MissingFields: []string{"f_mac"},
 			EvaluatedRule: "f_mac == ab:3b:06:07:b2:ef",
 		},
@@ -724,7 +724,7 @@ func assertParseEval(t *testing.T, rule string, input KV, pass bool) {
 
 // assertEval is a helper function to assert the result of a rule evaluation.
 // It enforces strict evaluation.
-func assertEval(t *testing.T, r Rule, input KV, pass bool) {
+func assertEval(t *testing.T, r Rule, input KV, value any) {
 	t.Helper()
 	res := r.Eval(input)
 
@@ -732,11 +732,11 @@ func assertEval(t *testing.T, r Rule, input KV, pass bool) {
 		ll   []string
 		fail bool
 	)
-	if res.Pass != pass {
+	if res.Value != value {
 		fail = true
-		ll = append(ll, fmt.Sprintf("⛑️  wanted [%t] got [%t]", pass, res.Pass))
+		ll = append(ll, fmt.Sprintf("⛑️  wanted [%t] got [%t]", value, res.Value))
 	}
-	if !res.Strict() {
+	if !res.Ok() {
 		fail = true
 		ll = append(ll, fmt.Sprintf("⛑️  missing fields: %v", res.MissingFields.Items()))
 	}
@@ -776,7 +776,7 @@ func TestSpecialBooleanFields(t *testing.T) {
 		name     string
 		rule     string
 		input    map[string]any
-		expected bool
+		expected any
 	}{
 		{
 			name:     "standalone true",
@@ -838,8 +838,8 @@ func TestSpecialBooleanFields(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			rule := MustParse(tt.rule)
 			result := rule.Eval(tt.input)
-			if result.Pass != tt.expected {
-				t.Errorf("Expected %v, got %v for rule: %s", tt.expected, result.Pass, tt.rule)
+			if result.Value != tt.expected {
+				t.Errorf("Expected %v, got %v for rule: %s", tt.expected, result.Value, tt.rule)
 			}
 		})
 	}
@@ -860,4 +860,78 @@ func TestFnFQDN(t *testing.T) {
 	assertEval(t, rule, KV{"host": "example.com"}, true)
 	assertEval(t, rule, KV{"host": "sub.example.com"}, true)
 	assertEval(t, rule, KV{"host": "google.com"}, false)
+}
+
+type ruleAssertion struct {
+	t      *testing.T
+	rule   Rule
+	result Result
+}
+
+func assertRule(t *testing.T, rule Rule, kv KV) *ruleAssertion {
+	return &ruleAssertion{
+		t:      t,
+		rule:   rule,
+		result: rule.Eval(kv),
+	}
+}
+
+func (r *ruleAssertion) Value(value any) *ruleAssertion {
+	r.t.Helper()
+	assert.Equal(r.t, value, r.result.Value)
+	return r
+}
+
+func (r *ruleAssertion) Ok() *ruleAssertion {
+	r.t.Helper()
+	assert.True(r.t, r.result.Ok(), "rule should be ok")
+	return r
+}
+
+func (r *ruleAssertion) Pass() *ruleAssertion {
+	r.t.Helper()
+	assert.True(r.t, r.result.Pass(), "expected rule to pass but it returned %+v", r.result.Value)
+	return r
+}
+
+func (r *ruleAssertion) Fail() *ruleAssertion {
+	r.t.Helper()
+	assert.True(r.t, r.result.Fail(), "expected rule to fail but it returned %+v", r.result.Value)
+	return r
+}
+
+func (r *ruleAssertion) NotOk() *ruleAssertion {
+	r.t.Helper()
+	assert.False(r.t, r.result.Ok(), "rule should not be ok")
+	return r
+}
+
+func (r *ruleAssertion) PassStrict() *ruleAssertion {
+	r.t.Helper()
+	assert.True(r.t, r.result.PassStrict(), "expected rule to pass strict but it returned %+v (ok: %t)", r.result.Value, r.result.Ok())
+	return r
+}
+
+func (r *ruleAssertion) FailStrict() *ruleAssertion {
+	r.t.Helper()
+	assert.True(r.t, r.result.FailStrict(), "expected rule to fail strict but it returned %+v (ok: %t)", r.result.Value, r.result.Ok())
+	return r
+}
+
+func (r *ruleAssertion) MissingFields(fields ...string) *ruleAssertion {
+	r.t.Helper()
+	assert.ElementsMatch(r.t, fields, r.result.MissingFields.Items(), "missing fields should match")
+	return r
+}
+
+func (r *ruleAssertion) EvaluatedRule(rule string) *ruleAssertion {
+	r.t.Helper()
+	assert.Equal(r.t, rule, r.result.EvaluatedRule.String(), "evaluated rule should match")
+	return r
+}
+
+func (r *ruleAssertion) Result(expected TestResult) *ruleAssertion {
+	r.t.Helper()
+	assert.Equal(r.t, expected, toTestResult(r.result), "result should match")
+	return r
 }

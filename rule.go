@@ -162,24 +162,34 @@ func (r *rule) String() string {
 }
 
 type Result struct {
-	Pass          bool
+	Value         any
 	MissingFields set.Set[string]
 	EvaluatedRule Rule
 }
 
-// Pass returns true if the rule passes and all required fields are present.
+// Ok returns true if the rule was able to evaluate.
+func (r Result) Ok() bool {
+	return r.Value != nil
+}
+
+// Pass returns true if the rule returns a non-zero value. This is usually used for boolean rules.
+func (r Result) Pass() bool {
+	return !isZero(r.Value)
+}
+
+// PassStrict returns true if the rule returns a non-zero value and all required fields are present.
 func (r Result) PassStrict() bool {
-	return r.Pass && r.Strict()
+	return r.Pass() && r.Ok()
 }
 
-// FailStrict returns true if the rule fails and all required fields are present.
+// Fail returns true if the rule returns a zero value. This is usually used for boolean rules.
+func (r Result) Fail() bool {
+	return isZero(r.Value)
+}
+
+// FailStrict returns true if the rule returns a zero value and all required fields are present.
 func (r Result) FailStrict() bool {
-	return !r.Pass && r.Strict()
-}
-
-// Strict returns true if the rule fails and all required fields are present.
-func (r Result) Strict() bool {
-	return len(r.MissingFields) == 0
+	return r.Fail() && r.Ok()
 }
 
 type ParseError struct {
@@ -232,7 +242,11 @@ func (e *ParseError) Error() string {
 			"token_STRING", `"string"`,
 			"token_HEX_STRING", `"hex"`,
 			"token_ARRAY", `"array"`,
-			"token_LBRACKET", `"array"`,
+			"token_LBRACKET", `"["`,
+			"token_RBRACKET", `"]"`,
+			"token_LPAREN", `"("`,
+			"token_RPAREN", `")"`,
+			"token_FUNCTION", `"function or field name"`,
 		)
 		result += "\n" + replacer.Replace(e.Message)
 	}
