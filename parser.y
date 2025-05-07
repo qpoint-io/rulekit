@@ -56,13 +56,6 @@ func operatorToString(op int) string {
 	}
 }
 
-func withNegate(negate bool, node Rule) Rule {
-	if negate {
-		return &nodeNot{right: node}
-	}
-	return node
-}
-
 // Add these type-specific parsing functions in the Go code section
 func parseString[T interface{ string | []byte }](data T) (string, error) {
 	str := string(data)
@@ -258,7 +251,6 @@ func (e ValueParseError) Error() string {
 	rule          Rule
 	valueLiteral  []byte
 	operator      int
-	negate        bool
 	arrayValue    []valueToken 
 	valueToken    valueToken
 }
@@ -266,7 +258,6 @@ func (e ValueParseError) Error() string {
 // Type declarations for non-terminals (rules)
 %type <rule> search_condition predicate
 %type <operator> ineq_operator eq_operator
-%type <negate> optional_negate
 %type <arrayValue> array_values
 // value tokens
 %type <valueToken> value_token // all values
@@ -329,57 +320,57 @@ search_condition:
 
 predicate:
 	// numeric values accept additional inequality operators
-	numeric_value_token optional_negate ineq_operator numeric_value_token
+	numeric_value_token ineq_operator numeric_value_token
 	{
-		$$ = withNegate($2, &nodeCompare{
+		$$ = &nodeCompare{
 			lv: $1.Valuer(),
-			op: $3,
-			rv: $4.Valuer(),
-		})
+			op: $2,
+			rv: $3.Valuer(),
+		}
 	}
 	// all values including numeric accept equality operators
-	| array_or_single_value_token optional_negate eq_operator array_or_single_value_token
+	| array_or_single_value_token eq_operator array_or_single_value_token
 	{
-		$$ = withNegate($2, &nodeCompare{
+		$$ = &nodeCompare{
 			lv: $1.Valuer(),
-			op: $3,
-			rv: $4.Valuer(),
-		})
+			op: $2,
+			rv: $3.Valuer(),
+		}
 	}
 	// op_MATCHES supports regex values
-	| array_or_single_value_token optional_negate op_MATCHES token_REGEX
+	| array_or_single_value_token op_MATCHES token_REGEX
 	{
-		elem, err := newValueToken(token_REGEX, $4)
+		elem, err := newValueToken(token_REGEX, $3)
 		if err != nil {
 			rulelex.Error(err.Error())
 			return 1
 		}
 
-		$$ = withNegate($2, &nodeMatch{
+		$$ = &nodeMatch{
 			lv: $1.Valuer(),
 			rv: elem.Valuer(),
-		})
+		}
 	}
 	| array_or_single_value_token
 	{
 		$$ = &nodeNotZero{$1.Valuer()}
 	}
 	// op_IN supports array values
-	| array_or_single_value_token optional_negate op_IN array_value_token
+	| array_or_single_value_token op_IN array_value_token
 	{
-		values, ok := $4.value.([]any)
+		values, ok := $3.value.([]any)
 		if !ok {
-			rulelex.Error(fmt.Errorf("parser error while handling array value %q", $4.raw).Error())
+			rulelex.Error(fmt.Errorf("parser error while handling array value %q", $3.raw).Error())
 			return 1
 		}
 
-		$$ = withNegate($2, &nodeIn{
+		$$ = &nodeIn{
 			lv: $1.Valuer(),
 			rv: LiteralValue[[]any]{
-				raw: $4.raw,
+				raw: $3.raw,
 				value: values,
 			},
-		})
+		}
 	}
 	;
 
@@ -394,11 +385,6 @@ eq_operator:
 	op_EQ         { $$ = op_EQ       }
 	| op_NE       { $$ = op_NE       }
 	| op_CONTAINS { $$ = op_CONTAINS }
-	;
-
-optional_negate:
-	/* nothing */ { $$ = false }
-	| op_NOT      { $$ = true  }
 	;
 
 // Array handling rules
