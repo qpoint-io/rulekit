@@ -14,6 +14,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestTODO(t *testing.T) {
+	t.Fatal(`
+	TODO: 
+		- replace Valuers with Rule interface
+		- fix failing Result tests
+		- put all of this in a separate pr
+		- finish funcitons
+		- replace KV with Ctx
+		- add support for custom functions
+		- create a RuleFunc
+	`)
+}
+
 func init() {
 	// SetDebugLevel(5)
 	// SetErrorVerbose(true)
