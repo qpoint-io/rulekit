@@ -3,6 +3,7 @@ package rulekit
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 
 	"github.com/qpoint-io/rulekit/set"
 )
@@ -178,6 +179,18 @@ func (n *nodeMatch) apply(lv any, rv any) bool {
 				return true
 			}
 		}
+	case int:
+		return r.MatchString(strconv.Itoa(val))
+	case int64:
+		return r.MatchString(strconv.FormatInt(val, 10))
+	case uint:
+		return r.MatchString(strconv.FormatUint(uint64(val), 10))
+	case uint64:
+		return r.MatchString(strconv.FormatUint(val, 10))
+	case float32:
+		return r.MatchString(strconv.FormatFloat(float64(val), 'f', -1, 32))
+	case float64:
+		return r.MatchString(strconv.FormatFloat(val, 'f', -1, 64))
 	}
 	return false
 }
