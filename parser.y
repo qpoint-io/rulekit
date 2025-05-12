@@ -171,9 +171,6 @@ func (v *valueToken) Parse() error {
 		}
 	case token_IP:
 		value = net.ParseIP(v.raw)
-		if value == nil {
-			err = ValueParseError{v.typ, v.raw, fmt.Errorf("invalid IP value %q", v.raw)}
-		}
 	case token_IP_CIDR:
 		_, value, err = net.ParseCIDR(v.raw)
 		if err != nil {

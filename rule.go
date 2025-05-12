@@ -165,11 +165,12 @@ type Result struct {
 	Value         any
 	MissingFields set.Set[string]
 	EvaluatedRule Rule
+	Error         error
 }
 
 // Ok returns true if the rule was able to evaluate.
 func (r Result) Ok() bool {
-	return r.Value != nil
+	return r.Value != nil && r.Error == nil
 }
 
 // Pass returns true if the rule returns a non-zero value. This is usually used for boolean rules.
