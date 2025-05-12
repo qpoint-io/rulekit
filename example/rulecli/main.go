@@ -521,9 +521,9 @@ func (m *model) evaluateRule() {
 	sb.WriteString(fmt.Sprintf("%s\n\n", rule))
 
 	// Show missing fields if any
-	if len(result.MissingFields) > 0 {
-		sb.WriteString(labelStyle.Render("Missing Fields: "))
-		sb.WriteString(fmt.Sprintf("%v\n\n", result.MissingFields))
+	if result.Error != nil {
+		sb.WriteString(labelStyle.Render("Error: "))
+		sb.WriteString(fmt.Sprintf("%v\n\n", result.Error))
 	}
 
 	// Show test data last

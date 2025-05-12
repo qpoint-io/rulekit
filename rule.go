@@ -95,8 +95,6 @@ import (
 	"fmt"
 	"strings"
 	"unicode/utf8"
-
-	"github.com/qpoint-io/rulekit/set"
 )
 
 // Parse parses a rule expression and returns a Rule.
@@ -159,23 +157,23 @@ func (r *rule) String() string {
 
 type Result struct {
 	Pass          bool
-	MissingFields set.Set[string]
 	EvaluatedRule Rule
+	Error         error
+}
+
+// Ok returns true if the rule was able to evaluate.
+func (r Result) Ok() bool {
+	return r.Error == nil
 }
 
 // Pass returns true if the rule passes and all required fields are present.
 func (r Result) PassStrict() bool {
-	return r.Pass && r.Strict()
+	return r.Pass && r.Ok()
 }
 
 // FailStrict returns true if the rule fails and all required fields are present.
 func (r Result) FailStrict() bool {
-	return !r.Pass && r.Strict()
-}
-
-// Strict returns true if the rule fails and all required fields are present.
-func (r Result) Strict() bool {
-	return len(r.MissingFields) == 0
+	return !r.Pass && r.Ok()
 }
 
 type ParseError struct {

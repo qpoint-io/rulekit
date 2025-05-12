@@ -35,11 +35,17 @@ func (l LiteralValue[T]) String() string {
 	return l.raw
 }
 
-func valuerToMissingFields(rv Valuer) set.Set[string] {
-	if v, ok := rv.(FieldValue); ok {
-		return set.NewSet(string(v))
+func valuersToMissingFields(rv ...Valuer) *ErrMissingFields {
+	fields := set.NewSet[string]()
+	for _, v := range rv {
+		if v, ok := v.(FieldValue); ok {
+			fields.Add(string(v))
+		}
 	}
-	return nil
+	if fields.Len() == 0 {
+		return nil
+	}
+	return &ErrMissingFields{Fields: fields}
 }
 
 func isZero(val any) bool {
