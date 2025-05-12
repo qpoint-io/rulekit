@@ -95,8 +95,6 @@ import (
 	"fmt"
 	"strings"
 	"unicode/utf8"
-
-	"github.com/qpoint-io/rulekit/set"
 )
 
 // Parse parses a rule expression and returns a Rule.
@@ -163,7 +161,6 @@ func (r *rule) String() string {
 
 type Result struct {
 	Value         any
-	MissingFields set.Set[string]
 	EvaluatedRule Rule
 	Error         error
 }

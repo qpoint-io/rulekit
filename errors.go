@@ -1,9 +1,10 @@
 package rulekit
 
 import (
+	"errors"
 	"fmt"
-	"slices"
 
+	"github.com/hashicorp/go-multierror"
 	"github.com/qpoint-io/rulekit/set"
 )
 
@@ -15,18 +16,37 @@ func (e ErrMissingFields) Error() string {
 	return fmt.Sprintf("missing fields: %v", e.Fields)
 }
 
-func coalesceErrs(errs ...error) []error {
+func coalesceErrs(errs ...error) error {
 	var (
-		// combine all ErrMissingFields errors
-		mf ErrMissingFields
-	)
-	errs = slices.DeleteFunc(errs, func(err error) bool {
-		if e, ok := err.(*ErrMissingFields); ok {
-			mf.Fields = set.Union(mf.Fields, e.Fields)
-			return true
+		errors = &multierror.Error{
+			ErrorFormat: func(errs []error) string {
+				switch len(errs) {
+				case 0:
+					return ""
+				case 1:
+					return errs[0].Error()
+				default:
+					return multierror.ListFormatFunc(errs)
+				}
+			},
 		}
-		return false
-	})
+		// combine all ErrMissingFields errors
+		mf = set.NewSet[string]()
+	)
+	for _, err := range errs {
+		if e, ok := err.(*ErrMissingFields); ok {
+			mf.Merge(e.Fields)
+			continue
+		}
 
-	return append(errs, &mf)
+		errors = multierror.Append(errors, err)
+	}
+
+	if mf.Len() > 0 {
+		errors = multierror.Append(errors, &ErrMissingFields{Fields: mf})
+	}
+
+	return errors.ErrorOrNil()
 }
+
+var ErrInvalidOperation = errors.New("invalid operation")

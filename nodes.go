@@ -3,8 +3,6 @@ package rulekit
 import (
 	"fmt"
 	"regexp"
-
-	"github.com/qpoint-io/rulekit/set"
 )
 
 // AND
@@ -37,7 +35,7 @@ func (n *nodeAnd) Eval(p map[string]any) Result {
 			left:  rleft.EvaluatedRule,
 			right: rright.EvaluatedRule,
 		},
-		MissingFields: set.Union(rleft.MissingFields, rright.MissingFields),
+		Error: coalesceErrs(rleft.Error, rright.Error),
 	}
 	return r
 }
@@ -76,7 +74,7 @@ func (n *nodeOr) Eval(p map[string]any) Result {
 			left:  rleft.EvaluatedRule,
 			right: rright.EvaluatedRule,
 		},
-		MissingFields: set.Union(rleft.MissingFields, rright.MissingFields),
+		Error: coalesceErrs(rleft.Error, rright.Error),
 	}
 	return r
 }
@@ -96,11 +94,16 @@ func (n *nodeNot) Eval(p map[string]any) Result {
 	}
 
 	r := n.right.Eval(p)
-	return Result{
-		Value:         !r.Pass(),
-		MissingFields: r.MissingFields,
+
+	res := Result{
+		Error:         r.Error,
 		EvaluatedRule: n,
 	}
+	if r.Ok() {
+		res.Value = !r.Pass()
+	}
+
+	return res
 }
 
 func (n *nodeNot) String() string {
@@ -135,7 +138,7 @@ func (n *nodeNotZero) Eval(p map[string]any) Result {
 	val, ok := n.rv.Value(p)
 	if !ok {
 		return Result{
-			MissingFields: valuerToMissingFields(n.rv),
+			Error:         valuersToMissingFields(n.rv),
 			EvaluatedRule: n,
 		}
 	}
@@ -161,7 +164,7 @@ func (n *nodeMatch) Eval(p map[string]any) Result {
 	rv, rvOk := n.rv.Value(p)
 	if !lvOk || !rvOk {
 		return Result{
-			MissingFields: set.Union(valuerToMissingFields(n.lv), valuerToMissingFields(n.rv)),
+			Error:         valuersToMissingFields(n.lv, n.rv),
 			EvaluatedRule: n,
 		}
 	}
@@ -211,12 +214,8 @@ func (n *nodeCompare) Eval(m map[string]any) Result {
 	rv, rvOk := n.rv.Value(m)
 	if !lvOk || !rvOk {
 		r := Result{
-			MissingFields: set.Union(valuerToMissingFields(n.lv), valuerToMissingFields(n.rv)),
+			Error:         valuersToMissingFields(n.lv, n.rv),
 			EvaluatedRule: n,
-		}
-		// if the operator is !=, we may return true if the field is not present as undefined != any
-		if n.op == op_NE {
-			r.Value = true
 		}
 		return r
 	}
@@ -243,7 +242,7 @@ func (n *nodeIn) Eval(p map[string]any) Result {
 	rv, rvOk := n.rv.Value(p)
 	if !lvOk || !rvOk {
 		return Result{
-			MissingFields: set.Union(valuerToMissingFields(n.lv), valuerToMissingFields(n.rv)),
+			Error:         valuersToMissingFields(n.lv, n.rv),
 			EvaluatedRule: n,
 		}
 	}

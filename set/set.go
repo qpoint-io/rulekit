@@ -42,6 +42,10 @@ func (s Set[T]) Merge(other Set[T]) {
 	s.Add(other.Items()...)
 }
 
+func (s Set[T]) Len() int {
+	return len(s)
+}
+
 func Union[T comparable](sets ...Set[T]) Set[T] {
 	var union Set[T]
 	for _, set := range sets {
