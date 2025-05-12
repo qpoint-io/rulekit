@@ -2,6 +2,7 @@ package rulekit
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -172,8 +173,7 @@ func TestEval(t *testing.T) {
 					EvaluatedRule: `tags == "db-svc"`,
 				},
 				{"domain": "other.com"}: {
-					Value:         false,
-					EvaluatedRule: `domain =~ /example\.com$/ or tags == "db-svc"`,
+					EvaluatedRule: `tags == "db-svc"`,
 					Error:         tErrMissingFields("tags"),
 				},
 			},
@@ -875,6 +875,26 @@ func TestSpecialBooleanFields(t *testing.T) {
 	}
 }
 
+func TestEvaluatedRule(t *testing.T) {
+	// In the case of missing fields, EvaluatedRule should return an optimized rule that
+	// allows us to progressively build up the rule's result.
+
+	rule := MustParse(`user == "root" or (dst.protocol == "mysql" and dst.port == 3306)`)
+
+	res := assertRule(t, rule, KV{}).
+		MissingFields("user", "dst.protocol", "dst.port").
+		Value(nil).
+		EvaluatedRule(`user == "root" or (dst.protocol == "mysql" and dst.port == 3306)`).
+		GetResult()
+
+	res = assertRule(t, res.EvaluatedRule, KV{"dst.protocol": "mysql"}).
+		MissingFields("user", "dst.port").
+		Value(nil).
+		// we've only supplied dst.protocol, so the rule should be optimized
+		EvaluatedRule(`user == "root" or (dst.port == 3306)`).
+		GetResult()
+}
+
 func TestFnFQDN(t *testing.T) {
 	t.Fatal("TODO")
 	assertParseEval(t, `no_args() == true`, KV{}, true)
@@ -971,8 +991,12 @@ func (r *ruleAssertion) FailStrict() *ruleAssertion {
 
 func (r *ruleAssertion) MissingFields(fields ...string) *ruleAssertion {
 	r.t.Helper()
-	if e, ok := r.result.Error.(*ErrMissingFields); ok {
-		assert.ElementsMatch(r.t, fields, e.Fields.Items(), "missing fields should match\n%s", r)
+	var mf *ErrMissingFields
+	if errors.As(r.result.Error, &mf) {
+		slices.Sort(fields)
+		missing := mf.Fields.Items()
+		slices.Sort(missing)
+		assert.Equal(r.t, fields, missing, "missing fields should match\n%s", r)
 	} else {
 		assert.Fail(r.t, "expected ErrMissingFields but got %T\n%s", r.result.Error, r)
 	}
@@ -995,4 +1019,8 @@ func (r *ruleAssertion) Result(expected TestResult) *ruleAssertion {
 	r.t.Helper()
 	assert.Equal(r.t, expected, toTestResult(r.result), "result should match\n%s", r)
 	return r
+}
+
+func (r *ruleAssertion) GetResult() Result {
+	return r.result
 }

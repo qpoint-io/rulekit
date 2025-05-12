@@ -51,24 +51,32 @@ type nodeOr struct {
 }
 
 func (n *nodeOr) Eval(p map[string]any) Result {
-	rleft := n.left.Eval(p)
-	rright := n.right.Eval(p)
-
 	// if either node passes strictly, return only that node
+	rleft := n.left.Eval(p)
 	if rleft.PassStrict() {
 		return rleft
-	} else if rright.PassStrict() {
+	}
+
+	rright := n.right.Eval(p)
+	if rright.PassStrict() {
 		return rright
 	}
 
-	var value any
-	if rleft.Ok() || rright.Ok() {
-		// one of the nodes is ok, so we can return the result of the or operation
-		value = rleft.Pass() || rright.Pass()
+	// if only one node is not ok, return it
+	if rleft.Ok() && !rright.Ok() {
+		return rright
+	} else if !rleft.Ok() && rright.Ok() {
+		return rleft
 	}
 
-	// either one could pass/fail with/without missing fields
-	r := Result{
+	// at this point either both nodes are ok or both are not ok.
+	var value any
+	if rleft.Ok() && rright.Ok() {
+		// set the result only if both nodes are ok
+		value = false
+	}
+
+	return Result{
 		Value: value,
 		EvaluatedRule: &nodeOr{
 			left:  rleft.EvaluatedRule,
@@ -76,7 +84,6 @@ func (n *nodeOr) Eval(p map[string]any) Result {
 		},
 		Error: coalesceErrs(rleft.Error, rright.Error),
 	}
-	return r
 }
 
 func (n *nodeOr) String() string {

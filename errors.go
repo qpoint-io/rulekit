@@ -18,7 +18,7 @@ func (e ErrMissingFields) Error() string {
 
 func coalesceErrs(errs ...error) error {
 	var (
-		errors = &multierror.Error{
+		multi = &multierror.Error{
 			ErrorFormat: func(errs []error) string {
 				switch len(errs) {
 				case 0:
@@ -33,20 +33,28 @@ func coalesceErrs(errs ...error) error {
 		// combine all ErrMissingFields errors
 		mf = set.NewSet[string]()
 	)
+
 	for _, err := range errs {
 		if e, ok := err.(*ErrMissingFields); ok {
 			mf.Merge(e.Fields)
 			continue
 		}
 
-		errors = multierror.Append(errors, err)
+		multi = multierror.Append(multi, err)
 	}
 
 	if mf.Len() > 0 {
-		errors = multierror.Append(errors, &ErrMissingFields{Fields: mf})
+		multi = multierror.Append(multi, &ErrMissingFields{Fields: mf})
 	}
 
-	return errors.ErrorOrNil()
+	switch len(multi.Errors) {
+	case 0:
+		return nil
+	case 1:
+		return multi.Errors[0]
+	default:
+		return multi
+	}
 }
 
 var ErrInvalidOperation = errors.New("invalid operation")
