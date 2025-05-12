@@ -501,7 +501,7 @@ func (m *model) evaluateRule() {
 
 	// Show results first on the same line
 	sb.WriteString(labelStyle.Render("Result: "))
-	if result.Pass {
+	if result.Pass() {
 		sb.WriteString(resultSuccess.Render("PASS"))
 	} else {
 		sb.WriteString(resultFail.Render("FAIL"))

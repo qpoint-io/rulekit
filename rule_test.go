@@ -24,6 +24,8 @@ func TestTODO(t *testing.T) {
 		- replace KV with Ctx
 		- add support for custom functions
 		- create a RuleFunc
+		- add alias operators actually as functions
+		- maybe accept oeprators as arguments maybe jus wit parenthes
 	`)
 }
 
@@ -330,7 +332,7 @@ func TestFilterNotZero(t *testing.T) {
 	} {
 		r, err := Parse(expr)
 		require.NoError(t, err)
-		assert.Equal(t, want, r.Eval(values).Pass, expr)
+		assert.Equal(t, want, r.Eval(values).Pass(), expr)
 	}
 }
 
