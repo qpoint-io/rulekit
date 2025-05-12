@@ -12,24 +12,32 @@ type nodeAnd struct {
 }
 
 func (n *nodeAnd) Eval(p map[string]any) Result {
-	rleft := n.left.Eval(p)
-	rright := n.right.Eval(p)
-
 	// if either node fails strictly, return only that node
+	rleft := n.left.Eval(p)
 	if rleft.FailStrict() {
 		return rleft
-	} else if rright.FailStrict() {
+	}
+
+	rright := n.right.Eval(p)
+	if rright.FailStrict() {
 		return rright
 	}
 
+	// if only one node is not ok, return it
+	if rleft.Ok() && !rright.Ok() {
+		return rright
+	} else if !rleft.Ok() && rright.Ok() {
+		return rleft
+	}
+
+	// at this point either both nodes are ok or both are not ok.
 	var value any
-	if rleft.Ok() || rright.Ok() {
-		// one of the nodes is ok, so we can return the result of the and operation
+	if rleft.Ok() && rright.Ok() {
+		// set the result only if both nodes are ok
 		value = rleft.Pass() && rright.Pass()
 	}
 
-	// either one could pass/fail with/without missing fields
-	r := Result{
+	return Result{
 		Value: value,
 		EvaluatedRule: &nodeAnd{
 			left:  rleft.EvaluatedRule,
@@ -37,7 +45,6 @@ func (n *nodeAnd) Eval(p map[string]any) Result {
 		},
 		Error: coalesceErrs(rleft.Error, rright.Error),
 	}
-	return r
 }
 
 func (n *nodeAnd) String() string {
@@ -73,7 +80,7 @@ func (n *nodeOr) Eval(p map[string]any) Result {
 	var value any
 	if rleft.Ok() && rright.Ok() {
 		// set the result only if both nodes are ok
-		value = false
+		value = rleft.Pass() || rright.Pass()
 	}
 
 	return Result{

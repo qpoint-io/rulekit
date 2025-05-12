@@ -28,6 +28,7 @@ func TestTODO(t *testing.T) {
 		- create a RuleFunc
 		- add alias operators actually as functions
 		- maybe accept oeprators as arguments maybe jus wit parenthes
+		- notZero - return value not bool
 	`)
 }
 
@@ -182,13 +183,13 @@ func TestEval(t *testing.T) {
 			filter: `domain == "example.com" AND tags == "db-svc"`,
 			tests: map[*map[string]any]TestResult{
 				{"domain": "example.com"}: {
-					Value:         false,
-					EvaluatedRule: `domain == "example.com" and tags == "db-svc"`,
+					Value:         nil,
+					EvaluatedRule: `tags == "db-svc"`,
 					Error:         tErrMissingFields("tags"),
 				},
 				{"tags": "db-svc"}: {
-					Value:         false,
-					EvaluatedRule: `domain == "example.com" and tags == "db-svc"`,
+					Value:         nil,
+					EvaluatedRule: `domain == "example.com"`,
 					Error:         tErrMissingFields("domain"),
 				},
 				{"domain": "example.com", "tags": []string{"test", "db-svc"}}: {
@@ -245,7 +246,7 @@ func TestEval(t *testing.T) {
 				SetDebugLevel(1)
 				defer SetDebugLevel(0)
 
-				t.Errorf("Filter: %q\nInput: %+v\nGot:  %+v\nWant: %+v", tc.filter, *input, got, want)
+				t.Errorf("Filter: %s\nInput: %+v\nGot:  %+v\nWant: %+v", tc.filter, *input, got, want)
 			}
 		}
 	}
@@ -876,23 +877,42 @@ func TestSpecialBooleanFields(t *testing.T) {
 }
 
 func TestEvaluatedRule(t *testing.T) {
+	rule := MustParse(`user == "root" or (dst.protocol == "mysql" and dst.port == 3306)`)
+	// happy path
+	assertRule(t, rule, KV{"user": "root"}).
+		Ok().
+		Pass().
+		EvaluatedRule(`user == "root"`)
+	assertRule(t, rule, KV{"user": "test", "dst.protocol": "mysql", "dst.port": 3306}).
+		Ok().
+		Pass().
+		EvaluatedRule(`dst.protocol == "mysql" and dst.port == 3306`)
+	assertRule(t, rule, KV{"user": "test", "dst.protocol": "mysql", "dst.port": 123}).
+		Ok().
+		Fail().
+		EvaluatedRule(`user == "root" or dst.port == 3306`)
+
 	// In the case of missing fields, EvaluatedRule should return an optimized rule that
 	// allows us to progressively build up the rule's result.
-
-	rule := MustParse(`user == "root" or (dst.protocol == "mysql" and dst.port == 3306)`)
-
-	res := assertRule(t, rule, KV{}).
+	res1 := assertRule(t, rule, KV{}).
 		MissingFields("user", "dst.protocol", "dst.port").
 		Value(nil).
 		EvaluatedRule(`user == "root" or (dst.protocol == "mysql" and dst.port == 3306)`).
 		GetResult()
 
-	res = assertRule(t, res.EvaluatedRule, KV{"dst.protocol": "mysql"}).
+	res2 := assertRule(t, res1.EvaluatedRule, KV{"dst.protocol": "mysql"}).
 		MissingFields("user", "dst.port").
 		Value(nil).
 		// we've only supplied dst.protocol, so the rule should be optimized
-		EvaluatedRule(`user == "root" or (dst.port == 3306)`).
+		EvaluatedRule(`user == "root" or dst.port == 3306`).
 		GetResult()
+
+	// dst.protocol should be "carried over" from the previous eval
+	assertRule(t, res2.EvaluatedRule, KV{"dst.port": 3306}).
+		Ok().
+		// we have passed enough data for the and statement to pass
+		Pass().
+		EvaluatedRule(`dst.port == 3306`)
 }
 
 func TestFnFQDN(t *testing.T) {
@@ -929,6 +949,7 @@ func assertRulep(t *testing.T, rule string, kv KV) *ruleAssertion {
 
 func assertRule(t *testing.T, rule Rule, kv KV) *ruleAssertion {
 	t.Helper()
+	require.NotNil(t, rule, "rule cannot be nil")
 	return &ruleAssertion{
 		t:      t,
 		rule:   rule,
@@ -998,7 +1019,7 @@ func (r *ruleAssertion) MissingFields(fields ...string) *ruleAssertion {
 		slices.Sort(missing)
 		assert.Equal(r.t, fields, missing, "missing fields should match\n%s", r)
 	} else {
-		assert.Fail(r.t, "expected ErrMissingFields but got %T\n%s", r.result.Error, r)
+		assert.Fail(r.t, "unexpected error type", "expected ErrMissingFields but got %T\n%s", r.result.Error, r)
 	}
 	return r
 }
