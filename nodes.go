@@ -24,9 +24,15 @@ func (n *nodeAnd) Eval(p map[string]any) Result {
 		return rright
 	}
 
+	var value any
+	if rleft.Ok() || rright.Ok() {
+		// one of the nodes is ok, so we can return the result of the and operation
+		value = rleft.Pass() && rright.Pass()
+	}
+
 	// either one could pass/fail with/without missing fields
 	r := Result{
-		Value: rleft.Pass() && rright.Pass(),
+		Value: value,
 		EvaluatedRule: &nodeAnd{
 			left:  rleft.EvaluatedRule,
 			right: rright.EvaluatedRule,
@@ -57,9 +63,15 @@ func (n *nodeOr) Eval(p map[string]any) Result {
 		return rright
 	}
 
+	var value any
+	if rleft.Ok() || rright.Ok() {
+		// one of the nodes is ok, so we can return the result of the or operation
+		value = rleft.Pass() || rright.Pass()
+	}
+
 	// either one could pass/fail with/without missing fields
 	r := Result{
-		Value: rleft.Pass() || rright.Pass(),
+		Value: value,
 		EvaluatedRule: &nodeOr{
 			left:  rleft.EvaluatedRule,
 			right: rright.EvaluatedRule,
@@ -123,7 +135,6 @@ func (n *nodeNotZero) Eval(p map[string]any) Result {
 	val, ok := n.rv.Value(p)
 	if !ok {
 		return Result{
-			// missing field == zero value
 			MissingFields: valuerToMissingFields(n.rv),
 			EvaluatedRule: n,
 		}

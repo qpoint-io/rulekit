@@ -86,7 +86,7 @@ func TestEngineExample(t *testing.T) {
 	assertRule(t, filter, KV{
 		"destination.ip":   net.ParseIP("1.1.1.1"),
 		"destination.port": 22,
-	}).Ok().Pass()
+	}).Ok().Fail()
 
 	assertRule(t, filter, KV{
 		"src.process.path": "/usr/bin/some-other-process",
@@ -115,7 +115,7 @@ func TestEval(t *testing.T) {
 					EvaluatedRule: "tls_version == 1.2",
 				},
 				{}: {
-					Value:         false,
+					Value:         nil,
 					MissingFields: []string{"tls_version"},
 					EvaluatedRule: "tls_version == 1.2",
 				},
@@ -330,9 +330,7 @@ func TestFilterNotZero(t *testing.T) {
 		"zeroNum || zeroIP": false,
 		"int && mac":        true,
 	} {
-		r, err := Parse(expr)
-		require.NoError(t, err)
-		assert.Equal(t, want, r.Eval(values).Pass(), expr)
+		assertRulep(t, expr, values).DoesPass(want)
 	}
 }
 
@@ -505,7 +503,7 @@ func TestFilterMatchIP(t *testing.T) {
 			EvaluatedRule: "ip.src == 192.168.1.1",
 		},
 		{}: {
-			Value:         false,
+			Value:         nil,
 			MissingFields: []string{"ip.dst", "ip.src"},
 			EvaluatedRule: "ip.src == 192.168.1.1 and ip.dst == 192.168.1.1",
 		},
@@ -536,7 +534,7 @@ func TestFilterMatchIP(t *testing.T) {
 			EvaluatedRule: "ip.src == 192.168.0.0/16",
 		},
 		{}: {
-			Value:         false,
+			Value:         nil,
 			MissingFields: []string{"ip.src"},
 			EvaluatedRule: "ip.src == 192.168.0.0/16",
 		},
@@ -569,7 +567,7 @@ func TestFilterMatchMac(t *testing.T) {
 			EvaluatedRule: "f_mac == ab:3b:06:07:b2:ef",
 		},
 		{}: {
-			Value:         false,
+			Value:         nil,
 			MissingFields: []string{"f_mac"},
 			EvaluatedRule: "f_mac == ab:3b:06:07:b2:ef",
 		},
@@ -883,7 +881,15 @@ type ruleAssertion struct {
 	result Result
 }
 
+func assertRulep(t *testing.T, rule string, kv KV) *ruleAssertion {
+	t.Helper()
+	r, err := Parse(rule)
+	require.NoError(t, err)
+	return assertRule(t, r, kv)
+}
+
 func assertRule(t *testing.T, rule Rule, kv KV) *ruleAssertion {
+	t.Helper()
 	return &ruleAssertion{
 		t:      t,
 		rule:   rule,
@@ -893,60 +899,66 @@ func assertRule(t *testing.T, rule Rule, kv KV) *ruleAssertion {
 
 func (r *ruleAssertion) Value(value any) *ruleAssertion {
 	r.t.Helper()
-	assert.Equal(r.t, value, r.result.Value)
+	assert.Equal(r.t, value, r.result.Value, "rule should return %+v\nrule: %s", value, r.rule)
 	return r
 }
 
 func (r *ruleAssertion) Ok() *ruleAssertion {
 	r.t.Helper()
-	assert.True(r.t, r.result.Ok(), "rule should be ok")
+	assert.True(r.t, r.result.Ok(), "rule should be ok\nrule: %s", r.rule)
+	return r
+}
+
+func (r *ruleAssertion) DoesPass(pass bool) *ruleAssertion {
+	r.t.Helper()
+	assert.Equal(r.t, pass, r.result.Pass(), "expected rule to return Pass()==%t but it returned %v\nrule: %s", pass, r.result.Pass(), r.rule)
 	return r
 }
 
 func (r *ruleAssertion) Pass() *ruleAssertion {
 	r.t.Helper()
-	assert.True(r.t, r.result.Pass(), "expected rule to pass but it returned %+v", r.result.Value)
+	assert.True(r.t, r.result.Pass(), "expected rule to pass but it returned %+v\nrule: %s", r.result.Value, r.rule)
 	return r
 }
 
 func (r *ruleAssertion) Fail() *ruleAssertion {
 	r.t.Helper()
-	assert.True(r.t, r.result.Fail(), "expected rule to fail but it returned %+v", r.result.Value)
+	assert.True(r.t, r.result.Fail(), "expected rule to fail but it returned %+v\nrule: %s", r.result.Value, r.rule)
 	return r
 }
 
 func (r *ruleAssertion) NotOk() *ruleAssertion {
 	r.t.Helper()
-	assert.False(r.t, r.result.Ok(), "rule should not be ok")
+	assert.False(r.t, r.result.Ok(), "rule should not be ok\nrule: %s", r.rule)
 	return r
 }
 
 func (r *ruleAssertion) PassStrict() *ruleAssertion {
 	r.t.Helper()
-	assert.True(r.t, r.result.PassStrict(), "expected rule to pass strict but it returned %+v (ok: %t)", r.result.Value, r.result.Ok())
+	assert.True(r.t, r.result.PassStrict(), "expected rule to pass strict but it returned %+v (ok: %t)\nrule: %s", r.result.Value, r.result.Ok(), r.rule)
 	return r
 }
 
 func (r *ruleAssertion) FailStrict() *ruleAssertion {
 	r.t.Helper()
-	assert.True(r.t, r.result.FailStrict(), "expected rule to fail strict but it returned %+v (ok: %t)", r.result.Value, r.result.Ok())
+	assert.True(r.t, r.result.FailStrict(), "expected rule to fail strict but it returned %+v (ok: %t)\nrule: %s", r.result.Value, r.result.Ok(), r.rule)
 	return r
 }
 
 func (r *ruleAssertion) MissingFields(fields ...string) *ruleAssertion {
 	r.t.Helper()
-	assert.ElementsMatch(r.t, fields, r.result.MissingFields.Items(), "missing fields should match")
+	assert.ElementsMatch(r.t, fields, r.result.MissingFields.Items(), "missing fields should match\nrule: %s", r.rule)
 	return r
 }
 
 func (r *ruleAssertion) EvaluatedRule(rule string) *ruleAssertion {
 	r.t.Helper()
-	assert.Equal(r.t, rule, r.result.EvaluatedRule.String(), "evaluated rule should match")
+	assert.Equal(r.t, rule, r.result.EvaluatedRule.String(), "evaluated rule should match\nrule: %s", r.rule)
 	return r
 }
 
 func (r *ruleAssertion) Result(expected TestResult) *ruleAssertion {
 	r.t.Helper()
-	assert.Equal(r.t, expected, toTestResult(r.result), "result should match")
+	assert.Equal(r.t, expected, toTestResult(r.result), "result should match\nrule: %s", r.rule)
 	return r
 }

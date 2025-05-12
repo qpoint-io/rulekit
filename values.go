@@ -63,6 +63,10 @@ func (f *FunctionValue) String() string {
 }
 
 func isZero(val any) bool {
+	if val == nil {
+		return true
+	}
+
 	switch v := val.(type) {
 	case bool:
 		return !v
