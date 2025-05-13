@@ -156,24 +156,24 @@ func (r *rule) String() string {
 }
 
 type Result struct {
-	Pass          bool
+	Value         any
 	EvaluatedRule Rule
 	Error         error
 }
 
-// Ok returns true if the rule was able to evaluate.
+// Ok returns true if the rule was able to evaluate without error.
 func (r Result) Ok() bool {
-	return r.Error == nil
+	return r.Value != nil && r.Error == nil
 }
 
-// Pass returns true if the rule passes and all required fields are present.
-func (r Result) PassStrict() bool {
-	return r.Pass && r.Ok()
+// Pass returns true if the result is ok with a non-zero value. This is usually used for boolean rules.
+func (r Result) Pass() bool {
+	return r.Ok() && !isZero(r.Value)
 }
 
-// FailStrict returns true if the rule fails and all required fields are present.
-func (r Result) FailStrict() bool {
-	return !r.Pass && r.Ok()
+// Fail returns true if the rule is ok and returns a zero value. This is usually used for boolean rules.
+func (r Result) Fail() bool {
+	return r.Ok() && isZero(r.Value)
 }
 
 type ParseError struct {
@@ -219,8 +219,8 @@ func (e *ParseError) Error() string {
 			"token_INT", `"integer"`,
 			"token_FLOAT", `"float"`,
 			"token_BOOL", `"boolean"`,
-			"token_IP", `"ip"`,
 			"token_IP_CIDR", `"cidr"`,
+			"token_IP", `"ip"`,
 			"token_REGEX", `"regex"`,
 			"token_FIELD", `"field name"`,
 			"token_STRING", `"string"`,

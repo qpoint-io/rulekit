@@ -12,26 +12,39 @@ type nodeAnd struct {
 }
 
 func (n *nodeAnd) Eval(p map[string]any) Result {
+	// if either node fails, return only that node
 	rleft := n.left.Eval(p)
-	rright := n.right.Eval(p)
-
-	// if either node fails strictly, return only that node
-	if rleft.FailStrict() {
+	if rleft.Fail() {
 		return rleft
-	} else if rright.FailStrict() {
+	}
+
+	rright := n.right.Eval(p)
+	if rright.Fail() {
 		return rright
 	}
 
-	// either one could pass/fail with/without missing fields
-	r := Result{
-		Pass: rleft.Pass && rright.Pass,
+	// if only one node is not ok, return it
+	if rleft.Ok() && !rright.Ok() {
+		return rright
+	} else if !rleft.Ok() && rright.Ok() {
+		return rleft
+	}
+
+	// at this point either both nodes are ok or both are not ok.
+	var value any
+	if rleft.Ok() && rright.Ok() {
+		// set the result only if both nodes are ok
+		value = rleft.Pass() && rright.Pass()
+	}
+
+	return Result{
+		Value: value,
 		EvaluatedRule: &nodeAnd{
 			left:  rleft.EvaluatedRule,
 			right: rright.EvaluatedRule,
 		},
 		Error: coalesceErrs(rleft.Error, rright.Error),
 	}
-	return r
 }
 
 func (n *nodeAnd) String() string {
@@ -45,26 +58,39 @@ type nodeOr struct {
 }
 
 func (n *nodeOr) Eval(p map[string]any) Result {
+	// if either node passes, return only that node
 	rleft := n.left.Eval(p)
-	rright := n.right.Eval(p)
-
-	// if either node passes strictly, return only that node
-	if rleft.PassStrict() {
+	if rleft.Pass() {
 		return rleft
-	} else if rright.PassStrict() {
+	}
+
+	rright := n.right.Eval(p)
+	if rright.Pass() {
 		return rright
 	}
 
-	// either one could pass/fail with/without missing fields
-	r := Result{
-		Pass: rleft.Pass || rright.Pass,
+	// if only one node is not ok, return it
+	if rleft.Ok() && !rright.Ok() {
+		return rright
+	} else if !rleft.Ok() && rright.Ok() {
+		return rleft
+	}
+
+	// at this point either both nodes are ok or both are not ok.
+	var value any
+	if rleft.Ok() && rright.Ok() {
+		// set the result only if both nodes are ok
+		value = rleft.Pass() || rright.Pass()
+	}
+
+	return Result{
+		Value: value,
 		EvaluatedRule: &nodeOr{
 			left:  rleft.EvaluatedRule,
 			right: rright.EvaluatedRule,
 		},
 		Error: coalesceErrs(rleft.Error, rright.Error),
 	}
-	return r
 }
 
 func (n *nodeOr) String() string {
@@ -82,11 +108,17 @@ func (n *nodeNot) Eval(p map[string]any) Result {
 	}
 
 	r := n.right.Eval(p)
-	return Result{
-		Pass:          !r.Pass,
-		Error:         r.Error,
+
+	res := Result{
 		EvaluatedRule: n,
 	}
+	if r.Ok() {
+		res.Value = !r.Pass()
+	} else {
+		res.Error = r.Error
+	}
+
+	return res
 }
 
 func (n *nodeNot) String() string {
@@ -121,15 +153,13 @@ func (n *nodeNotZero) Eval(p map[string]any) Result {
 	val, ok := n.rv.Value(p)
 	if !ok {
 		return Result{
-			// missing field == zero value
-			Pass:          false,
 			Error:         valuersToMissingFields(n.rv),
 			EvaluatedRule: n,
 		}
 	}
 
 	return Result{
-		Pass:          !isZero(val),
+		Value:         !isZero(val),
 		EvaluatedRule: n,
 	}
 }
@@ -149,14 +179,13 @@ func (n *nodeMatch) Eval(p map[string]any) Result {
 	rv, rvOk := n.rv.Value(p)
 	if !lvOk || !rvOk {
 		return Result{
-			Pass:          false,
 			Error:         valuersToMissingFields(n.lv, n.rv),
 			EvaluatedRule: n,
 		}
 	}
 
 	return Result{
-		Pass:          n.apply(lv, rv),
+		Value:         n.apply(lv, rv),
 		EvaluatedRule: n,
 	}
 }
@@ -203,16 +232,12 @@ func (n *nodeCompare) Eval(m map[string]any) Result {
 			Error:         valuersToMissingFields(n.lv, n.rv),
 			EvaluatedRule: n,
 		}
-		// if the operator is !=, we may return true if the field is not present as undefined != any
-		if n.op == op_NE {
-			r.Pass = true
-		}
 		return r
 	}
 
 	pass := compare(lv, n.op, rv)
 	return Result{
-		Pass:          pass,
+		Value:         pass,
 		EvaluatedRule: n,
 	}
 }
@@ -241,7 +266,6 @@ func (n *nodeIn) Eval(p map[string]any) Result {
 	if !ok {
 		// the right value must be an array
 		return Result{
-			Pass:          false,
 			EvaluatedRule: n,
 		}
 	}
@@ -249,7 +273,7 @@ func (n *nodeIn) Eval(p map[string]any) Result {
 	// `FIELD in ARR` == `ARR contains FIELD`
 	pass := compare(rvArr, op_CONTAINS, lv)
 	return Result{
-		Pass:          pass,
+		Value:         pass,
 		EvaluatedRule: n,
 	}
 }

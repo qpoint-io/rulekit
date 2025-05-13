@@ -27,11 +27,11 @@ type LiteralValue[T any] struct {
 	value T
 }
 
-func (l LiteralValue[T]) Value(m map[string]any) (any, bool) {
+func (l *LiteralValue[T]) Value(m map[string]any) (any, bool) {
 	return l.value, true
 }
 
-func (l LiteralValue[T]) String() string {
+func (l *LiteralValue[T]) String() string {
 	return l.raw
 }
 
@@ -49,6 +49,10 @@ func valuersToMissingFields(rv ...Valuer) *ErrMissingFields {
 }
 
 func isZero(val any) bool {
+	if val == nil {
+		return true
+	}
+
 	switch v := val.(type) {
 	case bool:
 		return !v
