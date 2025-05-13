@@ -198,7 +198,7 @@ func (v *valueToken) Parse() error {
 	return nil
 }
 
-func (v *valueToken) Valuer() Valuer {
+func (v *valueToken) Valuer() Rule {
 	if v.typ == token_FIELD {
 		return FieldValue(string(v.raw))
 	}
@@ -349,7 +349,7 @@ predicate:
 	}
 	| array_or_single_value_token
 	{
-		$$ = &nodeNotZero{$1.Valuer()}
+		$$ = $1.Valuer()
 	}
 	// op_IN supports array values
 	| array_or_single_value_token op_IN array_value_token

@@ -73,7 +73,7 @@ func TestEngineExample(t *testing.T) {
 	`)
 	require.NoError(t, err)
 
-	assertRule(t, filter, KV{
+	assertRule(t, filter, kv{
 		"tags":   []string{"db-svc", "internal-vlan", "unprivileged-user"},
 		"domain": "example.com",
 		"process": KV{
@@ -83,23 +83,23 @@ func TestEngineExample(t *testing.T) {
 		"port": 8080,
 	}).Ok().Value(true)
 
-	assertRule(t, filter, KV{
+	assertRule(t, filter, kv{
 		"destination": KV{
 			"ip":   net.ParseIP("192.168.2.37"),
 			"port": 22,
 		},
 	}).Ok().Pass()
 
-	assertRule(t, filter, KV{
+	assertRule(t, filter, kv{
 		"destination.ip":   net.ParseIP("1.1.1.1"),
 		"destination.port": 22,
 	}).NotOk().Value(nil)
 
-	assertRule(t, filter, KV{
+	assertRule(t, filter, kv{
 		"src.process.path": "/usr/bin/some-other-process",
 	}).Ok().Pass()
 
-	assertRule(t, filter, KV{
+	assertRule(t, filter, kv{
 		"src.process.path": "/opt/go",
 	}).NotOk().Value(nil)
 }
@@ -284,54 +284,6 @@ func BenchmarkEval(b *testing.B) {
 			}
 		})
 	})
-}
-
-func TestFilterNotZero(t *testing.T) {
-	ip, ipnet, err := net.ParseCIDR("1.2.3.4/24")
-	require.NoError(t, err)
-	mac, err := net.ParseMAC("01:23:45:67:89:ab")
-	require.NoError(t, err)
-
-	values := map[string]any{
-		"zeroInt":    0,
-		"zeroString": "",
-		"zeroBytes":  []byte{},
-		"zeroIP":     net.IP{},
-		"zeroIPNet":  &net.IPNet{},
-		"zeroMac":    net.HardwareAddr{},
-
-		"int":   int(1),
-		"uint":  uint64(123414),
-		"str":   "hello",
-		"bytes": []byte{1, 2, 3},
-		"ip":    ip,
-		"ipnet": ipnet,
-		"mac":   mac,
-	}
-
-	for expr, want := range map[string]any{
-		"unset_field": nil,
-		"zeroInt":     false,
-		"zeroString":  false,
-		"zeroBytes":   false,
-		"zeroIP":      false,
-		"zeroIPNet":   false,
-		"zeroMac":     false,
-
-		"int":   true,
-		"uint":  true,
-		"str":   true,
-		"bytes": true,
-		"ip":    true,
-		"ipnet": true,
-		"mac":   true,
-
-		"unset_field || ip": true,
-		"zeroInt || zeroIP": false,
-		"int && mac":        true,
-	} {
-		assertRulep(t, expr, values).Value(want)
-	}
 }
 
 func TestFilterParseUint(t *testing.T) {
@@ -912,28 +864,28 @@ type ruleAssertion struct {
 	t      *testing.T
 	rule   Rule
 	result Result
-	kv     KV
+	input  Ctxer
 }
 
-func assertRulep(t *testing.T, rule string, kv KV) *ruleAssertion {
+func assertRulep(t *testing.T, rule string, input Ctxer) *ruleAssertion {
 	t.Helper()
 	r, err := Parse(rule)
 	require.NoError(t, err)
-	return assertRule(t, r, kv)
+	return assertRule(t, r, input)
 }
 
-func assertRule(t *testing.T, rule Rule, kv KV) *ruleAssertion {
-	res := rule.Eval(&Ctx{KV: kv})
+func assertRule(t *testing.T, rule Rule, input Ctxer) *ruleAssertion {
+	res := rule.Eval(input.Ctx())
 	return &ruleAssertion{
 		t:      t,
 		rule:   rule,
 		result: res,
-		kv:     kv,
+		input:  input,
 	}
 }
 
 func (r *ruleAssertion) String() string {
-	return fmt.Sprintf("rule: %s\nkv: %+v\nerr: %+v\nval: %+v", r.rule, r.kv, r.result.Error, r.result.Value)
+	return fmt.Sprintf("rule: %s\ninput: %+v\nerr: %+v\nval: %+v", r.rule, r.input, r.result.Error, r.result.Value)
 }
 
 func (r *ruleAssertion) Value(value any) *ruleAssertion {

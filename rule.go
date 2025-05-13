@@ -171,7 +171,7 @@ type Result struct {
 
 // Ok returns true if the rule was able to evaluate without error.
 func (r Result) Ok() bool {
-	return r.Value != nil && r.Error == nil
+	return r.Error == nil
 }
 
 // Pass returns true if the result is ok with a non-zero value. This is usually used for boolean rules.

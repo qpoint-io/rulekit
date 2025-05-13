@@ -59,17 +59,16 @@ func main() {
     
     // Evaluate the rule using Ctx
     result := r.Eval(&rulekit.Ctx{KV: inputData})
-    
-    if result.PassStrict() {
-        fmt.Println("Rule matched!")
+
+    // Check for errors
+    if !result.Ok() {
+        fmt.Printf("Error evaluating rule: %v\n", result.Error)
     } else {
-        fmt.Println("Rule did not match")
-    }
-    
-    // Check for missing fields (if the result is inconclusive)
-    if len(result.MissingFields) > 0 {
-        fmt.Printf("Missing fields: %v\n", result.MissingFields)
-    }
+        if result.Pass() {
+            fmt.Println("PASS!")
+        } else if result.Fail() {
+            fmt.Println("FAIL :(")
+        }
 }
 ```
 
