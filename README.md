@@ -52,13 +52,13 @@ func main() {
     }
     
     // Define input data
-    inputData := map[string]any{
+    inputData := rulekit.KV{
         "domain": "example.com",
         "port": 8080,
     }
     
-    // Evaluate the rule
-    result := r.Eval(inputData)
+    // Evaluate the rule using Ctx
+    result := r.Eval(&rulekit.Ctx{KV: inputData})
     
     if result.PassStrict() {
         fmt.Println("Rule matched!")
@@ -85,6 +85,21 @@ The Result also provides additional helper methods:
 - `Pass()`: Returns true if the rule returns true/a non-zero value with no errors
 - `Fail()`: Returns true if the rule returns false/a zero value with no errors
 - `Ok()`: Returns true if the rule executed with no error
+
+## Context
+
+Rules are evaluated with a context input containing field values. `rulekit.KV` is an alias for `map[string]any`.
+
+```go
+ctx := &rulekit.Ctx{
+    KV: rulekit.KV{
+        "domain": "example.com",
+        "port": 8080,
+    },
+}
+
+result := rule.Eval(ctx)
+```
 
 ## Supported Operators
 

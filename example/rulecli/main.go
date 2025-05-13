@@ -494,7 +494,7 @@ func (m *model) evaluateRule() {
 	}
 
 	// Evaluate rule
-	result := rule.Eval(data)
+	result := rule.Eval(&rulekit.Ctx{KV: data})
 
 	// Format the result
 	var sb strings.Builder
