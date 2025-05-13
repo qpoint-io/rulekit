@@ -222,7 +222,7 @@ func TestEval(t *testing.T) {
 		require.NoError(t, err)
 
 		for input, want := range tc.tests {
-			got := toTestResult(p.Eval(*input))
+			got := toTestResult(p.Eval(&Ctx{KV: *input}))
 			if !reflect.DeepEqual(got, want) {
 				// print debug info
 				SetDebugWriter(&testWriter{t})
@@ -256,8 +256,8 @@ func BenchmarkEval(b *testing.B) {
 	largeFilter, err := Parse(`tags eq 'db-svc' OR domain matches /example\.com$/ OR (process.uid != 0 AND tags contains 'internal-svc') OR (destination.port <= 1023 AND destination.ip != 192.168.0.0/16)`)
 	require.NoError(b, err)
 
-	smallInput := map[string]any{"tags": "db-svc"}
-	largeInput := map[string]any{"tags": []string{"db-svc", "internal-vlan", "unprivileged-user"}, "domain": "example.com", "process.uid": 1000, "port": 8080, "destination.ip": net.ParseIP("192.168.2.37"), "destination.port": 8080}
+	smallInput := &Ctx{KV: KV{"tags": "db-svc"}}
+	largeInput := &Ctx{KV: KV{"tags": []string{"db-svc", "internal-vlan", "unprivileged-user"}, "domain": "example.com", "process.uid": 1000, "port": 8080, "destination.ip": net.ParseIP("192.168.2.37"), "destination.port": 8080}}
 
 	b.Run("simple", func(b *testing.B) {
 		b.Run("small input", func(b *testing.B) {
@@ -435,11 +435,11 @@ func TestFilterMatchIntUint(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !f.Eval(map[string]any{"f_int": 1, "f_uint": uint(13)}).Pass() {
+	if !f.Eval(&Ctx{KV: KV{"f_int": 1, "f_uint": uint(13)}}).Pass() {
 		t.Error("Packet must pass")
 	}
 
-	if f.Eval(map[string]any{"f_int": 1, "f_uint": uint(14)}).Pass() {
+	if f.Eval(&Ctx{KV: KV{"f_int": 1, "f_uint": uint(14)}}).Pass() {
 		t.Error("Packet must not pass")
 	}
 
@@ -448,11 +448,11 @@ func TestFilterMatchIntUint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !f2.Eval(map[string]any{"f_int": []int{1, 3, 4}}).Pass() {
+	if !f2.Eval(&Ctx{KV: KV{"f_int": []int{1, 3, 4}}}).Pass() {
 		t.Error("Packet must pass")
 	}
 
-	if f2.Eval(map[string]any{"f_int": []int{1, 2, 3, 4}}).Pass() {
+	if f2.Eval(&Ctx{KV: KV{"f_int": []int{1, 2, 3, 4}}}).Pass() {
 		t.Error("Packet must not pass")
 	}
 }
@@ -462,11 +462,11 @@ func TestFilterMatchString(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !f.Eval(map[string]any{"f_string.1": "1", "f_string.2": "GET", "f_string.3": "abc123"}).Pass() {
+	if !f.Eval(&Ctx{KV: KV{"f_string.1": "1", "f_string.2": "GET", "f_string.3": "abc123"}}).Pass() {
 		t.Error("Packet must pass")
 	}
 
-	if f.Eval(map[string]any{"f_string.1": "2", "f_string.2": "GET", "f_string.3": "abc123"}).Pass() {
+	if f.Eval(&Ctx{KV: KV{"f_string.1": "2", "f_string.2": "GET", "f_string.3": "abc123"}}).Pass() {
 		t.Error("Packet must not pass")
 	}
 
@@ -474,11 +474,11 @@ func TestFilterMatchString(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !f2.Eval(map[string]any{"f_string.1": "asdf1asdf", "f_string.2": "text - GET ---", "f_string.3": "asf fffabc123"}).Pass() {
+	if !f2.Eval(&Ctx{KV: KV{"f_string.1": "asdf1asdf", "f_string.2": "text - GET ---", "f_string.3": "asf fffabc123"}}).Pass() {
 		t.Error("Packet must pass")
 	}
 
-	if f2.Eval(map[string]any{"f_string.1": "test234test", "f_string.2": "xxxxETyyy", "f_string.3": "abc125"}).Pass() {
+	if f2.Eval(&Ctx{KV: KV{"f_string.1": "test234test", "f_string.2": "xxxxETyyy", "f_string.3": "abc125"}}).Pass() {
 		t.Error("Packet must not pass")
 	}
 }
@@ -510,7 +510,7 @@ func TestFilterMatchIP(t *testing.T) {
 	}
 
 	for input, want := range cases {
-		got := toTestResult(f.Eval(*input))
+		got := toTestResult(f.Eval(&Ctx{KV: *input}))
 		require.Equalf(t, want, got, "filter: %s, values: %+v", f.String(), input)
 	}
 
@@ -541,7 +541,7 @@ func TestFilterMatchIP(t *testing.T) {
 	}
 
 	for input, want := range cidrCases {
-		got := toTestResult(f4.Eval(*input))
+		got := toTestResult(f4.Eval(&Ctx{KV: *input}))
 		require.Equalf(t, want, got, "filter: %s, values: %+v", f4.String(), input)
 	}
 }
@@ -574,7 +574,7 @@ func TestFilterMatchMac(t *testing.T) {
 	}
 
 	for input, want := range cases {
-		got := toTestResult(f.Eval(*input))
+		got := toTestResult(f.Eval(&Ctx{KV: *input}))
 		require.Equal(t, want, got)
 	}
 }
@@ -668,9 +668,9 @@ func TestArray(t *testing.T) {
 		f := MustParse(`field == [1, "str", 3]`)
 		require.Equal(t, `field == [1, "str", 3]`, f.String())
 
-		assertEval(t, f, KV{"field": 3}, true)
-		assertEval(t, f, KV{"field": 4}, false)
-		assertEval(t, f, KV{"field": "str"}, true)
+		assertEval(t, f, kv{"field": 3}, true)
+		assertEval(t, f, kv{"field": 4}, false)
+		assertEval(t, f, kv{"field": "str"}, true)
 	}
 
 	{
@@ -678,32 +678,32 @@ func TestArray(t *testing.T) {
 		require.Equal(t, `field contains [1, "str", 3]`, f.String())
 
 		// contains does not support arrays on the right side
-		assertEval(t, f, KV{"field": "string"}, false)
-		assertEval(t, f, KV{"field": "str"}, false)
-		assertEval(t, f, KV{"field": 123}, false)
+		assertEval(t, f, kv{"field": "string"}, false)
+		assertEval(t, f, kv{"field": "str"}, false)
+		assertEval(t, f, kv{"field": 123}, false)
 	}
 
 	{
 		f := MustParse(`field contains "str"`)
 		require.Equal(t, `field contains "str"`, f.String())
 
-		assertEval(t, f, KV{"field": "string"}, true) // substring
-		assertEval(t, f, KV{"field": []any{"str", 123}}, true)
-		assertEval(t, f, KV{"field": []any{"test", "string"}}, false)
+		assertEval(t, f, kv{"field": "string"}, true) // substring
+		assertEval(t, f, kv{"field": []any{"str", 123}}, true)
+		assertEval(t, f, kv{"field": []any{"test", "string"}}, false)
 	}
 
-	assertParseEval(t, `f == "string"`, KV{"f": []any{1, "str", 3}}, false)       // false (no element equals "string")
-	assertParseEval(t, `f != "string"`, KV{"f": []any{1, "str", 3}}, true)        // true  (no element equals "string")
-	assertParseEval(t, `f contains "string"`, KV{"f": []any{1, "str", 3}}, false) // false (array doesn't contain "string")
+	assertParseEval(t, `f == "string"`, kv{"f": []any{1, "str", 3}}, false)       // false (no element equals "string")
+	assertParseEval(t, `f != "string"`, kv{"f": []any{1, "str", 3}}, true)        // true  (no element equals "string")
+	assertParseEval(t, `f contains "string"`, kv{"f": []any{1, "str", 3}}, false) // false (array doesn't contain "string")
 
 	{
 		f := MustParse(`arr contains val`)
 
-		assertEval(t, f, KV{
+		assertEval(t, f, kv{
 			"arr": []any{1, "str", 3},
 			"val": "str",
 		}, true)
-		assertEval(t, f, KV{
+		assertEval(t, f, kv{
 			"arr": []any{1, "str", 3},
 			"val": 50,
 		}, false)
@@ -718,18 +718,18 @@ func TestIn(t *testing.T) {
 		f := MustParse(`field in [1, "str", 3]`)
 		require.Equal(t, `field in [1, "str", 3]`, f.String())
 
-		assertEval(t, f, KV{"field": "string"}, false)
-		assertEval(t, f, KV{"field": "str"}, true)
-		assertEval(t, f, KV{"field": "s"}, false)
-		assertEval(t, f, KV{"field": 123}, false)
+		assertEval(t, f, kv{"field": "string"}, false)
+		assertEval(t, f, kv{"field": "str"}, true)
+		assertEval(t, f, kv{"field": "s"}, false)
+		assertEval(t, f, kv{"field": 123}, false)
 	}
 
 	assertParseEval(t, `5 in [1,2,3]`, nil, false)
 	assertParseEval(t, `1.2.3.4 in [1.0.0.0/8, 8.8.8.8]`, nil, true)
 	assertParseEval(t, `192.168.0.1 in [1.0.0.0/8, 8.8.8.8]`, nil, false)
 	assertParseEval(t, `192.168.0.1 in 192.168.0.0/16`, nil, true)
-	assertParseEval(t, `ip in 192.168.0.0/16`, KV{"ip": net.ParseIP("192.168.0.1")}, true)
-	assertParseEval(t, `cidr contains ip`, KV{"cidr": parseCIDR(t, "192.168.0.0/16"), "ip": net.ParseIP("192.168.0.1")}, true)
+	assertParseEval(t, `ip in 192.168.0.0/16`, kv{"ip": net.ParseIP("192.168.0.1")}, true)
+	assertParseEval(t, `cidr contains ip`, kv{"cidr": parseCIDR(t, "192.168.0.0/16"), "ip": net.ParseIP("192.168.0.1")}, true)
 }
 
 func parseCIDR(t *testing.T, s string) *net.IPNet {
@@ -738,7 +738,17 @@ func parseCIDR(t *testing.T, s string) *net.IPNet {
 	return ipnet
 }
 
-func assertParseEval(t *testing.T, rule string, input KV, pass bool) {
+type Ctxer interface {
+	Ctx() *Ctx
+}
+
+type kv map[string]any
+
+func (k kv) Ctx() *Ctx {
+	return &Ctx{KV: k}
+}
+
+func assertParseEval(t *testing.T, rule string, input Ctxer, pass bool) {
 	t.Helper()
 	r, err := Parse(rule)
 	require.NoError(t, err)
@@ -747,27 +757,18 @@ func assertParseEval(t *testing.T, rule string, input KV, pass bool) {
 
 // assertEval is a helper function to assert the result of a rule evaluation.
 // It enforces strict evaluation.
-func assertEval(t *testing.T, r Rule, input KV, value any) {
-	t.Helper()
-	res := r.Eval(input)
-
-	var (
-		ll   []string
-		fail bool
-	)
-	if res.Value != value {
-		fail = true
-		ll = append(ll, fmt.Sprintf("⛑️  wanted [%t] got [%t]", value, res.Value))
+func assertEval(t *testing.T, r Rule, input Ctxer, value any) {
+	var ctx *Ctx
+	if input != nil {
+		ctx = input.Ctx()
 	}
+	res := r.Eval(ctx)
 	if !res.Ok() {
-		fail = true
-		ll = append(ll, fmt.Sprintf("⛑️  err: %v", res.Error))
+		t.Errorf("rule.Eval(%v) failed: %v", input, res.Error)
+		return
 	}
-	if fail {
-		ll = append(ll, fmt.Sprintf("rule:\t%s", r.String()))
-		ll = append(ll, fmt.Sprintf("eval:\t%s", res.EvaluatedRule.String()))
-		ll = append(ll, fmt.Sprintf("input:\t%s", toJSON(t, input)))
-		t.Errorf("%s\n%s", "FAIL", strings.Join(ll, "\n"))
+	if !reflect.DeepEqual(res.Value, value) {
+		t.Errorf("rule.Eval(%v) = %v, want %v", input, res.Value, value)
 	}
 }
 
@@ -860,7 +861,7 @@ func TestSpecialBooleanFields(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rule := MustParse(tt.rule)
-			result := rule.Eval(tt.input)
+			result := rule.Eval(&Ctx{KV: tt.input})
 			if result.Value != tt.expected {
 				t.Errorf("Expected %v, got %v for rule: %s", tt.expected, result.Value, tt.rule)
 			}
@@ -871,28 +872,28 @@ func TestSpecialBooleanFields(t *testing.T) {
 func TestEvaluatedRule(t *testing.T) {
 	rule := MustParse(`user == "root" or (dst.protocol == "mysql" and dst.port == 3306)`)
 	// happy path
-	assertRule(t, rule, KV{"user": "root"}).
+	assertRule(t, rule, kv{"user": "root"}).
 		Ok().
 		Pass().
 		EvaluatedRule(`user == "root"`)
-	assertRule(t, rule, KV{"user": "test", "dst.protocol": "mysql", "dst.port": 3306}).
+	assertRule(t, rule, kv{"user": "test", "dst.protocol": "mysql", "dst.port": 3306}).
 		Ok().
 		Pass().
 		EvaluatedRule(`dst.protocol == "mysql" and dst.port == 3306`)
-	assertRule(t, rule, KV{"user": "test", "dst.protocol": "mysql", "dst.port": 123}).
+	assertRule(t, rule, kv{"user": "test", "dst.protocol": "mysql", "dst.port": 123}).
 		Ok().
 		Fail().
 		EvaluatedRule(`user == "root" or dst.port == 3306`)
 
 	// In the case of missing fields, EvaluatedRule should return an optimized rule that
 	// allows us to progressively build up the rule's result.
-	res1 := assertRule(t, rule, KV{}).
+	res1 := assertRule(t, rule, kv{}).
 		MissingFields("user", "dst.protocol", "dst.port").
 		Value(nil).
 		EvaluatedRule(`user == "root" or (dst.protocol == "mysql" and dst.port == 3306)`).
 		GetResult()
 
-	res2 := assertRule(t, res1.EvaluatedRule, KV{"dst.protocol": "mysql"}).
+	res2 := assertRule(t, res1.EvaluatedRule, kv{"dst.protocol": "mysql"}).
 		MissingFields("user", "dst.port").
 		Value(nil).
 		// we've only supplied dst.protocol, so the rule should be optimized
@@ -900,7 +901,7 @@ func TestEvaluatedRule(t *testing.T) {
 		GetResult()
 
 	// dst.protocol should be "carried over" from the previous eval
-	assertRule(t, res2.EvaluatedRule, KV{"dst.port": 3306}).
+	assertRule(t, res2.EvaluatedRule, kv{"dst.port": 3306}).
 		Ok().
 		// we have passed enough data for the and statement to pass
 		Pass().
@@ -922,12 +923,11 @@ func assertRulep(t *testing.T, rule string, kv KV) *ruleAssertion {
 }
 
 func assertRule(t *testing.T, rule Rule, kv KV) *ruleAssertion {
-	t.Helper()
-	require.NotNil(t, rule, "rule cannot be nil")
+	res := rule.Eval(&Ctx{KV: kv})
 	return &ruleAssertion{
 		t:      t,
 		rule:   rule,
-		result: rule.Eval(kv),
+		result: res,
 		kv:     kv,
 	}
 }

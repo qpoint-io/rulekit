@@ -11,14 +11,14 @@ type nodeAnd struct {
 	right Rule
 }
 
-func (n *nodeAnd) Eval(p map[string]any) Result {
+func (n *nodeAnd) Eval(ctx *Ctx) Result {
 	// if either node fails, return only that node
-	rleft := n.left.Eval(p)
+	rleft := n.left.Eval(ctx)
 	if rleft.Fail() {
 		return rleft
 	}
 
-	rright := n.right.Eval(p)
+	rright := n.right.Eval(ctx)
 	if rright.Fail() {
 		return rright
 	}
@@ -57,14 +57,14 @@ type nodeOr struct {
 	right Rule
 }
 
-func (n *nodeOr) Eval(p map[string]any) Result {
+func (n *nodeOr) Eval(ctx *Ctx) Result {
 	// if either node passes, return only that node
-	rleft := n.left.Eval(p)
+	rleft := n.left.Eval(ctx)
 	if rleft.Pass() {
 		return rleft
 	}
 
-	rright := n.right.Eval(p)
+	rright := n.right.Eval(ctx)
 	if rright.Pass() {
 		return rright
 	}
@@ -102,12 +102,12 @@ type nodeNot struct {
 	right Rule
 }
 
-func (n *nodeNot) Eval(p map[string]any) Result {
+func (n *nodeNot) Eval(ctx *Ctx) Result {
 	if n.right == nil {
 		return Result{EvaluatedRule: n}
 	}
 
-	r := n.right.Eval(p)
+	r := n.right.Eval(ctx)
 
 	res := Result{
 		EvaluatedRule: n,
@@ -149,8 +149,8 @@ type nodeNotZero struct {
 	rv Valuer
 }
 
-func (n *nodeNotZero) Eval(p map[string]any) Result {
-	val, ok := n.rv.Value(p)
+func (n *nodeNotZero) Eval(ctx *Ctx) Result {
+	val, ok := n.rv.Value(ctx)
 	if !ok {
 		return Result{
 			Error:         valuersToMissingFields(n.rv),
@@ -174,9 +174,9 @@ type nodeMatch struct {
 	rv Valuer
 }
 
-func (n *nodeMatch) Eval(p map[string]any) Result {
-	lv, lvOk := n.lv.Value(p)
-	rv, rvOk := n.rv.Value(p)
+func (n *nodeMatch) Eval(ctx *Ctx) Result {
+	lv, lvOk := n.lv.Value(ctx)
+	rv, rvOk := n.rv.Value(ctx)
 	if !lvOk || !rvOk {
 		return Result{
 			Error:         valuersToMissingFields(n.lv, n.rv),
@@ -224,9 +224,9 @@ type nodeCompare struct {
 	rv Valuer
 }
 
-func (n *nodeCompare) Eval(m map[string]any) Result {
-	lv, lvOk := n.lv.Value(m)
-	rv, rvOk := n.rv.Value(m)
+func (n *nodeCompare) Eval(ctx *Ctx) Result {
+	lv, lvOk := n.lv.Value(ctx)
+	rv, rvOk := n.rv.Value(ctx)
 	if !lvOk || !rvOk {
 		r := Result{
 			Error:         valuersToMissingFields(n.lv, n.rv),
@@ -252,9 +252,9 @@ type nodeIn struct {
 	rv Valuer
 }
 
-func (n *nodeIn) Eval(p map[string]any) Result {
-	lv, lvOk := n.lv.Value(p)
-	rv, rvOk := n.rv.Value(p)
+func (n *nodeIn) Eval(ctx *Ctx) Result {
+	lv, lvOk := n.lv.Value(ctx)
+	rv, rvOk := n.rv.Value(ctx)
 	if !lvOk || !rvOk {
 		return Result{
 			Error:         valuersToMissingFields(n.lv, n.rv),

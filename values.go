@@ -8,14 +8,14 @@ import (
 )
 
 type Valuer interface {
-	Value(map[string]any) (any, bool)
+	Value(*Ctx) (any, bool)
 	String() string
 }
 
 type FieldValue string
 
-func (f FieldValue) Value(m map[string]any) (any, bool) {
-	return mapPath(m, string(f))
+func (f FieldValue) Value(ctx *Ctx) (any, bool) {
+	return mapPath(ctx.KV, string(f))
 }
 
 func (f FieldValue) String() string {
@@ -27,7 +27,7 @@ type LiteralValue[T any] struct {
 	value T
 }
 
-func (l *LiteralValue[T]) Value(m map[string]any) (any, bool) {
+func (l *LiteralValue[T]) Value(ctx *Ctx) (any, bool) {
 	return l.value, true
 }
 

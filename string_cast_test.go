@@ -59,7 +59,7 @@ func TestStringAutomaticCasting(t *testing.T) {
 			r, err := Parse(tc.ruleExpr)
 			require.NoError(t, err)
 
-			result := r.Eval(tc.inputData)
+			result := r.Eval(&Ctx{KV: tc.inputData})
 			assert.Equal(t, tc.expected, result.Pass(), "rule: %s", tc.ruleExpr)
 		})
 	}

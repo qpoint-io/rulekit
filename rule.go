@@ -128,9 +128,17 @@ func MustParse(str string) Rule {
 
 type KV = map[string]any
 
+type Ctx struct {
+	KV KV
+}
+
+func (c *Ctx) Eval(r Rule) Result {
+	return r.Eval(c)
+}
+
 type Rule interface {
-	// Checks whether the input fields match the rule.
-	Eval(KV) Result
+	// Evaluates the rule with the context
+	Eval(*Ctx) Result
 	// String representation of the rule
 	String() string
 }
@@ -140,8 +148,8 @@ type rule struct {
 }
 
 // Eval overrides the rule's Eval() method to wrap the returned EvalutedRule so we can override the String() method.
-func (r *rule) Eval(fv KV) Result {
-	res := r.Rule.Eval(fv)
+func (r *rule) Eval(ctx *Ctx) Result {
+	res := r.Rule.Eval(ctx)
 	res.EvaluatedRule = &rule{Rule: res.EvaluatedRule}
 	return res
 }
