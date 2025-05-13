@@ -3,8 +3,6 @@ package rulekit
 import (
 	"fmt"
 	"regexp"
-
-	"github.com/qpoint-io/rulekit/set"
 )
 
 // AND
@@ -31,7 +29,7 @@ func (n *nodeAnd) Eval(p map[string]any) Result {
 			left:  rleft.EvaluatedRule,
 			right: rright.EvaluatedRule,
 		},
-		MissingFields: set.Union(rleft.MissingFields, rright.MissingFields),
+		Error: coalesceErrs(rleft.Error, rright.Error),
 	}
 	return r
 }
@@ -64,7 +62,7 @@ func (n *nodeOr) Eval(p map[string]any) Result {
 			left:  rleft.EvaluatedRule,
 			right: rright.EvaluatedRule,
 		},
-		MissingFields: set.Union(rleft.MissingFields, rright.MissingFields),
+		Error: coalesceErrs(rleft.Error, rright.Error),
 	}
 	return r
 }
@@ -86,7 +84,7 @@ func (n *nodeNot) Eval(p map[string]any) Result {
 	r := n.right.Eval(p)
 	return Result{
 		Pass:          !r.Pass,
-		MissingFields: r.MissingFields,
+		Error:         r.Error,
 		EvaluatedRule: n,
 	}
 }
@@ -125,7 +123,7 @@ func (n *nodeNotZero) Eval(p map[string]any) Result {
 		return Result{
 			// missing field == zero value
 			Pass:          false,
-			MissingFields: valuerToMissingFields(n.rv),
+			Error:         valuersToMissingFields(n.rv),
 			EvaluatedRule: n,
 		}
 	}
@@ -152,7 +150,7 @@ func (n *nodeMatch) Eval(p map[string]any) Result {
 	if !lvOk || !rvOk {
 		return Result{
 			Pass:          false,
-			MissingFields: set.Union(valuerToMissingFields(n.lv), valuerToMissingFields(n.rv)),
+			Error:         valuersToMissingFields(n.lv, n.rv),
 			EvaluatedRule: n,
 		}
 	}
@@ -202,7 +200,7 @@ func (n *nodeCompare) Eval(m map[string]any) Result {
 	rv, rvOk := n.rv.Value(m)
 	if !lvOk || !rvOk {
 		r := Result{
-			MissingFields: set.Union(valuerToMissingFields(n.lv), valuerToMissingFields(n.rv)),
+			Error:         valuersToMissingFields(n.lv, n.rv),
 			EvaluatedRule: n,
 		}
 		// if the operator is !=, we may return true if the field is not present as undefined != any
@@ -234,7 +232,7 @@ func (n *nodeIn) Eval(p map[string]any) Result {
 	rv, rvOk := n.rv.Value(p)
 	if !lvOk || !rvOk {
 		return Result{
-			MissingFields: set.Union(valuerToMissingFields(n.lv), valuerToMissingFields(n.rv)),
+			Error:         valuersToMissingFields(n.lv, n.rv),
 			EvaluatedRule: n,
 		}
 	}

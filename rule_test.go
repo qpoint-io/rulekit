@@ -2,6 +2,7 @@ package rulekit
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hashicorp/go-multierror"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -22,17 +24,37 @@ func init() {
 // TestResult mirrors Result but with EvaluatedRule as a string for easier testing
 type TestResult struct {
 	Pass          bool
-	MissingFields []string
+	Error         error
 	EvaluatedRule string // stores the string representation of the rule
+}
+
+type testErrMissingFields struct {
+	fields []string
+}
+
+func (e *testErrMissingFields) Error() string {
+	return fmt.Sprintf("missing fields: %v", e.fields)
+}
+
+func tErrMissingFields(fields ...string) error {
+	return &testErrMissingFields{fields: fields}
 }
 
 // toTestResult converts a Result to TestResult for easier test assertions
 func toTestResult(r Result) TestResult {
-	mf := r.MissingFields.Items()
-	slices.Sort(mf)
+	err := r.Error
+	if e, ok := err.(*multierror.Error); ok && e.Len() == 1 {
+		err = e.Errors[0]
+	}
+	if e, ok := err.(*ErrMissingFields); ok {
+		mf := e.Fields.Items()
+		slices.Sort(mf)
+		err = &testErrMissingFields{fields: mf}
+	}
+
 	tr := TestResult{
-		Pass:          r.Pass,
-		MissingFields: mf,
+		Pass:  r.Pass,
+		Error: err,
 	}
 	if r.EvaluatedRule != nil {
 		tr.EvaluatedRule = r.EvaluatedRule.String()
@@ -51,35 +73,35 @@ func TestEngineExample(t *testing.T) {
 	`)
 	require.NoError(t, err)
 
-	assert.True(t, filter.Eval(map[string]any{
+	assertRule(t, filter, KV{
 		"tags":   []string{"db-svc", "internal-vlan", "unprivileged-user"},
 		"domain": "example.com",
-		"process": map[string]any{
+		"process": KV{
 			"uid":  1000,
 			"path": "/usr/bin/some-other-process",
 		},
 		"port": 8080,
-	}).Pass)
+	}).Ok().Pass()
 
-	assert.True(t, filter.Eval(map[string]any{
-		"destination": map[string]any{
+	assertRule(t, filter, KV{
+		"destination": KV{
 			"ip":   net.ParseIP("192.168.2.37"),
 			"port": 22,
 		},
-	}).Pass)
+	}).Ok().Pass()
 
-	assert.False(t, filter.Eval(map[string]any{
+	assertRule(t, filter, KV{
 		"destination.ip":   net.ParseIP("1.1.1.1"),
 		"destination.port": 22,
-	}).Pass)
+	}).NotOk().Fail()
 
-	assert.True(t, filter.Eval(map[string]any{
+	assertRule(t, filter, KV{
 		"src.process.path": "/usr/bin/some-other-process",
-	}).Pass)
+	}).Ok().Pass()
 
-	assert.False(t, filter.Eval(map[string]any{
+	assertRule(t, filter, KV{
 		"src.process.path": "/opt/go",
-	}).Pass)
+	}).NotOk().Fail()
 }
 
 func TestEval(t *testing.T) {
@@ -101,7 +123,7 @@ func TestEval(t *testing.T) {
 				},
 				{}: {
 					Pass:          false,
-					MissingFields: []string{"tls_version"},
+					Error:         tErrMissingFields("tls_version"),
 					EvaluatedRule: "tls_version == 1.2",
 				},
 			},
@@ -109,10 +131,9 @@ func TestEval(t *testing.T) {
 		{
 			filter: `tls_version != 5`,
 			tests: map[*map[string]any]TestResult{
-				// special handling for the != operator returns true even if the field is missing
 				{}: {
 					Pass:          true,
-					MissingFields: []string{"tls_version"},
+					Error:         tErrMissingFields("tls_version"),
 					EvaluatedRule: "tls_version != 5",
 				},
 			},
@@ -120,10 +141,9 @@ func TestEval(t *testing.T) {
 		{
 			filter: `!tls_version`,
 			tests: map[*map[string]any]TestResult{
-				// special handling for the !FIELD operator returns true even if the field is missing
 				{}: {
 					Pass:          true,
-					MissingFields: []string{"tls_version"},
+					Error:         tErrMissingFields("tls_version"),
 					EvaluatedRule: "!tls_version",
 				},
 			},
@@ -140,9 +160,8 @@ func TestEval(t *testing.T) {
 					EvaluatedRule: `tags == "db-svc"`,
 				},
 				{"domain": "other.com"}: {
-					Pass:          false,
 					EvaluatedRule: `domain =~ /example\.com$/ or tags == "db-svc"`,
-					MissingFields: []string{"tags"},
+					Error:         tErrMissingFields("tags"),
 				},
 			},
 		},
@@ -152,12 +171,12 @@ func TestEval(t *testing.T) {
 				{"domain": "example.com"}: {
 					Pass:          false,
 					EvaluatedRule: `domain == "example.com" and tags == "db-svc"`,
-					MissingFields: []string{"tags"},
+					Error:         tErrMissingFields("tags"),
 				},
 				{"tags": "db-svc"}: {
 					Pass:          false,
 					EvaluatedRule: `domain == "example.com" and tags == "db-svc"`,
-					MissingFields: []string{"domain"},
+					Error:         tErrMissingFields("domain"),
 				},
 				{"domain": "example.com", "tags": []string{"test", "db-svc"}}: {
 					Pass:          true,
@@ -213,7 +232,7 @@ func TestEval(t *testing.T) {
 				SetDebugLevel(1)
 				defer SetDebugLevel(0)
 
-				t.Errorf("Filter: %q\nInput: %+v\nGot:  %+v\nWant: %+v", tc.filter, *input, got, want)
+				t.Errorf("Filter: %s\nInput: %+v\nGot:  %+v\nWant: %+v", tc.filter, *input, got, want)
 			}
 		}
 	}
@@ -315,9 +334,7 @@ func TestFilterNotZero(t *testing.T) {
 		"zeroNum || zeroIP": false,
 		"int && mac":        true,
 	} {
-		r, err := Parse(expr)
-		require.NoError(t, err)
-		assert.Equal(t, want, r.Eval(values).Pass, expr)
+		assertRulep(t, expr, values).DoesPass(want)
 	}
 }
 
@@ -491,7 +508,7 @@ func TestFilterMatchIP(t *testing.T) {
 		},
 		{}: {
 			Pass:          false,
-			MissingFields: []string{"ip.dst", "ip.src"},
+			Error:         tErrMissingFields("ip.dst", "ip.src"),
 			EvaluatedRule: "ip.src == 192.168.1.1 and ip.dst == 192.168.1.1",
 		},
 	}
@@ -522,7 +539,7 @@ func TestFilterMatchIP(t *testing.T) {
 		},
 		{}: {
 			Pass:          false,
-			MissingFields: []string{"ip.src"},
+			Error:         tErrMissingFields("ip.src"),
 			EvaluatedRule: "ip.src == 192.168.0.0/16",
 		},
 	}
@@ -555,7 +572,7 @@ func TestFilterMatchMac(t *testing.T) {
 		},
 		{}: {
 			Pass:          false,
-			MissingFields: []string{"f_mac"},
+			Error:         tErrMissingFields("f_mac"),
 			EvaluatedRule: "f_mac == ab:3b:06:07:b2:ef",
 		},
 	}
@@ -736,9 +753,9 @@ func assertEval(t *testing.T, r Rule, input KV, pass bool) {
 		fail = true
 		ll = append(ll, fmt.Sprintf("⛑️  wanted [%t] got [%t]", pass, res.Pass))
 	}
-	if !res.Strict() {
+	if !res.Ok() {
 		fail = true
-		ll = append(ll, fmt.Sprintf("⛑️  missing fields: %v", res.MissingFields.Items()))
+		ll = append(ll, fmt.Sprintf("⛑️  err: %v", res.Error))
 	}
 	if fail {
 		ll = append(ll, fmt.Sprintf("rule:\t%s", r.String()))
@@ -843,4 +860,111 @@ func TestSpecialBooleanFields(t *testing.T) {
 			}
 		})
 	}
+}
+
+type ruleAssertion struct {
+	t      *testing.T
+	rule   Rule
+	result Result
+	kv     KV
+}
+
+func assertRulep(t *testing.T, rule string, kv KV) *ruleAssertion {
+	t.Helper()
+	r, err := Parse(rule)
+	require.NoError(t, err)
+	return assertRule(t, r, kv)
+}
+
+func assertRule(t *testing.T, rule Rule, kv KV) *ruleAssertion {
+	t.Helper()
+	require.NotNil(t, rule, "rule cannot be nil")
+	return &ruleAssertion{
+		t:      t,
+		rule:   rule,
+		result: rule.Eval(kv),
+		kv:     kv,
+	}
+}
+
+func (r *ruleAssertion) String() string {
+	return fmt.Sprintf("rule: %s\nkv: %+v\nerr: %+v\npass: %t", r.rule, r.kv, r.result.Error, r.result.Pass)
+}
+
+func (r *ruleAssertion) Ok() *ruleAssertion {
+	r.t.Helper()
+	assert.True(r.t, r.result.Ok(), "rule should be ok\n%s", r)
+	return r
+}
+
+func (r *ruleAssertion) DoesPass(pass bool) *ruleAssertion {
+	r.t.Helper()
+	assert.Equal(r.t, pass, r.result.Pass, "expected rule to return Pass()==%t but it returned %v\n%s", pass, r.result.Pass, r)
+	return r
+}
+
+func (r *ruleAssertion) Pass() *ruleAssertion {
+	r.t.Helper()
+	assert.True(r.t, r.result.Pass, "expected rule to pass\n%s", r)
+	return r
+}
+
+func (r *ruleAssertion) Fail() *ruleAssertion {
+	r.t.Helper()
+	assert.False(r.t, r.result.Pass, "expected rule to fail\n%s", r)
+	return r
+}
+
+func (r *ruleAssertion) NotOk() *ruleAssertion {
+	r.t.Helper()
+	assert.False(r.t, r.result.Ok(), "rule should not be ok\n%s", r)
+	return r
+}
+
+func (r *ruleAssertion) PassStrict() *ruleAssertion {
+	r.t.Helper()
+	assert.True(r.t, r.result.PassStrict(), "expected rule to pass strict\n%s", r)
+	return r
+}
+
+func (r *ruleAssertion) FailStrict() *ruleAssertion {
+	r.t.Helper()
+	assert.True(r.t, r.result.FailStrict(), "expected rule to fail strict\n%s", r)
+	return r
+}
+
+func (r *ruleAssertion) MissingFields(fields ...string) *ruleAssertion {
+	r.t.Helper()
+	var mf *ErrMissingFields
+	if errors.As(r.result.Error, &mf) {
+		slices.Sort(fields)
+		missing := mf.Fields.Items()
+		slices.Sort(missing)
+		assert.Equal(r.t, fields, missing, "missing fields should match\n%s", r)
+	} else {
+		assert.Fail(r.t, "unexpected error type", "expected ErrMissingFields but got %T\n%s", r.result.Error, r)
+	}
+	return r
+}
+
+func (r *ruleAssertion) Error(err error) *ruleAssertion {
+	r.t.Helper()
+	assert.Equal(r.t, err, r.result.Error, "error should match\n%s", r)
+	return r
+}
+
+func (r *ruleAssertion) EvaluatedRule(rule string) *ruleAssertion {
+	r.t.Helper()
+	assert.Equal(r.t, rule, r.result.EvaluatedRule.String(), "evaluated rule should match\n%s", r)
+	return r
+}
+
+func (r *ruleAssertion) Result(expected TestResult) *ruleAssertion {
+	r.t.Helper()
+	assert.Equal(r.t, expected, toTestResult(r.result), "result should match\n%s", r)
+	return r
+}
+
+func (r *ruleAssertion) GetResult() Result {
+	return r.result
 }
