@@ -120,7 +120,7 @@ var (
 	// Example rules
 	exampleRules = []string{
 		`domain matches /example\.com$/ and port == 8080`,
-		`ip in 192.168.1.0/24 and method == "POST"`,
+		// `ip in 192.168.1.0/24 and method == "POST"`,
 		`status_code >= 400 and status_code < 500`,
 		`user_agent contains "Mozilla" and not path matches /\.(jpg|png|gif)$/`,
 		`request_count > 100 and response_time > 500`,
@@ -129,7 +129,7 @@ var (
 	// Example data sets
 	exampleData = []string{
 		`{"domain": "example.com", "port": 8080, "path": "/index.html"}`,
-		`{"ip": "192.168.1.100", "method": "POST", "path": "/api/data"}`,
+		// `{"ip": "192.168.1.100", "method": "POST", "path": "/api/data"}`,
 		`{"status_code": 404, "path": "/not-found.html"}`,
 		`{"user_agent": "Mozilla/5.0", "path": "/document.pdf"}`,
 		`{"request_count": 150, "response_time": 750}`,
@@ -500,19 +500,16 @@ func (m *model) evaluateRule() {
 	var sb strings.Builder
 
 	// Show results first on the same line
-	sb.WriteString(labelStyle.Render("Result: "))
-	if result.Pass {
-		sb.WriteString(resultSuccess.Render("PASS"))
-	} else {
-		sb.WriteString(resultFail.Render("FAIL"))
-	}
+	sb.WriteString(labelStyle.Render("Result: ") + fmt.Sprint(result.Value))
 
 	sb.WriteString("    ")
-	sb.WriteString(labelStyle.Render("Strict Result: "))
-	if result.PassStrict() {
+	sb.WriteString(labelStyle.Render("Pass/fail: "))
+	if result.Pass() {
 		sb.WriteString(resultSuccess.Render("PASS"))
-	} else {
+	} else if result.Fail() {
 		sb.WriteString(resultFail.Render("FAIL"))
+	} else {
+		sb.WriteString("n/a")
 	}
 	sb.WriteString("\n\n")
 

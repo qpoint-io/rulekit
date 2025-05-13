@@ -77,14 +77,14 @@ func main() {
 
 When a rule is evaluated, it returns a `Result` struct containing:
 
-- `Pass`: A boolean indicating if the rule passed
-- `MissingFields`: Any fields required by the rule but not present in the input
-- `EvaluatedRule`: The rule that was evaluated
+- `Value`: The evaluated value, usually a boolean
+- `Error`: Any fields required by the rule but not present in the input
+- `EvaluatedRule`: The sub-rule that determined the returned value
 
 The Result also provides additional helper methods:
-- `PassStrict()`: Returns true if the rule passes and all required fields are present
-- `FailStrict()`: Returns true if the rule fails and all required fields are present
-- `Strict()`: Returns true if all required fields are present
+- `Pass()`: Returns true if the rule returns true/a non-zero value with no errors
+- `Fail()`: Returns true if the rule returns false/a zero value with no errors
+- `Ok()`: Returns true if the rule executed with no error
 
 ## Supported Operators
 
@@ -101,7 +101,7 @@ The Result also provides additional helper methods:
 | `<` | `lt` | Less than |
 | `<=` | `le` | Less than or equal to |
 | `contains` | | Check if a value contains another value |
-| `in` | | Check if a value is contained within another value |
+| `in` | | Check if a value is contained within an array or an IP within a CIDR |
 | `matches` | | Match against a regular expression |
 
 ## Supported Types

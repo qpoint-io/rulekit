@@ -13,7 +13,7 @@ type ErrMissingFields struct {
 }
 
 func (e ErrMissingFields) Error() string {
-	return fmt.Sprintf("missing fields: %v", e.Fields)
+	return fmt.Sprintf("missing fields: %v", e.Fields.Items())
 }
 
 func coalesceErrs(errs ...error) error {

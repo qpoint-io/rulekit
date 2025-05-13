@@ -58,9 +58,9 @@ func TestStringAutomaticCasting(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			r, err := Parse(tc.ruleExpr)
 			require.NoError(t, err)
-			
+
 			result := r.Eval(tc.inputData)
-			assert.Equal(t, tc.expected, result.Pass, "rule: %s", tc.ruleExpr)
+			assert.Equal(t, tc.expected, result.Pass(), "rule: %s", tc.ruleExpr)
 		})
 	}
 }
@@ -113,7 +113,7 @@ func TestTryParseAs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, ok := tryParseAs(tt.input)
-			
+
 			assert.Equal(t, tt.wantOK, ok)
 			if tt.wantOK {
 				assert.Equal(t, tt.wantType, reflect.TypeOf(result).String())

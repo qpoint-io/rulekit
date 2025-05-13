@@ -56,7 +56,6 @@ func operatorToString(op int) string {
 	}
 }
 
-// Add these type-specific parsing functions in the Go code section
 func parseString[T interface{ string | []byte }](data T) (string, error) {
 	str := string(data)
 	if str[0] == '\'' {
@@ -172,9 +171,6 @@ func (v *valueToken) Parse() error {
 		}
 	case token_IP:
 		value = net.ParseIP(v.raw)
-		if value == nil {
-			err = ValueParseError{v.typ, v.raw, fmt.Errorf("invalid IP value %q", v.raw)}
-		}
 	case token_IP_CIDR:
 		_, value, err = net.ParseCIDR(v.raw)
 		if err != nil {
@@ -206,7 +202,7 @@ func (v *valueToken) Valuer() Valuer {
 	if v.typ == token_FIELD {
 		return FieldValue(string(v.raw))
 	}
-	return LiteralValue[any]{
+	return &LiteralValue[any]{
 		raw: v.raw,
 		value: v.value,
 	}
@@ -366,10 +362,25 @@ predicate:
 
 		$$ = &nodeIn{
 			lv: $1.Valuer(),
-			rv: LiteralValue[[]any]{
+			rv: &LiteralValue[[]any]{
 				raw: $3.raw,
 				value: values,
 			},
+		}
+	}
+	// op_IN supports IP CIDR values
+	| array_or_single_value_token op_IN token_IP_CIDR
+	{
+		v, err := newValueToken(token_IP_CIDR, $3)
+		if err != nil {
+			rulelex.Error(err.Error())
+			return 1
+		}
+
+		$$ = &nodeCompare{
+			lv: $1.Valuer(),
+			op: op_EQ,
+			rv: v.Valuer(),
 		}
 	}
 	;
