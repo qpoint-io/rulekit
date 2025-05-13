@@ -616,6 +616,12 @@ func (w *testWriter) Write(p []byte) (n int, err error) {
 func TestArray(t *testing.T) {
 	assertParseError(t, `field == [1,]`)           // trailing commas are not allowed
 	assertParseError(t, `field == [1, [1, 2], 3]`) // nested arrays are not allowed
+
+	assertRulep(t, `[1, "str", 3]`, nil).
+		Ok().
+		Value([]any{int64(1), "str", int64(3)}).
+		EvaluatedRule(`[1, "str", 3]`)
+
 	{
 		f := MustParse(`field == [1, "str", 3]`)
 		require.Equal(t, `field == [1, "str", 3]`, f.String())
@@ -860,6 +866,60 @@ func TestEvaluatedRule(t *testing.T) {
 		EvaluatedRule(`dst.port == 3306`)
 }
 
+func TestStringAutomaticCasting(t *testing.T) {
+	tests := []struct {
+		name      string
+		ruleExpr  string
+		inputData map[string]any
+		expected  bool
+	}{
+		{
+			name:      "explicit IP equals string IP",
+			ruleExpr:  `ip == "192.168.1.1"`,
+			inputData: map[string]any{"ip": net.ParseIP("192.168.1.1")},
+			expected:  true,
+		},
+		{
+			name:      "string IP equals explicit IP",
+			ruleExpr:  `"192.168.1.1" == ip`,
+			inputData: map[string]any{"ip": net.ParseIP("192.168.1.1")},
+			expected:  true,
+		},
+		{
+			name:      "string field with IP value equals explicit IP",
+			ruleExpr:  `ipstr == 192.168.1.1`,
+			inputData: map[string]any{"ipstr": "192.168.1.1"},
+			expected:  true,
+		},
+		{
+			name:      "string IP in CIDR array",
+			ruleExpr:  `"192.168.1.5" in [192.168.1.0/24]`,
+			inputData: map[string]any{},
+			expected:  true,
+		},
+		{
+			name:      "string IP not in CIDR array",
+			ruleExpr:  `"10.0.0.1" in [192.168.1.0/24]`,
+			inputData: map[string]any{},
+			expected:  false,
+		},
+		{
+			name:      "string MAC equals MAC",
+			ruleExpr:  `mac == "01:23:45:67:89:ab"`,
+			inputData: map[string]any{"mac": mustParseMac("01:23:45:67:89:ab")},
+			expected:  true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assertRulep(t, tc.ruleExpr, kv(tc.inputData)).
+				Ok().
+				DoesPass(tc.expected)
+		})
+	}
+}
+
 type ruleAssertion struct {
 	t      *testing.T
 	rule   Rule
@@ -875,7 +935,11 @@ func assertRulep(t *testing.T, rule string, input Ctxer) *ruleAssertion {
 }
 
 func assertRule(t *testing.T, rule Rule, input Ctxer) *ruleAssertion {
-	res := rule.Eval(input.Ctx())
+	var ctx *Ctx
+	if input != nil {
+		ctx = input.Ctx()
+	}
+	res := rule.Eval(ctx)
 	return &ruleAssertion{
 		t:      t,
 		rule:   rule,

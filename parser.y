@@ -56,7 +56,7 @@ func operatorToString(op int) string {
 	}
 }
 
-func parseString[T interface{ string | []byte }](data T) (string, error) {
+func parseString[T interface{ string | []byte }](data T) (any, error) {
 	str := string(data)
 	if str[0] == '\'' {
 		// Convert single-quoted string to double-quoted
@@ -65,7 +65,26 @@ func parseString[T interface{ string | []byte }](data T) (string, error) {
 		str = strings.ReplaceAll(str, `\'`, `'`)
 		str = `"` + str + `"`
 	}
-	return strconv.Unquote(str)
+	var err error
+	str, err = strconv.Unquote(str)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Try to parse string value as a more specific type
+	if ip := net.ParseIP(str); ip != nil {
+		// Try IP address
+		return ip, nil
+	} else if _, ipnet, err := net.ParseCIDR(str); err == nil {
+		// Try CIDR notation
+		return ipnet, nil
+	} else if strings.Count(str, ":") == 5 || strings.Count(str, ":") == 7 {
+		// Try MAC address (if it looks like a MAC address format)
+		if mac, err := net.ParseMAC(str); err == nil {
+			return mac, nil
+		}
+	}
+	return str, nil
 }
 
 func parseInt[T interface{ string | []byte }](data T) (any, error) {
@@ -84,14 +103,9 @@ func parseFloat[T interface{ string | []byte }](data T) (float64, error) {
 }
 
 func parseBool[T interface{ string | []byte }](data T) (bool, error) {
-	raw := string(data)
-	if strings.EqualFold(raw, "true") {
-		return true, nil
-	}
-	if strings.EqualFold(raw, "false") {
-		return false, nil
-	}
-	return false, fmt.Errorf("parsing boolean: unknown value %q", raw)
+	var val bool
+	_, err := fmt.Sscanf(string(data), "%t", &val)
+	return val, err
 }
 
 func parseRegex[T interface{ string | []byte }](data T) (*regexp.Regexp, error) {
@@ -100,112 +114,45 @@ func parseRegex[T interface{ string | []byte }](data T) (*regexp.Regexp, error) 
 	return regexp.Compile(pattern)
 }
 
-func newValueToken(token_type int, data []byte) (valueToken, error) {
-	v := valueToken{typ: token_type, raw: string(data)}
-	if err := v.Parse(); err != nil {
-		return valueToken{}, err
+func parseValueToken(typ int, rawBytes []byte) (Rule, error) {
+	raw := string(rawBytes)
+	var (
+		value any
+		err error
+	)
+	switch typ {
+	case token_STRING:
+		value, err = parseString(raw)
+	case token_INT:
+		value, err = parseInt(raw)
+	case token_FLOAT:
+		value, err = parseFloat(raw)
+	case token_BOOL:
+		value, err = parseBool(raw)
+	case token_IP:
+		value = net.ParseIP(raw)
+	case token_IP_CIDR:
+		_, value, err = net.ParseCIDR(raw)
+	case token_HEX_STRING:
+		value, err = ParseHexString(raw)
+	case token_REGEX:
+		value, err = parseRegex(raw)
+	default:
+		err = fmt.Errorf("unknown parseValueToken type")
 	}
-	return v, nil
+	if err != nil {
+		return nil, ValueParseError{typ, string(raw), err}
+	}
+	return &LiteralValue[any]{
+		raw: string(raw),
+		value: value,
+	}, nil
 }
 
 type valueToken struct {
 	typ int
 	raw string
 	value any
-}
-
-// tryParseAs attempts to parse a string value as a more specific type
-func tryParseAs(str string) (any, bool) {
-	// Try IP address
-	if ip := net.ParseIP(str); ip != nil {
-		return ip, true
-	}
-
-	// Try CIDR notation
-	if _, ipnet, err := net.ParseCIDR(str); err == nil {
-		return ipnet, true
-	}
-
-	// Try MAC address (if it looks like a MAC address format)
-	if strings.Count(str, ":") == 5 || strings.Count(str, ":") == 7 {
-		if mac, err := net.ParseMAC(str); err == nil {
-			return mac, true
-		}
-	}
-
-	return nil, false
-}
-
-func (v *valueToken) Parse() error {
-	var (
-		value any
-		err error
-	)
-	switch v.typ {
-	case token_STRING:
-		strValue, err := parseString(v.raw)
-		if err != nil {
-			return ValueParseError{v.typ, v.raw, err}
-		}
-		
-		// Try to parse string value as a more specific type
-		if specialValue, ok := tryParseAs(strValue); ok {
-			value = specialValue
-		} else {
-			value = strValue
-		}
-	case token_INT:
-		value, err = parseInt(v.raw)
-		if err != nil {
-			err = ValueParseError{v.typ, v.raw, err}
-		}
-	case token_FLOAT:
-		value, err = parseFloat(v.raw)
-		if err != nil {
-			err = ValueParseError{v.typ, v.raw, err}
-		}
-	case token_BOOL:
-		value, err = parseBool(v.raw)
-		if err != nil {
-			err = ValueParseError{v.typ, v.raw, err}
-		}
-	case token_IP:
-		value = net.ParseIP(v.raw)
-	case token_IP_CIDR:
-		_, value, err = net.ParseCIDR(v.raw)
-		if err != nil {
-			err = ValueParseError{v.typ, v.raw, err}
-		}
-	case token_HEX_STRING:
-		value, err = ParseHexString(v.raw)
-		if err != nil {
-			err = ValueParseError{v.typ, v.raw, err}
-		}
-	case token_REGEX:
-		value, err = parseRegex(v.raw)
-		if err != nil {
-			err = ValueParseError{v.typ, v.raw, err}
-		}
-	case token_FIELD:
-		// no-op
-	default:
-		err = fmt.Errorf("unsupported token type %s for value %q", valueTokenString(v.typ), v.raw)
-	}
-	if err != nil {
-		return err
-	}
-	v.value = value
-	return nil
-}
-
-func (v *valueToken) Valuer() Rule {
-	if v.typ == token_FIELD {
-		return FieldValue(string(v.raw))
-	}
-	return &LiteralValue[any]{
-		raw: v.raw,
-		value: v.value,
-	}
 }
 
 func valueTokenString(typ int) string {
@@ -226,6 +173,18 @@ func valueTokenString(typ int) string {
 		return "hex string"
 	case token_REGEX:
 		return "regex"
+	case token_FIELD:
+		return "field identifier"
+	case token_LPAREN:
+		return `"("`
+	case token_RPAREN:
+		return `")"`
+	case token_LBRACKET:
+		return `"["`
+	case token_RBRACKET:
+		return `"]"`
+	case token_COMMA:
+		return `","`
 	default:
 		return "unknown"
 	}
@@ -245,10 +204,9 @@ func (e ValueParseError) Error() string {
 
 %union {
 	rule          Rule
-	valueLiteral  []byte
 	operator      int
-	arrayValue    []valueToken 
-	valueToken    valueToken
+	valueLiteral  []byte
+	arrayValue    []Rule
 }
 
 // Type declarations for non-terminals (rules)
@@ -256,10 +214,10 @@ func (e ValueParseError) Error() string {
 %type <operator> ineq_operator eq_operator
 %type <arrayValue> array_values
 // value tokens
-%type <valueToken> value_token // all values
-%type <valueToken> numeric_value_token // int or float values
-%type <valueToken> array_value_token // array values
-%type <valueToken> array_or_single_value_token // arrays or single values
+%type <rule> value_token // all values
+%type <rule> numeric_value_token // int or float values
+%type <rule> array_value_token // array values
+%type <rule> array_or_single_value_token // arrays or single values
 
 %token <valueLiteral> token_FIELD
 %token <valueLiteral> token_STRING token_HEX_STRING
@@ -319,68 +277,59 @@ predicate:
 	numeric_value_token ineq_operator numeric_value_token
 	{
 		$$ = &nodeCompare{
-			lv: $1.Valuer(),
+			lv: $1,
 			op: $2,
-			rv: $3.Valuer(),
+			rv: $3,
 		}
 	}
 	// all values including numeric accept equality operators
 	| array_or_single_value_token eq_operator array_or_single_value_token
 	{
 		$$ = &nodeCompare{
-			lv: $1.Valuer(),
+			lv: $1,
 			op: $2,
-			rv: $3.Valuer(),
+			rv: $3,
 		}
 	}
 	// op_MATCHES supports regex values
 	| array_or_single_value_token op_MATCHES token_REGEX
 	{
-		elem, err := newValueToken(token_REGEX, $3)
+		elem, err := parseValueToken(token_REGEX, $3)
 		if err != nil {
 			rulelex.Error(err.Error())
 			return 1
 		}
 
 		$$ = &nodeMatch{
-			lv: $1.Valuer(),
-			rv: elem.Valuer(),
+			lv: $1,
+			rv: elem,
 		}
 	}
 	| array_or_single_value_token
 	{
-		$$ = $1.Valuer()
+		$$ = $1
 	}
 	// op_IN supports array values
 	| array_or_single_value_token op_IN array_value_token
 	{
-		values, ok := $3.value.([]any)
-		if !ok {
-			rulelex.Error(fmt.Errorf("parser error while handling array value %q", $3.raw).Error())
-			return 1
-		}
-
 		$$ = &nodeIn{
-			lv: $1.Valuer(),
-			rv: &LiteralValue[[]any]{
-				raw: $3.raw,
-				value: values,
-			},
+			lv: $1,
+			rv: $3,
 		}
 	}
 	// op_IN supports IP CIDR values
 	| array_or_single_value_token op_IN token_IP_CIDR
 	{
-		v, err := newValueToken(token_IP_CIDR, $3)
+		v, err := parseValueToken(token_IP_CIDR, $3)
 		if err != nil {
 			rulelex.Error(err.Error())
 			return 1
 		}
 
 		$$ = &nodeCompare{
-			lv: $1.Valuer(),
+			lv: $1,
 			op: op_EQ,
-			rv: v.Valuer(),
+			rv: v,
 		}
 	}
 	;
@@ -402,7 +351,7 @@ eq_operator:
 array_values:
 	value_token
 	{
-		$$ = []valueToken{$1}
+		$$ = []Rule{$1}
 	}
 	| array_values token_COMMA value_token
 	{
@@ -413,19 +362,7 @@ array_values:
 array_value_token:
 	token_LBRACKET array_values token_RBRACKET
 	{
-		raw_parts := make([]string, len($2))
-		values := make([]any, len($2))
-		for i, elem := range $2 {
-			raw_parts[i] = elem.raw
-			values[i] = elem.value
-		}
-		raw := fmt.Sprintf("[%s]", strings.Join(raw_parts, ", "))
-
-		$$ = valueToken{
-			typ: token_ARRAY,
-			raw: raw,
-			value: values,
-		}
+		$$ = newArrayValue($2)
 	}
 	;
 
@@ -439,7 +376,7 @@ value_token:
 	numeric_value_token { $$ = $1 }
 	| token_STRING
 	{
-		v, err := newValueToken(token_STRING, $1)	
+		v, err := parseValueToken(token_STRING, $1)	
 		if err != nil {
 			rulelex.Error(err.Error())
 			return 1
@@ -448,7 +385,7 @@ value_token:
 	}
 	| token_BOOL
 	{
-		v, err := newValueToken(token_BOOL, $1)
+		v, err := parseValueToken(token_BOOL, $1)
 		if err != nil {
 			rulelex.Error(err.Error())
 			return 1
@@ -457,7 +394,7 @@ value_token:
 	}
 	| token_IP
 	{
-		v, err := newValueToken(token_IP, $1)
+		v, err := parseValueToken(token_IP, $1)
 		if err != nil {
 			rulelex.Error(err.Error())
 			return 1
@@ -466,7 +403,7 @@ value_token:
 	}
 	| token_IP_CIDR
 	{
-		v, err := newValueToken(token_IP_CIDR, $1)
+		v, err := parseValueToken(token_IP_CIDR, $1)
 		if err != nil {
 			rulelex.Error(err.Error())
 			return 1
@@ -475,7 +412,7 @@ value_token:
 	}
 	| token_HEX_STRING
 	{
-		v, err := newValueToken(token_HEX_STRING, $1)
+		v, err := parseValueToken(token_HEX_STRING, $1)
 		if err != nil {
 			rulelex.Error(err.Error())
 			return 1
@@ -484,7 +421,7 @@ value_token:
 	}
 	| token_REGEX
 	{
-		v, err := newValueToken(token_REGEX, $1)
+		v, err := parseValueToken(token_REGEX, $1)
 		if err != nil {
 			rulelex.Error(err.Error())
 			return 1
@@ -496,7 +433,7 @@ value_token:
 numeric_value_token:
 	token_INT
 	{
-		v, err := newValueToken(token_INT, $1)
+		v, err := parseValueToken(token_INT, $1)
 		if err != nil {
 			rulelex.Error(err.Error())
 			return 1
@@ -505,7 +442,7 @@ numeric_value_token:
 	}
 	| token_FLOAT
 	{
-		v, err := newValueToken(token_FLOAT, $1)
+		v, err := parseValueToken(token_FLOAT, $1)
 		if err != nil {
 			rulelex.Error(err.Error())
 			return 1
@@ -514,12 +451,7 @@ numeric_value_token:
 	}
 	| token_FIELD
 	{
-		v, err := newValueToken(token_FIELD, $1)
-		if err != nil {
-			rulelex.Error(err.Error())
-			return 1
-		}
-		$$ = v
+		$$ = FieldValue(string($1))
 	}
 	;
 

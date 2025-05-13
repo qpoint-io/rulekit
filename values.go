@@ -43,6 +43,47 @@ func (l *LiteralValue[T]) String() string {
 	return l.raw
 }
 
+type ArrayValue struct {
+	raw  string
+	vals []Rule
+}
+
+func (a *ArrayValue) Eval(ctx *Ctx) Result {
+	vals := make([]any, len(a.vals))
+	for i, val := range a.vals {
+		res := val.Eval(ctx)
+		if !res.Ok() {
+			return res
+		}
+		vals[i] = res.Value
+	}
+	return Result{
+		Value:         vals,
+		EvaluatedRule: a,
+	}
+}
+
+func (a *ArrayValue) String() string {
+	return a.raw
+}
+
+func newArrayValue(vals []Rule) *ArrayValue {
+	var raw strings.Builder
+	raw.WriteString("[")
+	for i, val := range vals {
+		if i > 0 {
+			raw.WriteString(", ")
+		}
+		raw.WriteString(val.String())
+	}
+	raw.WriteString("]")
+
+	return &ArrayValue{
+		raw:  raw.String(),
+		vals: vals,
+	}
+}
+
 func isZero(val any) bool {
 	if val == nil {
 		return true
