@@ -108,17 +108,17 @@ func (n *nodeNot) Eval(ctx *Ctx) Result {
 	}
 
 	r := n.right.Eval(ctx)
+	if !r.Ok() {
+		return Result{
+			Error:         r.Error,
+			EvaluatedRule: n,
+		}
+	}
 
-	res := Result{
+	return Result{
+		Value:         !isZero(r.Value),
 		EvaluatedRule: n,
 	}
-	if r.Ok() {
-		res.Value = !r.Pass()
-	} else {
-		res.Error = r.Error
-	}
-
-	return res
 }
 
 func (n *nodeNot) String() string {
@@ -130,9 +130,9 @@ func (n *nodeNot) String() string {
 			// special formatting for field not contains "item"
 			return nn.lv.String() + " not contains " + nn.rv.String()
 		}
-	} else if nn, ok := n.right.(*nodeNotZero); ok {
+	} else if nn, ok := n.right.(FieldValue); ok {
 		// special formatting for !FIELD (no space between ! and field)
-		return "!" + nn.rv.String()
+		return "!" + nn.String()
 	} else if nn, ok := n.right.(*nodeMatch); ok {
 		// special formatting for field not =~ /pattern/
 		return nn.lv.String() + " not =~ " + nn.rv.String()
@@ -144,48 +144,30 @@ func (n *nodeNot) String() string {
 	return "not (" + n.right.String() + ")"
 }
 
-// NOT ZERO
-type nodeNotZero struct {
-	rv Valuer
-}
-
-func (n *nodeNotZero) Eval(ctx *Ctx) Result {
-	val, ok := n.rv.Value(ctx)
-	if !ok {
-		return Result{
-			Error:         valuersToMissingFields(n.rv),
-			EvaluatedRule: n,
-		}
-	}
-
-	return Result{
-		Value:         !isZero(val),
-		EvaluatedRule: n,
-	}
-}
-
-func (n *nodeNotZero) String() string {
-	return n.rv.String()
-}
-
 // TEST_MATCHES
 type nodeMatch struct {
-	lv Valuer
-	rv Valuer
+	lv Rule
+	rv Rule
 }
 
 func (n *nodeMatch) Eval(ctx *Ctx) Result {
-	lv, lvOk := n.lv.Value(ctx)
-	rv, rvOk := n.rv.Value(ctx)
-	if !lvOk || !rvOk {
+	lv := n.lv.Eval(ctx)
+	if !lv.Ok() {
 		return Result{
-			Error:         valuersToMissingFields(n.lv, n.rv),
+			Error:         lv.Error,
+			EvaluatedRule: n,
+		}
+	}
+	rv := n.rv.Eval(ctx)
+	if !rv.Ok() {
+		return Result{
+			Error:         rv.Error,
 			EvaluatedRule: n,
 		}
 	}
 
 	return Result{
-		Value:         n.apply(lv, rv),
+		Value:         n.apply(lv.Value, rv.Value),
 		EvaluatedRule: n,
 	}
 }
@@ -219,23 +201,28 @@ func (n *nodeMatch) String() string {
 
 // Comparison node
 type nodeCompare struct {
-	lv Valuer
+	lv Rule
 	op int // op_EQ, NE, GT, GE, LT, LE, CONTAINS
-	rv Valuer
+	rv Rule
 }
 
 func (n *nodeCompare) Eval(ctx *Ctx) Result {
-	lv, lvOk := n.lv.Value(ctx)
-	rv, rvOk := n.rv.Value(ctx)
-	if !lvOk || !rvOk {
-		r := Result{
-			Error:         valuersToMissingFields(n.lv, n.rv),
+	lv := n.lv.Eval(ctx)
+	if !lv.Ok() {
+		return Result{
+			Error:         lv.Error,
 			EvaluatedRule: n,
 		}
-		return r
+	}
+	rv := n.rv.Eval(ctx)
+	if !rv.Ok() {
+		return Result{
+			Error:         rv.Error,
+			EvaluatedRule: n,
+		}
 	}
 
-	pass := compare(lv, n.op, rv)
+	pass := compare(lv.Value, n.op, rv.Value)
 	return Result{
 		Value:         pass,
 		EvaluatedRule: n,
@@ -248,21 +235,27 @@ func (n *nodeCompare) String() string {
 
 // TEST_IN
 type nodeIn struct {
-	lv Valuer
-	rv Valuer
+	lv Rule
+	rv Rule
 }
 
 func (n *nodeIn) Eval(ctx *Ctx) Result {
-	lv, lvOk := n.lv.Value(ctx)
-	rv, rvOk := n.rv.Value(ctx)
-	if !lvOk || !rvOk {
+	lv := n.lv.Eval(ctx)
+	if !lv.Ok() {
 		return Result{
-			Error:         valuersToMissingFields(n.lv, n.rv),
+			Error:         lv.Error,
+			EvaluatedRule: n,
+		}
+	}
+	rv := n.rv.Eval(ctx)
+	if !rv.Ok() {
+		return Result{
+			Error:         rv.Error,
 			EvaluatedRule: n,
 		}
 	}
 
-	rvArr, ok := rv.([]any)
+	rvArr, ok := rv.Value.([]any)
 	if !ok {
 		// the right value must be an array
 		return Result{
@@ -271,7 +264,7 @@ func (n *nodeIn) Eval(ctx *Ctx) Result {
 	}
 
 	// `FIELD in ARR` == `ARR contains FIELD`
-	pass := compare(rvArr, op_CONTAINS, lv)
+	pass := compare(rvArr, op_CONTAINS, lv.Value)
 	return Result{
 		Value:         pass,
 		EvaluatedRule: n,

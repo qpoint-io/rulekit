@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestStringAutomaticCasting(t *testing.T) {
@@ -56,11 +55,9 @@ func TestStringAutomaticCasting(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			r, err := Parse(tc.ruleExpr)
-			require.NoError(t, err)
-
-			result := r.Eval(&Ctx{KV: tc.inputData})
-			assert.Equal(t, tc.expected, result.Pass(), "rule: %s", tc.ruleExpr)
+			assertRulep(t, tc.ruleExpr, kv(tc.inputData)).
+				Ok().
+				DoesPass(tc.expected)
 		})
 	}
 }

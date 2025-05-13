@@ -7,15 +7,20 @@ import (
 	"github.com/qpoint-io/rulekit/set"
 )
 
-type Valuer interface {
-	Value(*Ctx) (any, bool)
-	String() string
-}
-
 type FieldValue string
 
-func (f FieldValue) Value(ctx *Ctx) (any, bool) {
-	return mapPath(ctx.KV, string(f))
+func (f FieldValue) Eval(ctx *Ctx) Result {
+	val, ok := mapPath(ctx.KV, string(f))
+	if !ok {
+		return Result{
+			Error:         &ErrMissingFields{Fields: set.NewSet(string(f))},
+			EvaluatedRule: f,
+		}
+	}
+	return Result{
+		Value:         val,
+		EvaluatedRule: f,
+	}
 }
 
 func (f FieldValue) String() string {
@@ -27,25 +32,15 @@ type LiteralValue[T any] struct {
 	value T
 }
 
-func (l *LiteralValue[T]) Value(ctx *Ctx) (any, bool) {
-	return l.value, true
+func (l *LiteralValue[T]) Eval(ctx *Ctx) Result {
+	return Result{
+		Value:         l.value,
+		EvaluatedRule: l,
+	}
 }
 
 func (l *LiteralValue[T]) String() string {
 	return l.raw
-}
-
-func valuersToMissingFields(rv ...Valuer) *ErrMissingFields {
-	fields := set.NewSet[string]()
-	for _, v := range rv {
-		if v, ok := v.(FieldValue); ok {
-			fields.Add(string(v))
-		}
-	}
-	if fields.Len() == 0 {
-		return nil
-	}
-	return &ErrMissingFields{Fields: fields}
 }
 
 func isZero(val any) bool {
