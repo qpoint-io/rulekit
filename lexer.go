@@ -18,15 +18,15 @@ var _ruleLexerImpl_actions []byte = []byte{
 	1, 46, 1, 47, 1, 48, 1, 49,
 	1, 50, 1, 51, 1, 52, 1, 53,
 	1, 54, 1, 55, 1, 56, 1, 57,
-	2, 2, 3, 2, 2, 4, 2, 2,
-	5, 2, 2, 6, 2, 2, 7, 2,
-	2, 8, 2, 2, 9, 2, 2, 10,
-	2, 2, 11, 2, 2, 12, 2, 2,
-	13, 2, 2, 14, 2, 2, 15, 2,
-	2, 16, 2, 2, 17, 2, 2, 18,
-	2, 2, 19, 2, 2, 20, 2, 2,
-	21, 2, 2, 22, 2, 2, 23, 2,
-	2, 24,
+	1, 58, 2, 2, 3, 2, 2, 4,
+	2, 2, 5, 2, 2, 6, 2, 2,
+	7, 2, 2, 8, 2, 2, 9, 2,
+	2, 10, 2, 2, 11, 2, 2, 12,
+	2, 2, 13, 2, 2, 14, 2, 2,
+	15, 2, 2, 16, 2, 2, 17, 2,
+	2, 18, 2, 2, 19, 2, 2, 20,
+	2, 2, 21, 2, 2, 22, 2, 2,
+	23, 2, 2, 24,
 }
 
 var _ruleLexerImpl_key_offsets []int16 = []int16{
@@ -59,10 +59,10 @@ var _ruleLexerImpl_key_offsets []int16 = []int16{
 	1404, 1412, 1420, 1421, 1431, 1440, 1448, 1456,
 	1458, 1467, 1476, 1485, 1497, 1508, 1517, 1526,
 	1534, 1535, 1537, 1538, 1553, 1561, 1574, 1587,
-	1596, 1606, 1619, 1634, 1644, 1654, 1664, 1674,
-	1684, 1694, 1709, 1724, 1739, 1749, 1759, 1771,
-	1781, 1793, 1803, 1813, 1823, 1833, 1843, 1853,
-	1865, 1875, 1885, 1895, 1905,
+	1596, 1604, 1614, 1627, 1642, 1652, 1662, 1672,
+	1682, 1692, 1702, 1717, 1732, 1747, 1757, 1767,
+	1779, 1789, 1801, 1811, 1821, 1831, 1841, 1851,
+	1861, 1873, 1883, 1893, 1903, 1913,
 }
 
 var _ruleLexerImpl_trans_keys []byte = []byte{
@@ -265,6 +265,7 @@ var _ruleLexerImpl_trans_keys []byte = []byte{
 	71, 90, 97, 102, 103, 122, 46, 58,
 	95, 48, 57, 65, 70, 71, 90, 97,
 	102, 103, 122, 46, 58, 95, 48, 57,
+	65, 90, 97, 122, 46, 95, 48, 57,
 	65, 90, 97, 122, 46, 68, 95, 100,
 	48, 57, 65, 90, 97, 122, 46, 58,
 	95, 48, 57, 65, 70, 71, 90, 97,
@@ -337,10 +338,10 @@ var _ruleLexerImpl_single_lengths []byte = []byte{
 	2, 2, 1, 4, 3, 2, 2, 2,
 	3, 3, 3, 4, 3, 3, 3, 2,
 	1, 2, 1, 5, 2, 3, 3, 3,
-	4, 3, 5, 4, 4, 4, 4, 4,
-	4, 5, 5, 5, 4, 4, 6, 4,
-	6, 4, 4, 4, 4, 4, 4, 6,
-	4, 4, 4, 4, 2,
+	2, 4, 3, 5, 4, 4, 4, 4,
+	4, 4, 5, 5, 5, 4, 4, 6,
+	4, 6, 4, 4, 4, 4, 4, 4,
+	6, 4, 4, 4, 4, 2,
 }
 
 var _ruleLexerImpl_range_lengths []byte = []byte{
@@ -373,10 +374,10 @@ var _ruleLexerImpl_range_lengths []byte = []byte{
 	3, 3, 0, 3, 3, 3, 3, 0,
 	3, 3, 3, 4, 4, 3, 3, 3,
 	0, 0, 0, 5, 3, 5, 5, 3,
-	3, 5, 5, 3, 3, 3, 3, 3,
-	3, 5, 5, 5, 3, 3, 3, 3,
+	3, 3, 5, 5, 3, 3, 3, 3,
+	3, 3, 5, 5, 5, 3, 3, 3,
 	3, 3, 3, 3, 3, 3, 3, 3,
-	3, 3, 3, 3, 0,
+	3, 3, 3, 3, 3, 0,
 }
 
 var _ruleLexerImpl_index_offsets []int16 = []int16{
@@ -409,10 +410,10 @@ var _ruleLexerImpl_index_offsets []int16 = []int16{
 	1128, 1134, 1140, 1142, 1150, 1157, 1163, 1169,
 	1172, 1179, 1186, 1193, 1202, 1210, 1217, 1224,
 	1230, 1232, 1235, 1237, 1248, 1254, 1263, 1272,
-	1279, 1287, 1296, 1307, 1315, 1323, 1331, 1339,
-	1347, 1355, 1366, 1377, 1388, 1396, 1404, 1414,
-	1422, 1432, 1440, 1448, 1456, 1464, 1472, 1480,
-	1490, 1498, 1506, 1514, 1522,
+	1279, 1285, 1293, 1302, 1313, 1321, 1329, 1337,
+	1345, 1353, 1361, 1372, 1383, 1394, 1402, 1410,
+	1420, 1428, 1438, 1446, 1454, 1462, 1470, 1478,
+	1486, 1496, 1504, 1512, 1520, 1528,
 }
 
 var _ruleLexerImpl_indicies []int16 = []int16{
@@ -570,43 +571,44 @@ var _ruleLexerImpl_indicies []int16 = []int16{
 	264, 191, 73, 192, 263, 264, 264, 264,
 	191, 73, 192, 263, 269, 262, 262, 191,
 	192, 263, 262, 262, 262, 191, 271, 270,
-	272, 273, 180, 275, 274, 168, 109, 278,
-	168, 278, 277, 277, 168, 277, 168, 276,
-	168, 168, 168, 168, 168, 0, 168, 198,
-	168, 279, 279, 168, 279, 168, 243, 168,
-	109, 168, 280, 280, 168, 280, 168, 276,
-	168, 109, 168, 168, 168, 168, 276, 168,
-	281, 168, 281, 168, 168, 168, 276, 168,
-	109, 168, 277, 277, 168, 277, 168, 276,
-	168, 109, 282, 168, 282, 277, 277, 168,
-	277, 168, 276, 168, 283, 168, 283, 168,
-	168, 168, 276, 168, 284, 168, 284, 168,
-	168, 168, 276, 168, 285, 168, 285, 168,
-	168, 168, 276, 168, 286, 168, 286, 168,
-	168, 168, 276, 168, 287, 168, 287, 168,
-	168, 168, 276, 168, 288, 168, 288, 168,
-	168, 168, 276, 168, 109, 289, 168, 289,
-	277, 277, 168, 277, 168, 276, 168, 109,
-	290, 168, 290, 277, 277, 168, 277, 168,
-	276, 168, 198, 291, 168, 291, 279, 279,
-	168, 279, 168, 243, 168, 292, 168, 292,
-	168, 168, 168, 276, 168, 293, 168, 293,
-	168, 168, 168, 276, 168, 294, 295, 168,
-	294, 295, 168, 168, 168, 276, 168, 296,
-	168, 296, 168, 168, 168, 276, 168, 297,
-	298, 168, 297, 298, 168, 168, 168, 276,
-	168, 299, 168, 299, 168, 168, 168, 276,
-	168, 300, 168, 300, 168, 168, 168, 276,
-	168, 301, 168, 301, 168, 168, 168, 276,
-	168, 302, 168, 302, 168, 168, 168, 276,
-	168, 303, 168, 303, 168, 168, 168, 276,
-	168, 304, 168, 304, 168, 168, 168, 276,
-	168, 305, 306, 168, 305, 306, 168, 168,
-	168, 276, 168, 307, 168, 307, 168, 168,
-	168, 276, 168, 308, 168, 308, 168, 168,
-	168, 276, 168, 309, 168, 309, 168, 168,
-	168, 276, 168, 292, 168, 292, 168, 168,
-	168, 276, 140, 310, 139,
+	272, 273, 180, 275, 274, 277, 109, 279,
+	168, 279, 278, 278, 168, 278, 168, 276,
+	277, 277, 277, 277, 277, 280, 277, 198,
+	168, 281, 281, 168, 281, 168, 243, 277,
+	109, 168, 282, 282, 168, 282, 168, 276,
+	277, 109, 168, 168, 168, 168, 276, 277,
+	168, 168, 168, 168, 0, 277, 283, 168,
+	283, 168, 168, 168, 276, 277, 109, 168,
+	278, 278, 168, 278, 168, 276, 277, 109,
+	284, 168, 284, 278, 278, 168, 278, 168,
+	276, 277, 285, 168, 285, 168, 168, 168,
+	276, 277, 286, 168, 286, 168, 168, 168,
+	276, 277, 287, 168, 287, 168, 168, 168,
+	276, 277, 288, 168, 288, 168, 168, 168,
+	276, 277, 289, 168, 289, 168, 168, 168,
+	276, 277, 290, 168, 290, 168, 168, 168,
+	276, 277, 109, 291, 168, 291, 278, 278,
+	168, 278, 168, 276, 277, 109, 292, 168,
+	292, 278, 278, 168, 278, 168, 276, 277,
+	198, 293, 168, 293, 281, 281, 168, 281,
+	168, 243, 277, 294, 168, 294, 168, 168,
+	168, 276, 277, 295, 168, 295, 168, 168,
+	168, 276, 277, 296, 297, 168, 296, 297,
+	168, 168, 168, 276, 277, 298, 168, 298,
+	168, 168, 168, 276, 277, 299, 300, 168,
+	299, 300, 168, 168, 168, 276, 277, 301,
+	168, 301, 168, 168, 168, 276, 277, 302,
+	168, 302, 168, 168, 168, 276, 277, 303,
+	168, 303, 168, 168, 168, 276, 277, 304,
+	168, 304, 168, 168, 168, 276, 277, 305,
+	168, 305, 168, 168, 168, 276, 277, 306,
+	168, 306, 168, 168, 168, 276, 277, 307,
+	308, 168, 307, 308, 168, 168, 168, 276,
+	277, 309, 168, 309, 168, 168, 168, 276,
+	277, 310, 168, 310, 168, 168, 168, 276,
+	277, 311, 168, 311, 168, 168, 168, 276,
+	277, 294, 168, 294, 168, 168, 168, 276,
+	140, 312, 139,
 }
 
 var _ruleLexerImpl_trans_targs []int16 = []int16{
@@ -630,9 +632,9 @@ var _ruleLexerImpl_trans_targs []int16 = []int16{
 	185, 188, 189, 93, 94, 95, 95, 96,
 	97, 98, 99, 95, 95, 100, 95, 102,
 	101, 104, 106, 203, 206, 209, 210, 224,
-	225, 226, 227, 233, 234, 241, 242, 246,
-	228, 247, 248, 249, 255, 257, 258, 95,
-	95, 260, 95, 95, 95, 95, 4, 100,
+	225, 226, 227, 234, 235, 242, 243, 247,
+	232, 248, 249, 250, 256, 258, 259, 95,
+	95, 261, 95, 95, 95, 95, 4, 100,
 	103, 95, 95, 12, 118, 202, 95, 95,
 	16, 95, 95, 113, 117, 119, 72, 91,
 	120, 122, 123, 127, 66, 128, 129, 131,
@@ -644,53 +646,55 @@ var _ruleLexerImpl_trans_targs []int16 = []int16{
 	82, 84, 197, 85, 204, 205, 207, 208,
 	211, 212, 216, 219, 222, 223, 213, 92,
 	214, 215, 217, 218, 220, 221, 95, 95,
-	95, 95, 95, 95, 95, 229, 232, 230,
-	231, 228, 235, 236, 237, 238, 239, 240,
-	228, 228, 243, 244, 245, 228, 228, 228,
-	228, 228, 228, 250, 251, 252, 253, 254,
-	228, 228, 256, 228, 228, 259, 95,
+	95, 95, 95, 95, 95, 228, 229, 233,
+	95, 230, 231, 232, 236, 237, 238, 239,
+	240, 241, 232, 232, 244, 245, 246, 232,
+	232, 232, 232, 232, 232, 251, 252, 253,
+	254, 255, 232, 232, 257, 232, 232, 260,
+	95,
 }
 
 var _ruleLexerImpl_trans_actions []byte = []byte{
-	71, 0, 33, 0, 121, 0, 0, 121,
-	115, 69, 0, 37, 0, 0, 0, 130,
-	0, 73, 0, 0, 63, 115, 115, 115,
-	115, 0, 0, 0, 0, 0, 5, 5,
-	5, 5, 65, 0, 0, 0, 5, 0,
+	73, 0, 33, 0, 123, 0, 0, 123,
+	117, 71, 0, 37, 0, 0, 0, 132,
+	0, 75, 0, 0, 65, 117, 117, 117,
+	117, 0, 0, 0, 0, 0, 5, 5,
+	5, 5, 67, 0, 0, 0, 5, 0,
 	0, 0, 0, 0, 5, 0, 0, 0,
 	0, 0, 5, 0, 0, 0, 0, 0,
 	5, 0, 0, 0, 0, 0, 5, 0,
 	0, 0, 0, 0, 0, 0, 0, 5,
 	0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 5, 0, 0, 0,
-	0, 124, 124, 124, 124, 5, 124, 124,
-	124, 124, 5, 124, 124, 124, 124, 5,
-	124, 124, 124, 124, 5, 0, 0, 127,
-	67, 0, 127, 0, 127, 0, 127, 0,
-	127, 0, 0, 0, 0, 0, 127, 5,
-	0, 127, 127, 127, 127, 0, 124, 124,
-	124, 124, 5, 0, 0, 39, 7, 0,
-	136, 0, 136, 9, 11, 136, 17, 136,
-	136, 5, 112, 112, 112, 112, 0, 0,
-	0, 0, 133, 133, 133, 133, 133, 0,
-	133, 0, 0, 0, 0, 0, 0, 13,
-	15, 5, 43, 25, 61, 19, 0, 112,
-	0, 41, 49, 0, 112, 127, 51, 53,
-	0, 55, 35, 5, 115, 112, 0, 0,
-	112, 5, 5, 5, 0, 5, 5, 124,
-	124, 124, 124, 5, 0, 5, 5, 124,
-	124, 124, 124, 5, 0, 5, 5, 124,
-	124, 124, 124, 5, 0, 5, 5, 124,
-	124, 124, 124, 5, 0, 5, 5, 124,
-	124, 124, 124, 57, 0, 0, 0, 0,
-	0, 0, 124, 0, 112, 112, 112, 112,
-	5, 124, 124, 124, 124, 5, 5, 0,
-	5, 5, 124, 124, 124, 124, 45, 27,
-	23, 31, 47, 29, 59, 127, 0, 133,
-	133, 79, 0, 0, 0, 0, 0, 0,
-	103, 85, 127, 0, 0, 118, 100, 97,
-	109, 94, 91, 0, 0, 0, 0, 0,
-	106, 88, 0, 76, 82, 0, 21,
+	0, 126, 126, 126, 126, 5, 126, 126,
+	126, 126, 5, 126, 126, 126, 126, 5,
+	126, 126, 126, 126, 5, 0, 0, 129,
+	69, 0, 129, 0, 129, 0, 129, 0,
+	129, 0, 0, 0, 0, 0, 129, 5,
+	0, 129, 129, 129, 129, 0, 126, 126,
+	126, 126, 5, 0, 0, 39, 7, 0,
+	138, 0, 138, 9, 11, 138, 17, 138,
+	138, 5, 114, 114, 114, 114, 0, 0,
+	0, 0, 135, 135, 135, 135, 135, 0,
+	135, 0, 0, 0, 0, 0, 0, 13,
+	15, 5, 43, 25, 63, 19, 0, 114,
+	0, 41, 49, 0, 114, 129, 51, 53,
+	0, 55, 35, 5, 117, 114, 0, 0,
+	114, 5, 5, 5, 0, 5, 5, 126,
+	126, 126, 126, 5, 0, 5, 5, 126,
+	126, 126, 126, 5, 0, 5, 5, 126,
+	126, 126, 126, 5, 0, 5, 5, 126,
+	126, 126, 126, 5, 0, 5, 5, 126,
+	126, 126, 126, 57, 0, 0, 0, 0,
+	0, 0, 126, 0, 114, 114, 114, 114,
+	5, 126, 126, 126, 126, 5, 5, 0,
+	5, 5, 126, 126, 126, 126, 45, 27,
+	23, 31, 47, 29, 59, 0, 129, 0,
+	61, 135, 135, 81, 0, 0, 0, 0,
+	0, 0, 105, 87, 129, 0, 0, 120,
+	102, 99, 111, 96, 93, 0, 0, 0,
+	0, 0, 108, 90, 0, 78, 84, 0,
+	21,
 }
 
 var _ruleLexerImpl_to_state_actions []byte = []byte{
@@ -726,7 +730,7 @@ var _ruleLexerImpl_to_state_actions []byte = []byte{
 	0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0,
 }
 
 var _ruleLexerImpl_from_state_actions []byte = []byte{
@@ -762,7 +766,7 @@ var _ruleLexerImpl_from_state_actions []byte = []byte{
 	0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0,
 }
 
 var _ruleLexerImpl_eof_trans []int16 = []int16{
@@ -794,11 +798,11 @@ var _ruleLexerImpl_eof_trans []int16 = []int16{
 	244, 244, 244, 187, 187, 187, 187, 187,
 	187, 187, 181, 192, 192, 192, 192, 192,
 	192, 192, 192, 192, 192, 192, 192, 192,
-	271, 181, 275, 277, 1, 244, 277, 277,
+	271, 181, 275, 277, 281, 244, 277, 277,
+	1, 277, 277, 277, 277, 277, 277, 277,
+	277, 277, 277, 277, 244, 277, 277, 277,
 	277, 277, 277, 277, 277, 277, 277, 277,
-	277, 277, 277, 244, 277, 277, 277, 277,
-	277, 277, 277, 277, 277, 277, 277, 277,
-	277, 277, 277, 277, 181,
+	277, 277, 277, 277, 277, 181,
 }
 
 const ruleLexerImpl_start int = 95
@@ -807,7 +811,7 @@ const ruleLexerImpl_error int = -1
 
 const ruleLexerImpl_en_main int = 95
 
-//line lexer.rl:134
+//line lexer.rl:140
 
 type ruleLexerImpl struct {
 	data   []byte
@@ -825,7 +829,7 @@ type ruleLexerImpl struct {
 func newLex(line []byte) *ruleLexerImpl {
 	lexer := ruleLexerImpl{data: line}
 
-//line lexer.go:831
+//line lexer.go:835
 	{
 		(lexer.cs) = ruleLexerImpl_start
 		(lexer.ts) = 0
@@ -833,7 +837,7 @@ func newLex(line []byte) *ruleLexerImpl {
 		(lexer.act) = 0
 	}
 
-//line lexer.rl:152
+//line lexer.rl:158
 	lexer.pe = len(line)
 	lexer.eof = len(line)
 	return &lexer
@@ -842,7 +846,7 @@ func newLex(line []byte) *ruleLexerImpl {
 func (lexer *ruleLexerImpl) Lex(lval *ruleSymType) int {
 	token_kind := 0
 
-//line lexer.go:848
+//line lexer.go:852
 	{
 		var _klen int
 		var _trans int
@@ -863,7 +867,7 @@ func (lexer *ruleLexerImpl) Lex(lval *ruleSymType) int {
 //line NONE:1
 				(lexer.ts) = (lexer.p)
 
-//line lexer.go:868
+//line lexer.go:872
 			}
 		}
 
@@ -939,78 +943,78 @@ func (lexer *ruleLexerImpl) Lex(lval *ruleSymType) int {
 				(lexer.te) = (lexer.p) + 1
 
 			case 3:
-//line lexer.rl:77
+//line lexer.rl:81
 				(lexer.act) = 1
 			case 4:
-//line lexer.rl:87
+//line lexer.rl:91
 				(lexer.act) = 7
 			case 5:
-//line lexer.rl:88
+//line lexer.rl:92
 				(lexer.act) = 8
 			case 6:
-//line lexer.rl:89
+//line lexer.rl:93
 				(lexer.act) = 9
 			case 7:
-//line lexer.rl:92
+//line lexer.rl:96
 				(lexer.act) = 10
 			case 8:
-//line lexer.rl:93
+//line lexer.rl:97
 				(lexer.act) = 11
 			case 9:
-//line lexer.rl:94
+//line lexer.rl:98
 				(lexer.act) = 12
 			case 10:
-//line lexer.rl:95
+//line lexer.rl:99
 				(lexer.act) = 13
 			case 11:
-//line lexer.rl:96
+//line lexer.rl:100
 				(lexer.act) = 14
 			case 12:
-//line lexer.rl:97
+//line lexer.rl:101
 				(lexer.act) = 15
 			case 13:
-//line lexer.rl:99
+//line lexer.rl:103
 				(lexer.act) = 16
 			case 14:
-//line lexer.rl:100
+//line lexer.rl:104
 				(lexer.act) = 17
 			case 15:
-//line lexer.rl:101
+//line lexer.rl:105
 				(lexer.act) = 18
 			case 16:
-//line lexer.rl:104
+//line lexer.rl:108
 				(lexer.act) = 19
 			case 17:
-//line lexer.rl:105
+//line lexer.rl:109
 				(lexer.act) = 20
 			case 18:
-//line lexer.rl:106
+//line lexer.rl:110
 				(lexer.act) = 21
 			case 19:
-//line lexer.rl:107
+//line lexer.rl:111
 				(lexer.act) = 22
 			case 20:
-//line lexer.rl:109
+//line lexer.rl:113
 				(lexer.act) = 23
 			case 21:
-//line lexer.rl:111
+//line lexer.rl:115
 				(lexer.act) = 25
 			case 22:
-//line lexer.rl:112
+//line lexer.rl:116
 				(lexer.act) = 26
 			case 23:
-//line lexer.rl:115
+//line lexer.rl:118
 				(lexer.act) = 27
 			case 24:
-//line lexer.rl:118
-				(lexer.act) = 28
+//line lexer.rl:124
+				(lexer.act) = 29
 			case 25:
-//line lexer.rl:77
+//line lexer.rl:81
 				(lexer.te) = (lexer.p) + 1
 				{ /* skip */
 				}
 			case 26:
-//line lexer.rl:80
+//line lexer.rl:84
 				(lexer.te) = (lexer.p) + 1
 				{
 					token_kind = token_LPAREN
@@ -1018,7 +1022,7 @@ func (lexer *ruleLexerImpl) Lex(lval *ruleSymType) int {
 					goto _out
 				}
 			case 27:
-//line lexer.rl:81
+//line lexer.rl:85
 				(lexer.te) = (lexer.p) + 1
 				{
 					token_kind = token_RPAREN
@@ -1026,7 +1030,7 @@ func (lexer *ruleLexerImpl) Lex(lval *ruleSymType) int {
 					goto _out
 				}
 			case 28:
-//line lexer.rl:82
+//line lexer.rl:86
 				(lexer.te) = (lexer.p) + 1
 				{
 					token_kind = token_LBRACKET
@@ -1034,7 +1038,7 @@ func (lexer *ruleLexerImpl) Lex(lval *ruleSymType) int {
 					goto _out
 				}
 			case 29:
-//line lexer.rl:83
+//line lexer.rl:87
 				(lexer.te) = (lexer.p) + 1
 				{
 					token_kind = token_RBRACKET
@@ -1042,7 +1046,7 @@ func (lexer *ruleLexerImpl) Lex(lval *ruleSymType) int {
 					goto _out
 				}
 			case 30:
-//line lexer.rl:84
+//line lexer.rl:88
 				(lexer.te) = (lexer.p) + 1
 				{
 					token_kind = token_COMMA
@@ -1050,7 +1054,7 @@ func (lexer *ruleLexerImpl) Lex(lval *ruleSymType) int {
 					goto _out
 				}
 			case 31:
-//line lexer.rl:88
+//line lexer.rl:92
 				(lexer.te) = (lexer.p) + 1
 				{
 					token_kind = op_AND
@@ -1058,7 +1062,7 @@ func (lexer *ruleLexerImpl) Lex(lval *ruleSymType) int {
 					goto _out
 				}
 			case 32:
-//line lexer.rl:89
+//line lexer.rl:93
 				(lexer.te) = (lexer.p) + 1
 				{
 					token_kind = op_OR
@@ -1066,7 +1070,7 @@ func (lexer *ruleLexerImpl) Lex(lval *ruleSymType) int {
 					goto _out
 				}
 			case 33:
-//line lexer.rl:92
+//line lexer.rl:96
 				(lexer.te) = (lexer.p) + 1
 				{
 					token_kind = op_EQ
@@ -1074,7 +1078,7 @@ func (lexer *ruleLexerImpl) Lex(lval *ruleSymType) int {
 					goto _out
 				}
 			case 34:
-//line lexer.rl:93
+//line lexer.rl:97
 				(lexer.te) = (lexer.p) + 1
 				{
 					token_kind = op_NE
@@ -1082,7 +1086,7 @@ func (lexer *ruleLexerImpl) Lex(lval *ruleSymType) int {
 					goto _out
 				}
 			case 35:
-//line lexer.rl:95
+//line lexer.rl:99
 				(lexer.te) = (lexer.p) + 1
 				{
 					token_kind = op_LE
@@ -1090,7 +1094,7 @@ func (lexer *ruleLexerImpl) Lex(lval *ruleSymType) int {
 					goto _out
 				}
 			case 36:
-//line lexer.rl:97
+//line lexer.rl:101
 				(lexer.te) = (lexer.p) + 1
 				{
 					token_kind = op_GE
@@ -1098,7 +1102,7 @@ func (lexer *ruleLexerImpl) Lex(lval *ruleSymType) int {
 					goto _out
 				}
 			case 37:
-//line lexer.rl:100
+//line lexer.rl:104
 				(lexer.te) = (lexer.p) + 1
 				{
 					token_kind = op_MATCHES
@@ -1106,7 +1110,7 @@ func (lexer *ruleLexerImpl) Lex(lval *ruleSymType) int {
 					goto _out
 				}
 			case 38:
-//line lexer.rl:107
+//line lexer.rl:111
 				(lexer.te) = (lexer.p) + 1
 				{
 					token_kind = token_STRING
@@ -1114,7 +1118,7 @@ func (lexer *ruleLexerImpl) Lex(lval *ruleSymType) int {
 					goto _out
 				}
 			case 39:
-//line lexer.rl:110
+//line lexer.rl:114
 				(lexer.te) = (lexer.p) + 1
 				{
 					token_kind = token_IP_CIDR
@@ -1122,7 +1126,7 @@ func (lexer *ruleLexerImpl) Lex(lval *ruleSymType) int {
 					goto _out
 				}
 			case 40:
-//line lexer.rl:112
+//line lexer.rl:116
 				(lexer.te) = (lexer.p) + 1
 				{
 					token_kind = token_REGEX
@@ -1130,20 +1134,20 @@ func (lexer *ruleLexerImpl) Lex(lval *ruleSymType) int {
 					goto _out
 				}
 			case 41:
-//line lexer.rl:118
+//line lexer.rl:124
 				(lexer.te) = (lexer.p) + 1
 				{
 					lexer.Error(fmt.Sprintf("unexpected character: %q", safeIndex(lexer.data, lexer.ts, lexer.te)))
 					return token_ERROR
 				}
 			case 42:
-//line lexer.rl:77
+//line lexer.rl:81
 				(lexer.te) = (lexer.p)
 				(lexer.p)--
 				{ /* skip */
 				}
 			case 43:
-//line lexer.rl:87
+//line lexer.rl:91
 				(lexer.te) = (lexer.p)
 				(lexer.p)--
 				{
@@ -1152,7 +1156,7 @@ func (lexer *ruleLexerImpl) Lex(lval *ruleSymType) int {
 					goto _out
 				}
 			case 44:
-//line lexer.rl:94
+//line lexer.rl:98
 				(lexer.te) = (lexer.p)
 				(lexer.p)--
 				{
@@ -1161,7 +1165,7 @@ func (lexer *ruleLexerImpl) Lex(lval *ruleSymType) int {
 					goto _out
 				}
 			case 45:
-//line lexer.rl:96
+//line lexer.rl:100
 				(lexer.te) = (lexer.p)
 				(lexer.p)--
 				{
@@ -1170,7 +1174,7 @@ func (lexer *ruleLexerImpl) Lex(lval *ruleSymType) int {
 					goto _out
 				}
 			case 46:
-//line lexer.rl:104
+//line lexer.rl:108
 				(lexer.te) = (lexer.p)
 				(lexer.p)--
 				{
@@ -1179,7 +1183,7 @@ func (lexer *ruleLexerImpl) Lex(lval *ruleSymType) int {
 					goto _out
 				}
 			case 47:
-//line lexer.rl:105
+//line lexer.rl:109
 				(lexer.te) = (lexer.p)
 				(lexer.p)--
 				{
@@ -1188,7 +1192,7 @@ func (lexer *ruleLexerImpl) Lex(lval *ruleSymType) int {
 					goto _out
 				}
 			case 48:
-//line lexer.rl:109
+//line lexer.rl:113
 				(lexer.te) = (lexer.p)
 				(lexer.p)--
 				{
@@ -1197,7 +1201,7 @@ func (lexer *ruleLexerImpl) Lex(lval *ruleSymType) int {
 					goto _out
 				}
 			case 49:
-//line lexer.rl:110
+//line lexer.rl:114
 				(lexer.te) = (lexer.p)
 				(lexer.p)--
 				{
@@ -1206,7 +1210,7 @@ func (lexer *ruleLexerImpl) Lex(lval *ruleSymType) int {
 					goto _out
 				}
 			case 50:
-//line lexer.rl:111
+//line lexer.rl:115
 				(lexer.te) = (lexer.p)
 				(lexer.p)--
 				{
@@ -1215,7 +1219,16 @@ func (lexer *ruleLexerImpl) Lex(lval *ruleSymType) int {
 					goto _out
 				}
 			case 51:
-//line lexer.rl:115
+//line lexer.rl:118
+				(lexer.te) = (lexer.p)
+				(lexer.p)--
+				{
+					token_kind = token_FUNCTION
+					(lexer.p)++
+					goto _out
+				}
+			case 52:
+//line lexer.rl:121
 				(lexer.te) = (lexer.p)
 				(lexer.p)--
 				{
@@ -1223,46 +1236,46 @@ func (lexer *ruleLexerImpl) Lex(lval *ruleSymType) int {
 					(lexer.p)++
 					goto _out
 				}
-			case 52:
-//line lexer.rl:118
+			case 53:
+//line lexer.rl:124
 				(lexer.te) = (lexer.p)
 				(lexer.p)--
 				{
 					lexer.Error(fmt.Sprintf("unexpected character: %q", safeIndex(lexer.data, lexer.ts, lexer.te)))
 					return token_ERROR
 				}
-			case 53:
-//line lexer.rl:104
+			case 54:
+//line lexer.rl:108
 				(lexer.p) = (lexer.te) - 1
 				{
 					token_kind = token_INT
 					(lexer.p)++
 					goto _out
 				}
-			case 54:
-//line lexer.rl:109
+			case 55:
+//line lexer.rl:113
 				(lexer.p) = (lexer.te) - 1
 				{
 					token_kind = token_IP
 					(lexer.p)++
 					goto _out
 				}
-			case 55:
-//line lexer.rl:111
+			case 56:
+//line lexer.rl:115
 				(lexer.p) = (lexer.te) - 1
 				{
 					token_kind = token_HEX_STRING
 					(lexer.p)++
 					goto _out
 				}
-			case 56:
-//line lexer.rl:118
+			case 57:
+//line lexer.rl:124
 				(lexer.p) = (lexer.te) - 1
 				{
 					lexer.Error(fmt.Sprintf("unexpected character: %q", safeIndex(lexer.data, lexer.ts, lexer.te)))
 					return token_ERROR
 				}
-			case 57:
+			case 58:
 //line NONE:1
 				switch lexer.act {
 				case 1:
@@ -1406,11 +1419,11 @@ func (lexer *ruleLexerImpl) Lex(lval *ruleSymType) int {
 				case 27:
 					{
 						(lexer.p) = (lexer.te) - 1
-						token_kind = token_FIELD
+						token_kind = token_FUNCTION
 						(lexer.p)++
 						goto _out
 					}
-				case 28:
+				case 29:
 					{
 						(lexer.p) = (lexer.te) - 1
 
@@ -1419,7 +1432,7 @@ func (lexer *ruleLexerImpl) Lex(lval *ruleSymType) int {
 					}
 				}
 
-//line lexer.go:1277
+//line lexer.go:1287
 			}
 		}
 
@@ -1434,7 +1447,7 @@ func (lexer *ruleLexerImpl) Lex(lval *ruleSymType) int {
 //line NONE:1
 				(lexer.ts) = 0
 
-//line lexer.go:1291
+//line lexer.go:1301
 			}
 		}
 
@@ -1457,7 +1470,7 @@ func (lexer *ruleLexerImpl) Lex(lval *ruleSymType) int {
 		}
 	}
 
-//line lexer.rl:160
+//line lexer.rl:166
 	if lexer.cs != ruleLexerImpl_error {
 		lval.valueLiteral = safeIndex(lexer.data, lexer.ts, lexer.te)
 	}

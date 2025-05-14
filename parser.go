@@ -174,6 +174,8 @@ func valueTokenString(typ int) string {
 		return "regex"
 	case token_FIELD:
 		return "field identifier"
+	case token_FUNCTION:
+		return "function"
 	case token_LPAREN:
 		return `"("`
 	case token_RPAREN:
@@ -197,4 +199,9 @@ type ValueParseError struct {
 
 func (e ValueParseError) Error() string {
 	return fmt.Sprintf("parsing %s value %q: %v", valueTokenString(e.TokenType), e.Value, e.Err)
+}
+
+type functionCall struct {
+	fn   string
+	args []Rule
 }

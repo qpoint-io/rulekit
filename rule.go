@@ -143,6 +143,16 @@ type Rule interface {
 	String() string
 }
 
+type RuleFunc func(*Ctx) Result
+
+func (f RuleFunc) Eval(ctx *Ctx) Result {
+	return f(ctx)
+}
+
+func (f RuleFunc) String() string {
+	return "<fn>"
+}
+
 type rule struct {
 	Rule
 }
@@ -160,7 +170,11 @@ func (r *rule) String() string {
 	if r.Rule == nil {
 		return "<empty>"
 	}
-	return strings.TrimSuffix(strings.TrimPrefix(r.Rule.String(), "("), ")")
+	s := r.Rule.String()
+	if len(s) > 0 && s[0] == '(' {
+		return strings.TrimSuffix(s[1:], ")")
+	}
+	return s
 }
 
 type Result struct {
@@ -234,7 +248,11 @@ func (e *ParseError) Error() string {
 			"token_STRING", `"string"`,
 			"token_HEX_STRING", `"hex"`,
 			"token_ARRAY", `"array"`,
-			"token_LBRACKET", `"array"`,
+			"token_LBRACKET", `"["`,
+			"token_RBRACKET", `"]"`,
+			"token_LPAREN", `"("`,
+			"token_RPAREN", `")"`,
+			"token_FUNCTION", `"function or field identifier"`,
 		)
 		result += "\n" + replacer.Replace(e.Message)
 	}

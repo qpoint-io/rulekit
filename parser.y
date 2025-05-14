@@ -7,10 +7,12 @@ package rulekit
 	operator      int
 	valueLiteral  []byte
 	arrayValue    []Rule
+	functionCall  functionCall
 }
 
 // Type declarations for non-terminals (rules)
 %type <rule> search_condition predicate
+%type <rule> function_call
 %type <operator> ineq_operator eq_operator
 %type <arrayValue> array_values
 // value tokens
@@ -18,8 +20,10 @@ package rulekit
 %type <rule> numeric_value_token // int or float values
 %type <rule> array_value_token // array values
 %type <rule> array_or_single_value_token // arrays or single values
+%type <arrayValue> function_arguments // function arguments
 
 %token <valueLiteral> token_FIELD
+%token <valueLiteral> token_FUNCTION
 %token <valueLiteral> token_STRING token_HEX_STRING
 %token <valueLiteral> token_INT token_FLOAT
 %token <valueLiteral> token_BOOL
@@ -167,8 +171,9 @@ array_value_token:
 	;
 
 array_or_single_value_token:
-	value_token         { $$ = $1 }
-	| array_value_token { $$ = $1 }
+	function_call         { $$ = $1 }
+	| value_token         { $$ = $1 }
+	| array_value_token   { $$ = $1 }
 	;
 
 // value tokens
@@ -252,6 +257,41 @@ numeric_value_token:
 	| token_FIELD
 	{
 		$$ = FieldValue(string($1))
+	}
+	| token_FUNCTION
+	{
+		// there is no syntatic difference between a function call and a field name
+		// so an isolated function name is treated as a field name
+		$$ = FieldValue(string($1))
+	}
+	;
+
+function_call:
+	token_FUNCTION token_LPAREN function_arguments token_RPAREN
+	{
+		fv := newFunctionValue(string($1), $3)
+		if err := fv.ValidateStdlibFnArgs(); err != nil {
+			// if this is a stdlib function, validate arguments early at parse time
+			// rather than eval
+			rulelex.Error(err.Error())
+			return 1
+		}
+		$$ = fv
+	}
+	;
+
+function_arguments:
+	array_or_single_value_token
+	{
+		$$ = []Rule{$1}
+	}
+	| function_arguments token_COMMA array_or_single_value_token
+	{
+		$$ = append($1, $3)
+	}
+	| /* nothing */
+	{
+		$$ = ([]Rule)(nil)
 	}
 	;
 
