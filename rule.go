@@ -129,7 +129,8 @@ func MustParse(str string) Rule {
 type KV = map[string]any
 
 type Ctx struct {
-	KV KV
+	KV     KV
+	Macros map[string]Rule
 }
 
 func (c *Ctx) Eval(r Rule) Result {
