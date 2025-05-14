@@ -27,6 +27,7 @@ func TestFn_StartsWith(t *testing.T) {
 	assertRulep(t, `starts_with(code, 5)`, kv{"code": 500}).Pass()
 	assertRulep(t, `starts_with(code, "5")`, kv{"code": 500}).Pass()
 	assertRulep(t, `starts_with(code, 5)`, kv{"code": 404}).Fail()
+	assertRulep(t, `starts_with(starts_with("https://example.com", "https://"), "true")`, nil).Pass()
 
 	// parser errors
 	assertParseErrorValue(t, "starts_with()", `syntax error at line 1:14:
