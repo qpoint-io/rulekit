@@ -88,7 +88,7 @@ type FunctionArg struct {
 	Name string
 }
 
-func IndexFnArg[T any](args map[string]any, idx int, name string) (T, error) {
+func IndexFuncArg[T any](args map[string]any, name string) (T, error) {
 	var zeroVal T
 
 	valAny, ok := args[name]
@@ -98,8 +98,8 @@ func IndexFnArg[T any](args map[string]any, idx int, name string) (T, error) {
 	val, ok := valAny.(T)
 	if !ok {
 		return zeroVal, &ErrInvalidFunctionArg{
-			Index:    idx,
-			Expected: fmt.Sprintf("%T", valAny),
+			Name:     name,
+			Expected: fmt.Sprintf("%T", zeroVal),
 			Got:      fmt.Sprintf("%T", valAny),
 		}
 	}

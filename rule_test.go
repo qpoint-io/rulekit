@@ -994,7 +994,7 @@ func TestCustomFunction(t *testing.T) {
 				{Name: "msg"},
 			},
 			Eval: func(args map[string]any) Result {
-				msg, err := IndexFnArg[string](args, 0, "msg")
+				msg, err := IndexFuncArg[string](args, "msg")
 				if err != nil {
 					return Result{Error: err}
 				}
@@ -1006,12 +1006,15 @@ func TestCustomFunction(t *testing.T) {
 	assertRulep(t, `custom_func("test")`, &ctx{
 		Functions: fns,
 	}).Ok().Value(`Got msg: test`)
+	assertRulep(t, `custom_func(1.2.3.4)`, &ctx{
+		Functions: fns,
+	}).ErrorString(`arg msg: expected string, got net.IP`)
 	assertRulep(t, `custom_func()`, &ctx{
 		Functions: fns,
-	}).Error(errors.New(`function "custom_func" expects 1 arguments, got 0`))
+	}).ErrorString(`function "custom_func" expects 1 arguments, got 0`)
 	assertRulep(t, `custom_func(1, 2)`, &ctx{
 		Functions: fns,
-	}).Error(errors.New(`function "custom_func" expects 1 arguments, got 2`))
+	}).ErrorString(`function "custom_func" expects 1 arguments, got 2`)
 
 	// mix & match functions, macros, stdlib functions
 	assertRulep(t, `starts_with(macro(), "Got msg")`, &ctx{
@@ -1199,6 +1202,12 @@ func (r *ruleAssertion) MissingFields(fields ...string) *ruleAssertion {
 func (r *ruleAssertion) Error(err error) *ruleAssertion {
 	r.t.Helper()
 	assert.Equal(r.t, err, r.result.Error, "error should match\n%s", r)
+	return r
+}
+
+func (r *ruleAssertion) ErrorString(err string) *ruleAssertion {
+	r.t.Helper()
+	assert.EqualError(r.t, r.result.Error, err, "error should match\n%s", r)
 	return r
 }
 
