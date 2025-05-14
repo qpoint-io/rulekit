@@ -920,6 +920,24 @@ func TestStringAutomaticCasting(t *testing.T) {
 	}
 }
 
+func TestFunctionParsing(t *testing.T) {
+	parsed := MustParse(`func_name(
+		fieldarg,
+		192.168.0.0,
+		[1, 2, 3],
+		nested_func(true)
+	)`)
+
+	fn := parsed.(*rule).Rule.(*FunctionValue)
+	require.Equal(t, "func_name", fn.fn)
+	require.Len(t, fn.args.vals, 4)
+	assert.IsType(t, FieldValue(""), fn.args.vals[0])
+	assert.IsType(t, &LiteralValue[any]{}, fn.args.vals[1])
+	assert.IsType(t, net.IP{}, fn.args.vals[1].(*LiteralValue[any]).value)
+	assert.IsType(t, &ArrayValue{}, fn.args.vals[2])
+	assert.IsType(t, &FunctionValue{}, fn.args.vals[3])
+}
+
 type ruleAssertion struct {
 	t      *testing.T
 	rule   Rule
