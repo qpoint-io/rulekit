@@ -805,7 +805,7 @@ ruledefault:
 		ruleDollar = ruleS[rulept-4 : rulept+1]
 //line parser.y:271
 		{
-			fv := newFunctionValue(string(ruleDollar[1].valueLiteral), newArrayValue(ruleDollar[3].arrayValue))
+			fv := newFunctionValue(string(ruleDollar[1].valueLiteral), ruleDollar[3].arrayValue)
 			if err := fv.ValidateStdlibFnArgs(); err != nil {
 				// if this is a stdlib function, validate arguments early at parse time
 				// rather than eval

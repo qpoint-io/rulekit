@@ -43,12 +43,13 @@ func (f *FunctionValue) String() string {
 	return f.fn + "(" + f.args.String() + ")"
 }
 
-func newFunctionValue(fn string, args *ArrayValue) *FunctionValue {
-	args.raw = strings.TrimPrefix(args.raw, "[")
-	args.raw = strings.TrimSuffix(args.raw, "]")
+func newFunctionValue(fn string, args []Rule) *FunctionValue {
+	argsArr := newArrayValue(args)
+	argsArr.raw = strings.TrimPrefix(argsArr.raw, "[")
+	argsArr.raw = strings.TrimSuffix(argsArr.raw, "]")
 	return &FunctionValue{
 		fn:   fn,
-		args: args,
+		args: argsArr,
 	}
 }
 
