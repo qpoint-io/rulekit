@@ -12,7 +12,6 @@ package rulekit
 
 // Type declarations for non-terminals (rules)
 %type <rule> search_condition predicate
-// %type <nodeFunction> function_call
 %type <rule> function_call
 %type <operator> ineq_operator eq_operator
 %type <arrayValue> array_values

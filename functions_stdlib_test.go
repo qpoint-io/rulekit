@@ -2,6 +2,7 @@ package rulekit
 
 import (
 	"errors"
+	"net"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -17,11 +18,17 @@ func TestFn_InvalidArgs(t *testing.T) {
 
 func TestFn_StartsWith(t *testing.T) {
 	r := MustParse(`starts_with(url, "https://")`)
-
 	assertRule(t, r, kv{"url": "https://example.com"}).Pass()
 	assertRule(t, r, kv{"url": "http://example.com"}).Fail()
 	assertRule(t, r, kv{"url": "invalid-url"}).Fail()
 
+	// non-string args
+	assertRulep(t, `starts_with(ip, "10.0")`, kv{"ip": net.ParseIP("10.0.0.1")}).Pass()
+	assertRulep(t, `starts_with(code, 5)`, kv{"code": 500}).Pass()
+	assertRulep(t, `starts_with(code, "5")`, kv{"code": 500}).Pass()
+	assertRulep(t, `starts_with(code, 5)`, kv{"code": 404}).Fail()
+
+	// parser errors
 	assertParseErrorValue(t, "starts_with()", `syntax error at line 1:14:
 starts_with()
              ^

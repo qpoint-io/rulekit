@@ -11,17 +11,14 @@ type FunctionValue struct {
 }
 
 func (f *FunctionValue) Eval(ctx *Ctx) Result {
-	var fn *Function
-	if stdlibFn, ok := StdlibFuncs[f.fn]; ok {
-		fn = stdlibFn
-	} else {
+	fn, ok := StdlibFuncs[f.fn]
+	if !ok {
 		return Result{
 			Error:         fmt.Errorf("unknown function %q", f.fn),
 			EvaluatedRule: f,
 		}
 	}
 
-	// if args are set, validate them
 	if len(fn.Args) != len(f.args.vals) {
 		return Result{
 			Error:         fmt.Errorf("function %q expects %d arguments, got %d", f.fn, len(fn.Args), len(f.args.vals)),
@@ -65,7 +62,6 @@ func (f *FunctionValue) ValidateStdlibFnArgs() error {
 }
 
 type Function struct {
-	Name string
 	// Args is an optional list of arguments that the function expects.
 	// If set, rulekit will ensure validity of the arguments and pass them as a named map to the Eval function.
 	Args []FunctionArg
