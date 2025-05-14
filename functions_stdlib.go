@@ -12,11 +12,11 @@ var StdlibFuncs = map[string]*Function{
 			{Name: "prefix"},
 		},
 		Eval: func(args map[string]any) Result {
-			value, err := IndexFnArg[any](args, 0, "value")
+			value, err := IndexFuncArg[any](args, "value")
 			if err != nil {
 				return Result{Error: err}
 			}
-			prefix, err := IndexFnArg[any](args, 1, "prefix")
+			prefix, err := IndexFuncArg[any](args, "prefix")
 			if err != nil {
 				return Result{Error: err}
 			}

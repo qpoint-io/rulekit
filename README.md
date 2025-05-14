@@ -38,37 +38,31 @@ A field on its own (without an operator) will check if the field contains a non-
 ## Usage Example
 
 ```go
-import (
-    "fmt"
-    "github.com/qpoint-io/rulekit/rule"
-)
+import "github.com/qpoint-io/rulekit"
 
-func main() {
-    // Parse a rule
-    r, err := rule.Parse(`domain matches /example\.com$/ and port == 8080`)
-    if err != nil {
-        fmt.Printf("Failed to parse rule: %v\n", err)
-        return
-    }
-    
-    // Define input data
-    inputData := rulekit.KV{
-        "domain": "example.com",
-        "port": 8080,
-    }
-    
-    // Evaluate the rule using Ctx
-    result := r.Eval(&rulekit.Ctx{KV: inputData})
+// ...
 
-    // Check for errors
-    if !result.Ok() {
-        fmt.Printf("Error evaluating rule: %v\n", result.Error)
-    } else {
-        if result.Pass() {
-            fmt.Println("PASS!")
-        } else if result.Fail() {
-            fmt.Println("FAIL :(")
-        }
+r, err := rule.Parse(`domain matches /example\.com$/ and port == 8080`)
+if err != nil { /* ... */ }
+    
+// define input data
+input := rulekit.KV{
+    "domain": "example.com",
+    "port": 8080,
+}
+    
+// evaluate the rule
+result := r.Eval(&rulekit.Ctx{KV: inputData})
+
+// check for errors
+if !result.Ok() {
+    fmt.Printf("error evaluating rule: %v\n", result.Error)
+} else {
+    if result.Pass() {
+        fmt.Println("PASS!")
+    } else if result.Fail() {
+        fmt.Println("FAIL :(")
+    }
 }
 ```
 
@@ -77,28 +71,13 @@ func main() {
 When a rule is evaluated, it returns a `Result` struct containing:
 
 - `Value`: The evaluated value, usually a boolean
-- `Error`: Any fields required by the rule but not present in the input
-- `EvaluatedRule`: The sub-rule that determined the returned value
+- `Error`: Any evaluation errors such as fields missing from the KV map
+- `EvaluatedRule`: The sub-rule that determined the returned value. Useful for debugging and understanding which part of a complex rule caused the result.
 
 The Result also provides additional helper methods:
 - `Pass()`: Returns true if the rule returns true/a non-zero value with no errors
 - `Fail()`: Returns true if the rule returns false/a zero value with no errors
 - `Ok()`: Returns true if the rule executed with no error
-
-## Context
-
-Rules are evaluated with a context input containing field values. `rulekit.KV` is an alias for `map[string]any`.
-
-```go
-ctx := &rulekit.Ctx{
-    KV: rulekit.KV{
-        "domain": "example.com",
-        "port": 8080,
-    },
-}
-
-result := rule.Eval(ctx)
-```
 
 ## Supported Operators
 
@@ -120,6 +99,8 @@ result := rule.Eval(ctx)
 
 ## Supported Types
 
+### Basic values
+
 | Type | Used As | Example | Description |
 |------|---------|---------|-------------|
 | **bool** | VALUE, FIELD | `true` | Valid values: `true`, `false` |
@@ -130,7 +111,97 @@ result := rule.Eval(ctx)
 | **Hexadecimal string** | VALUE, FIELD | `12:34:56:78:ab` (MAC address), `504f5354` (hex string "POST") | A hexadecimal string, optionally separated by colons. |
 | **Regex** | VALUE | `/example\.com$/` | A Go-style regular expression. Must be surrounded by forward slashes. May not be quoted with double quotes (otherwise it will be parsed as a string). Maps to Go type: `*regexp.Regexp` |
 
-Arrays are also supported using a square bracket notiation. An array may contain mixed value types. For example: `field in [1.2.3.4, "domain.com"]`.
+### Constructs
+
+| Type | Used As | Example | Description |
+|------|---------|---------|-------------|
+| **Array** | VALUE | `[1, "string", true]` | An array of mixed value types. Can be used with most operators including `in` and `contains`. |
+| **Function** | VALUE | `starts_with(url, "https://")` | A function call with optional arguments. Can be built-in or custom. |
+| **Macro** | VALUE | `isValidRequest()` | A zero-argument function that encapsulates a predefined rule. |
+
+## Macros
+
+Macros can be used for complex or commonly-used rules. They are defined in the evaluation context:
+
+```go
+// create a macro
+isInternalAPI, err := rulekit.Parse(`domain matches /\.internal\.example\.com$/ or ip in 10.0.0.0/8`)
+if err != nil { /* ... */ }
+
+// create a rule that uses the macro
+rule, err := rulekit.Parse(`isInternalAPI() && user != "root"`)
+if err != nil { /* ... */ }
+
+// evaluate the rule, making sure to pass the macro in the eval context
+result := rule.Eval(&rulekit.Ctx{
+    Macros: map[string]rulekit.Rule{
+        "isInternalAPI": isInternalAPI,
+    },
+    KV: rulekit.KV{
+        "user": user,
+        // ...
+    },
+})
+```
+
+## Functions
+
+Functions can be called inside rules and used as value objects. Functions may accept zero or more arguments.
+
+### Standard library
+
+Rulekit comes with a built-in standard library of functions:
+
+| Function | Description | Example |
+|----------|-------------|---------|
+| `starts_with(value, prefix)` | Checks if a value starts with the given prefix. Works with strings, numbers, and other types by converting them to strings. | `starts_with(url, "https://")` |
+
+### Custom Functions
+
+Custom functions may be used to extend Rulekit with additional functionality. Note that functions only have access to their arguments and do not have access to the context KV map. Rulekit will validate the function's arguments per the provided spec before executing the handler.
+
+```go
+// define a custom function
+customFuncs := map[string]*rulekit.Function{
+    "randomInt": {
+        Args: []rulekit.FunctionArg{
+            {Name: "min"},
+            {Name: "max"},
+        },
+        Eval: func(args map[string]any) rulekit.Result {
+            // use the rulekit.IndexFuncArg helper to retrieve args and validate types.
+            // rulekit.IndexFuncArg[any] will skip type validation.
+            min, err := rulekit.IndexFuncArg[int64](args, "min")
+            if err != nil {
+                return rulekit.Result{Error: err}
+            }
+
+            max, err := rulekit.IndexFuncArg[int64](args, "max")
+            if err != nil {
+                return rulekit.Result{Error: err}
+            }
+
+            num := rand.IntN(max-min) + min
+            return Result{
+                Value: num,
+            }
+        },
+    },
+}
+
+// call the function in a rule
+rule, err := rulekit.Parse(`randomInt(10, 20) == 15`)
+if err != nil { /* ... */ }
+
+result1, err := rule.Eval(&rulekit.Ctx{
+    Functions: customFuncs,
+})
+if err != nil { /* ... */ }
+
+if rule.Pass() {
+    // the random number is 15!
+}
+```
 
 ## License
 

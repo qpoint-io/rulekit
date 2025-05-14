@@ -200,8 +200,3 @@ type ValueParseError struct {
 func (e ValueParseError) Error() string {
 	return fmt.Sprintf("parsing %s value %q: %v", valueTokenString(e.TokenType), e.Value, e.Err)
 }
-
-type functionCall struct {
-	fn   string
-	args []Rule
-}
