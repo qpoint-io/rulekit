@@ -13,6 +13,18 @@ type FunctionValue struct {
 func (f *FunctionValue) Eval(ctx *Ctx) Result {
 	fn, ok := StdlibFuncs[f.fn]
 	if !ok {
+		if ctx.Macros != nil {
+			if macro, ok := ctx.Macros[f.fn]; ok {
+				if len(f.args.vals) > 0 {
+					return Result{
+						Error:         fmt.Errorf("macro %q expects 0 arguments, got %d", f.fn, len(f.args.vals)),
+						EvaluatedRule: f,
+					}
+				}
+				return macro.Eval(ctx)
+			}
+		}
+
 		return Result{
 			Error:         fmt.Errorf("unknown function %q", f.fn),
 			EvaluatedRule: f,
