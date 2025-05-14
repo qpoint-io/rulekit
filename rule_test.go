@@ -987,6 +987,128 @@ func TestMacros(t *testing.T) {
 		EvaluatedRule(`host =~ /svc.cluster.local$/ and user != "root"`)
 }
 
+func TestCustomFunction(t *testing.T) {
+	fns := map[string]*Function{
+		"custom_func": {
+			Args: []FunctionArg{
+				{Name: "msg"},
+			},
+			Eval: func(args map[string]any) Result {
+				msg, err := IndexFnArg[string](args, 0, "msg")
+				if err != nil {
+					return Result{Error: err}
+				}
+				return Result{Value: "Got msg: " + msg}
+			},
+		},
+	}
+
+	assertRulep(t, `custom_func("test")`, &ctx{
+		Functions: fns,
+	}).Ok().Value(`Got msg: test`)
+	assertRulep(t, `custom_func()`, &ctx{
+		Functions: fns,
+	}).Error(errors.New(`function "custom_func" expects 1 arguments, got 0`))
+	assertRulep(t, `custom_func(1, 2)`, &ctx{
+		Functions: fns,
+	}).Error(errors.New(`function "custom_func" expects 1 arguments, got 2`))
+
+	// mix & match functions, macros, stdlib functions
+	assertRulep(t, `starts_with(macro(), "Got msg")`, &ctx{
+		Functions: fns,
+		Macros: map[string]Rule{
+			"macro": MustParse(`custom_func("test")`),
+		},
+	}).Pass()
+}
+
+func TestCtx_Validate(t *testing.T) {
+	tcs := []struct {
+		name string
+		ctx  *Ctx
+		err  string
+	}{
+		{
+			name: "happy path",
+			ctx: &Ctx{
+				Macros: map[string]Rule{
+					"dst_k8s_svc": MustParse(`true`),
+				},
+				Functions: map[string]*Function{
+					"custom_func": {},
+				},
+			},
+		},
+		{
+			name: "nil func",
+			ctx: &Ctx{
+				Functions: map[string]*Function{
+					"custom_func": nil,
+				},
+			},
+			err: `function "custom_func": must not be nil`,
+		},
+		{
+			name: "nil macro",
+			ctx: &Ctx{
+				Macros: map[string]Rule{
+					"custom_macro": nil,
+				},
+			},
+			err: `macro "custom_macro": must not be nil`,
+		},
+		{
+			name: "macro name conflicts with function",
+			ctx: &Ctx{
+				Macros: map[string]Rule{
+					"custom_func": MustParse(`true`),
+				},
+				Functions: map[string]*Function{
+					"custom_func": {},
+				},
+			},
+			err: `macro "custom_func": name conflicts with a custom function`,
+		},
+		{
+			name: "macro name conflicts with stdlib function",
+			ctx: &Ctx{
+				Macros: map[string]Rule{
+					"starts_with": MustParse(`true`),
+				},
+			},
+			err: `macro "starts_with": name conflicts with a stdlib function`,
+		},
+		{
+			name: "custom function name conflicts with stdlib function",
+			ctx: &Ctx{
+				Functions: map[string]*Function{
+					"starts_with": {},
+				},
+			},
+			err: `function "starts_with": name conflicts with a stdlib function`,
+		},
+	}
+
+	for _, tc := range tcs {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.ctx.Validate()
+			if tc.err == "" {
+				require.NoError(t, err)
+			} else {
+				require.EqualError(t, err, tc.err)
+			}
+		})
+	}
+}
+
+func TestEval_invalid_ctx(t *testing.T) {
+	assertRulep(t, `true`, &ctx{
+		Functions: map[string]*Function{
+			"starts_with": {},
+		},
+	}).Error(errors.New(`function "starts_with": name conflicts with a stdlib function`))
+}
+
 type ruleAssertion struct {
 	t      *testing.T
 	rule   Rule

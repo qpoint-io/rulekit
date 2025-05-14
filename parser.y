@@ -7,7 +7,6 @@ package rulekit
 	operator      int
 	valueLiteral  []byte
 	arrayValue    []Rule
-	functionCall  functionCall
 }
 
 // Type declarations for non-terminals (rules)
