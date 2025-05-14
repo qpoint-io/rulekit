@@ -143,6 +143,16 @@ type Rule interface {
 	String() string
 }
 
+type RuleFunc func(*Ctx) Result
+
+func (f RuleFunc) Eval(ctx *Ctx) Result {
+	return f(ctx)
+}
+
+func (f RuleFunc) String() string {
+	return "<fn>"
+}
+
 type rule struct {
 	Rule
 }

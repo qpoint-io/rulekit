@@ -735,6 +735,11 @@ func assertParseError(t *testing.T, rule string) {
 	assert.Error(t, err)
 }
 
+func assertParseErrorValue(t *testing.T, rule string, expected string) {
+	_, err := Parse(rule)
+	assert.EqualError(t, err, expected)
+}
+
 func toJSON(t *testing.T, v any) string {
 	t.Helper()
 	b, err := json.Marshal(v)

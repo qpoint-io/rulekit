@@ -270,7 +270,14 @@ numeric_value_token:
 function_call:
 	token_FUNCTION token_LPAREN function_arguments token_RPAREN
 	{
-		$$ = newFunctionValue(string($1), newArrayValue($3))
+		fv := newFunctionValue(string($1), newArrayValue($3))
+		if err := fv.ValidateStdlibFnArgs(); err != nil {
+			// if this is a stdlib function, validate arguments early at parse time
+			// rather than eval
+			rulelex.Error(err.Error())
+			return 1
+		}
+		$$ = fv
 	}
 	;
 

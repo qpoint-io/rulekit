@@ -89,7 +89,7 @@ const ruleEofCode = 1
 const ruleErrCode = 2
 const ruleInitialStackSize = 16
 
-//line parser.y:292
+//line parser.y:297
 
 //line yacctab:1
 var ruleExca = [...]int8{
@@ -805,23 +805,28 @@ ruledefault:
 		ruleDollar = ruleS[rulept-4 : rulept+1]
 //line parser.y:272
 		{
-			ruleVAL.rule = newFunctionValue(string(ruleDollar[1].valueLiteral), newArrayValue(ruleDollar[3].arrayValue))
+			fv := newFunctionValue(string(ruleDollar[1].valueLiteral), newArrayValue(ruleDollar[3].arrayValue))
+			if err := fv.ValidateStdlibFnArgs(); err != nil {
+				rulelex.Error(err.Error())
+				return 1
+			}
+			ruleVAL.rule = fv
 		}
 	case 37:
 		ruleDollar = ruleS[rulept-1 : rulept+1]
-//line parser.y:279
+//line parser.y:284
 		{
 			ruleVAL.arrayValue = []Rule{ruleDollar[1].rule}
 		}
 	case 38:
 		ruleDollar = ruleS[rulept-3 : rulept+1]
-//line parser.y:283
+//line parser.y:288
 		{
 			ruleVAL.arrayValue = append(ruleDollar[1].arrayValue, ruleDollar[3].rule)
 		}
 	case 39:
 		ruleDollar = ruleS[rulept-0 : rulept+1]
-//line parser.y:287
+//line parser.y:292
 		{
 			ruleVAL.arrayValue = ([]Rule)(nil)
 		}

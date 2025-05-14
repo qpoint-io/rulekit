@@ -58,3 +58,13 @@ func coalesceErrs(errs ...error) error {
 }
 
 var ErrInvalidOperation = errors.New("invalid operation")
+
+type ErrInvalidFunctionArg struct {
+	Index    int
+	Expected string
+	Got      string
+}
+
+func (e *ErrInvalidFunctionArg) Error() string {
+	return fmt.Sprintf("arg %d: expected %s, got %s", e.Index, e.Expected, e.Got)
+}
