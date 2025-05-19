@@ -129,12 +129,37 @@ func MustParse(str string) Rule {
 type KV = map[string]any
 
 type Ctx struct {
-	KV     KV
-	Macros map[string]Rule
+	KV        KV
+	Macros    map[string]Rule
+	Functions map[string]*Function
 }
 
 func (c *Ctx) Eval(r Rule) Result {
 	return r.Eval(c)
+}
+
+func (c *Ctx) Validate() error {
+	for name, fn := range c.Functions {
+		if _, ok := StdlibFuncs[name]; ok {
+			return fmt.Errorf("function %q: name conflicts with a stdlib function", name)
+		}
+		if fn == nil {
+			return fmt.Errorf("function %q: must not be nil", name)
+		}
+	}
+	for name, macro := range c.Macros {
+		if _, ok := StdlibFuncs[name]; ok {
+			return fmt.Errorf("macro %q: name conflicts with a stdlib function", name)
+		}
+		if _, ok := c.Functions[name]; ok {
+			return fmt.Errorf("macro %q: name conflicts with a custom function", name)
+		}
+		if macro == nil {
+			return fmt.Errorf("macro %q: must not be nil", name)
+		}
+	}
+
+	return nil
 }
 
 type Rule interface {
@@ -160,6 +185,10 @@ type rule struct {
 
 // Eval overrides the rule's Eval() method to wrap the returned EvalutedRule so we can override the String() method.
 func (r *rule) Eval(ctx *Ctx) Result {
+	if err := ctx.Validate(); err != nil {
+		return Result{Error: err}
+	}
+
 	res := r.Rule.Eval(ctx)
 	res.EvaluatedRule = &rule{Rule: res.EvaluatedRule}
 	return res

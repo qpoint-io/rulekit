@@ -11,26 +11,27 @@ type FunctionValue struct {
 }
 
 func (f *FunctionValue) Eval(ctx *Ctx) Result {
-	fn, ok := StdlibFuncs[f.fn]
-	if !ok {
-		if ctx.Macros != nil {
-			if macro, ok := ctx.Macros[f.fn]; ok {
-				if len(f.args.vals) > 0 {
-					return Result{
-						Error:         fmt.Errorf("macro %q expects 0 arguments, got %d", f.fn, len(f.args.vals)),
-						EvaluatedRule: f,
-					}
-				}
-				return macro.Eval(ctx)
+	if fn, ok := StdlibFuncs[f.fn]; ok {
+		return f.eval(fn, ctx)
+	} else if fn, ok := ctx.Functions[f.fn]; ok {
+		return f.eval(fn, ctx)
+	} else if macro, ok := ctx.Macros[f.fn]; ok {
+		if len(f.args.vals) > 0 {
+			return Result{
+				Error:         fmt.Errorf("macro %q expects 0 arguments, got %d", f.fn, len(f.args.vals)),
+				EvaluatedRule: f,
 			}
 		}
-
-		return Result{
-			Error:         fmt.Errorf("unknown function %q", f.fn),
-			EvaluatedRule: f,
-		}
+		return macro.Eval(ctx)
 	}
 
+	return Result{
+		Error:         fmt.Errorf("unknown function %q", f.fn),
+		EvaluatedRule: f,
+	}
+}
+
+func (f *FunctionValue) eval(fn *Function, ctx *Ctx) Result {
 	if len(fn.Args) != len(f.args.vals) {
 		return Result{
 			Error:         fmt.Errorf("function %q expects %d arguments, got %d", f.fn, len(fn.Args), len(f.args.vals)),
@@ -85,10 +86,9 @@ type Function struct {
 
 type FunctionArg struct {
 	Name string
-	Type string
 }
 
-func IndexFnArg[T any](args map[string]any, idx int, name string) (T, error) {
+func IndexFuncArg[T any](args map[string]any, name string) (T, error) {
 	var zeroVal T
 
 	valAny, ok := args[name]
@@ -98,8 +98,8 @@ func IndexFnArg[T any](args map[string]any, idx int, name string) (T, error) {
 	val, ok := valAny.(T)
 	if !ok {
 		return zeroVal, &ErrInvalidFunctionArg{
-			Index:    idx,
-			Expected: fmt.Sprintf("%T", valAny),
+			Name:     name,
+			Expected: fmt.Sprintf("%T", zeroVal),
 			Got:      fmt.Sprintf("%T", valAny),
 		}
 	}
