@@ -67,7 +67,7 @@ import (
 	comment_line  = '--' [^\n]* '\n'?;
     comment_block = '/*' (any - '*/')* '*/';
 
-	field_char = alpha | digit | '_' | '.';
+	field_char = alpha | digit | '_' | '.' | '-';
     field = (alpha | '_') field_char*;  # Must start with alpha or underscore
 	
 	# Function names (similar to fields but can't contain dots)

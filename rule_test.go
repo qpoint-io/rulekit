@@ -992,3 +992,35 @@ func TestEval_invalid_ctx(t *testing.T) {
 		},
 	}).Error(errors.New(`function "starts_with": name conflicts with a stdlib function`))
 }
+
+func TestFieldNames(t *testing.T) {
+	valid := []string{
+		"field",
+		"field1",
+		"field-",
+		"field_",
+		"field_1",
+		"field-1",
+		"field.1",
+		"field-1.field2",
+		"field-1.field2-3",
+		"request.header.user-agent",
+	}
+	for _, field := range valid {
+		r := field + ` == true`
+		_, err := Parse(r)
+		require.NoError(t, err, r)
+	}
+
+	invalid := []string{
+		"-field",
+		`field%.field`,
+		"01fie^ld",
+		"01fie||d",
+	}
+	for _, field := range invalid {
+		r := field + ` == true`
+		_, err := Parse(r)
+		require.Error(t, err, r)
+	}
+}
