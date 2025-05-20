@@ -1,7 +1,6 @@
 package rulekit
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -184,13 +183,6 @@ func assertParseError(t *testing.T, rule string) {
 func assertParseErrorValue(t *testing.T, rule string, expected string) {
 	_, err := Parse(rule)
 	assert.EqualError(t, err, expected)
-}
-
-func toJSON(t *testing.T, v any) string {
-	t.Helper()
-	b, err := json.Marshal(v)
-	require.NoError(t, err)
-	return string(b)
 }
 
 type testWriter struct {

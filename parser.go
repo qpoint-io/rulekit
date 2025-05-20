@@ -148,12 +148,6 @@ func parseValueToken(typ int, rawBytes []byte) (Rule, error) {
 	}, nil
 }
 
-type valueToken struct {
-	typ   int
-	raw   string
-	value any
-}
-
 func valueTokenString(typ int) string {
 	switch typ {
 	case token_STRING:
