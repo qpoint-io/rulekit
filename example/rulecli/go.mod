@@ -1,8 +1,6 @@
 module github.com/qpoint-io/rulekit/example/rulecli
 
-go 1.23.4
-
-toolchain go1.24.1
+go 1.24.3
 
 require (
 	github.com/charmbracelet/bubbles v0.20.0
