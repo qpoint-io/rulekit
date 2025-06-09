@@ -47,7 +47,7 @@ func Test_mapPath(t *testing.T) {
 		"dst.host": {"192.168.1.1", true},
 		"dst.port": {8080, true},
 	} {
-		got, ok := mapPath(m, key)
+		got, ok := IndexKV(m, key)
 		assert.Equal(t, want, struct {
 			val any
 			ok  bool
