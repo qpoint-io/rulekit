@@ -10,7 +10,7 @@ import (
 type FieldValue string
 
 func (f FieldValue) Eval(ctx *Ctx) Result {
-	val, ok := mapPath(ctx.KV, string(f))
+	val, ok := IndexKV(ctx.KV, string(f))
 	if !ok {
 		return Result{
 			Error:         &ErrMissingFields{Fields: set.NewSet(string(f))},
@@ -120,8 +120,12 @@ func isZero(val any) bool {
 	return false
 }
 
-// mapPath gets element key from a map, interpreting it as a path if it contains a period.
-func mapPath(m map[string]any, key string) (any, bool) {
+// IndexKV gets element key from a map, interpreting it as a path if it contains a period.
+func IndexKV(m KV, key string) (any, bool) {
+	if m == nil {
+		return nil, false
+	}
+
 	// Iterative approach to traverse the path
 	currentMap := m
 	start := 0
