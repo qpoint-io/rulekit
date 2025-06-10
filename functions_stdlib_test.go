@@ -39,3 +39,52 @@ starts_with(arg1)
                  ^
 function "starts_with" expects 2 arguments, got 1`)
 }
+
+func TestFn_Index(t *testing.T) {
+	// happy path - map
+	assertRulep(t,
+		`index(map, "key")`,
+		kv{"map": KV{"key": "value"}},
+	).Value("value")
+
+	// happy path - array
+	assertRulep(t, `index([1, 2, 3], 0)`, nil).Value(int64(1))
+
+	// happy path - nested map
+	assertRulep(t,
+		`index(map, "key.nested")`,
+		kv{"map": KV{"key": KV{"nested": "value"}}},
+	).Value("value")
+	assertRulep(t,
+		`index(index(map, "key"), "nested")`,
+		kv{"map": KV{"key": KV{"nested": "value"}}},
+	).Value("value")
+
+	// int key with map
+	assertRulep(t,
+		`index(map, 123)`,
+		kv{"map": KV{"key": "value"}},
+	).ErrorString(`arg key: expected string, got int64`)
+
+	// string key with array
+	assertRulep(t,
+		`index([1, 2, 3], "test")`,
+		kv{"map": []any{1, 2, 3}},
+	).ErrorString(`arg key: expected int64, got string`)
+
+	// out of bounds key with array
+	assertRulep(t,
+		`index([1, 2, 3], 10)`,
+		kv{"map": []any{1, 2, 3}},
+	).ErrorString(`index 10 out of bounds`)
+	assertRulep(t,
+		`index([1, 2, 3], -3)`,
+		kv{"map": []any{1, 2, 3}},
+	).ErrorString(`index -3 out of bounds`)
+
+	// invalid container type
+	assertRulep(t,
+		`index(map, "test")`,
+		kv{"map": 123},
+	).ErrorString(`container must be a map or array`)
+}
