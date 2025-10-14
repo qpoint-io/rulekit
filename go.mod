@@ -1,6 +1,6 @@
 module github.com/qpoint-io/rulekit
 
-go 1.25.1
+go 1.25.3
 
 require (
 	github.com/hashicorp/go-multierror v1.1.1
