@@ -449,11 +449,75 @@ h3 {
 
 .rule-expression {
   font-family: 'Departure Mono', 'Monaco', 'Menlo', monospace;
-  color: #a8ff60;
   word-break: break-all;
   font-size: 1em;
   line-height: 1.6;
   letter-spacing: 0;
   text-shadow: 2px 2px 0 #242424, 0 0 15px rgba(168, 255, 96, 0.5);
+}
+
+.rule-expression.pass {
+  color: #a8ff60;
+}
+
+.rule-expression.fail {
+  color: #ff6c60;
+}
+
+.rule-expression.error {
+  color: #e9c062;
+}
+
+.card-header-with-button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1em;
+  margin-bottom: 1em;
+}
+
+.card-header-with-button h2 {
+  margin: 0;
+}
+
+.button-group {
+  display: flex;
+  gap: 0.5em;
+  align-items: center;
+}
+
+.inline-button {
+  padding: 0.5em 1em;
+  font-size: 0.55em;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.inline-button.pass {
+  border-color: #a8ff60;
+  color: #a8ff60;
+  background: rgba(168, 255, 96, 0.1);
+  box-shadow: 2px 2px 0 #000000;
+}
+
+.inline-button.pass:hover {
+  background: #a8ff60;
+  color: #000000;
+  border-color: #a8ff60;
+  box-shadow: 3px 3px 0 #a8ff60, 0 0 15px rgba(168, 255, 96, 0.5);
+}
+
+.inline-button.fail {
+  border-color: #ff6c60;
+  color: #ff6c60;
+  background: rgba(255, 108, 96, 0.1);
+  box-shadow: 2px 2px 0 #000000;
+}
+
+.inline-button.fail:hover {
+  background: #ff6c60;
+  color: #000000;
+  border-color: #ff6c60;
+  box-shadow: 3px 3px 0 #ff6c60, 0 0 15px rgba(255, 108, 96, 0.5);
 }
 

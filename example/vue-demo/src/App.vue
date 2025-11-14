@@ -12,6 +12,7 @@ interface EvalResult {
   value?: any
   error?: string
   evaluatedRule?: string
+  passFailErrStr?: string
 }
 
 
@@ -28,7 +29,7 @@ and not src.pod.namespace in ["api", "backend", "monitoring"]
 -- allow essential services
 or dst.domain in ["registry.k8s.io", "k8s.gcr.io", "gcr.io", "docker.io"]`
 
-const DEFAULT_DATA_JSON = JSON.stringify({
+const DEFAULT_DATA_JSON_PASS = JSON.stringify({
   "dst": {
     "domain": "registry.k8s.io",
     "port": 3306,
@@ -41,6 +42,22 @@ const DEFAULT_DATA_JSON = JSON.stringify({
     },
   },
 }, null, 2)
+
+const DEFAULT_DATA_JSON_FAIL = JSON.stringify({
+  "dst": {
+    "domain": "example.com",
+    "port": 3306,
+  },
+  "src": {
+    "ip": "192.168.0.1",
+    "port": 8080,
+    "pod": {
+      "namespace": "monitoring",
+    },
+  },
+}, null, 2)
+
+const DEFAULT_DATA_JSON = DEFAULT_DATA_JSON_PASS
 
 // LocalStorage keys
 const STORAGE_KEY_RULE = 'rulekit-rule-input'
@@ -156,7 +173,7 @@ const isDataJsonValid = computed(() => {
 })
 
 const showResetButton = computed(() => {
-  return ruleInput.value !== DEFAULT_RULE_INPUT || dataJson.value !== DEFAULT_DATA_JSON
+  return ruleInput.value !== DEFAULT_RULE_INPUT
 })
 
 // Evaluate rule using WASM
@@ -186,7 +203,8 @@ async function evaluateRule() {
       ok: evalResult.ok,
       value: evalResult.value,
       error: evalResult.error,
-      evaluatedRule: evalResult.evaluatedRule
+      evaluatedRule: evalResult.evaluatedRule,
+      passFailErrStr: evalResult.ok ? (evalResult.pass ? 'pass' : 'fail') : 'error'
     }
   } catch (e: any) {
     error.value = e.message
@@ -322,12 +340,35 @@ watch(isGifHovered, (hovered) => {
 // Reset to defaults
 async function resetToDefaults() {
   ruleInput.value = DEFAULT_RULE_INPUT
-  dataJson.value = DEFAULT_DATA_JSON
-  astJson.value = DEFAULT_AST_JSON
-  result.value = null
-  error.value = ''
-  ruleParseError.value = ''
   await parseRule()
+}
+
+// Set pass data
+async function setPassData() {
+  dataJson.value = DEFAULT_DATA_JSON_PASS
+  await evaluateRule()
+}
+
+// Set fail data
+async function setFailData() {
+  dataJson.value = DEFAULT_DATA_JSON_FAIL
+  await evaluateRule()
+}
+
+// Click on bird
+function clickOnBird() {
+  birdDirection.value = birdDirection.value === 'left' ? 'right' : 'left'
+  cancelAnimation()
+  targetPosition = birdDirection.value === 'left' ? 0 : 100
+  animateBird()
+}
+
+function cancelAnimation() {
+  if (animationFrameId !== null) {
+    cancelAnimationFrame(animationFrameId)
+    animationFrameId = null
+    currentGifState.value = 'idle'
+  }
 }
 
 // Random state switching for gif
@@ -369,10 +410,7 @@ function randomGifStateSwitch() {
       }
     } else {
       // Stop animation when idle
-      if (animationFrameId !== null) {
-        cancelAnimationFrame(animationFrameId)
-        animationFrameId = null
-      }
+      cancelAnimation()
       currentGifState.value = newState
     }
   }
@@ -432,11 +470,13 @@ onUnmounted(async () => {
         class="bird-position" 
         :style="birdPositionStyle"
       >
-        <img 
+        <img
+          draggable="false"
           :src="currentGif" 
           :style="birdFlipStyle"
           alt="Animated character"
           class="corner-gif"
+          @click="clickOnBird"
           @mouseenter="isGifHovered = true" 
           @mouseleave="isGifHovered = false"
         />
@@ -445,12 +485,14 @@ onUnmounted(async () => {
 
     <div class="header-container">
       <h1>Rulekit.js</h1>
-      <button v-if="showResetButton" @click="resetToDefaults" class="reset-button">Reset to Example Data</button>
     </div>
 
     <div class="inputs-container">
       <div class="card half-width">
-        <h2><span class="icon">▶</span> Write Your Rule</h2>
+        <div class="card-header-with-button">
+          <h2>Write Your Rule</h2>
+          <button v-if="showResetButton" @click="resetToDefaults" class="inline-button">Reset to Example Rule</button>
+        </div>
         <codemirror
           v-model="ruleInput"
           :extensions="ruleExtensions"
@@ -462,9 +504,16 @@ onUnmounted(async () => {
       </div>
 
       <div class="card half-width">
-        <h2><span class="icon">▣</span> Test Data (JSON)</h2>
+        <div class="card-header-with-button">
+          <h2>Input</h2>
+          <div class="button-group">
+            <span class="inline-button">Load example data</span>
+            <button @click="setPassData" class="inline-button pass">Pass</button>
+            <button @click="setFailData" class="inline-button fail">Fail</button>
+          </div>
+        </div>
         <div v-if="dataJsonError" class="json-error-message">
-          <strong>Invalid JSON:</strong> {{ dataJsonError }}
+          <strong>Invalid JSON</strong> <pre style="margin:0" class="rule-expression error">{{ dataJsonError }}</pre>
         </div>
         <codemirror
           v-model="dataJson"
@@ -481,23 +530,32 @@ onUnmounted(async () => {
       <h2>
         <span class="result-inline error"><span style="font-size: 1.5em;">🮽</span> Invalid Rule</span>
       </h2>
-      <pre style="margin-top:0" class="rule-expression">{{ ruleParseError }}</pre>
+      <pre style="margin-top:0" class="rule-expression fail">{{ ruleParseError }}</pre>
     </div>
 
-    <div v-if="!ruleParseError && result" class="card" :class="['result', result.ok ? (result.value ? 'pass' : 'fail') : 'error']">
-      <h2><span v-if="result" :class="['result-inline', result.ok ? (result.value ? 'pass' : 'fail') : 'error']">
-        <span style="font-size: 1.5em;">{{ result.ok ? (result.value ? '🮱' : '🮽') : '🯄' }}</span> {{ result.value ? 'PASS' : 'FAIL' }}
+    <div v-if="!ruleParseError && result" class="card" :class="['result', result.passFailErrStr]">
+      <h2><span v-if="result" :class="['result-inline', result.passFailErrStr]">
+        <span style="font-size: 1.5em;">{{ result.ok ? (result.value ? '🮱' : '🮽') : '🯄' }}</span> {{ result.passFailErrStr }}
       </span></h2>
       
       <div v-if="result.ok" style="margin-bottom: 1em;">Value
-        <div class="rule-expression">{{ result.value || (result.value === false ? 'false' : JSON.stringify(result.value)) }}</div>
+        <div class="rule-expression" :class="[result.passFailErrStr]">{{ result.value || (result.value === false ? 'false' : JSON.stringify(result.value)) }}</div>
       </div>
       <div v-else>Error
-        <pre style="margin-top:0" class="rule-expression">{{ result.error }}</pre>
+        <pre style="margin-top:0" class="rule-expression error">{{ result.error }}</pre>
       </div>
 
         <div>Evaluated Rule
-          <div class="rule-expression">{{ result.evaluatedRule }}</div>
+          
+          <codemirror
+            v-model="result.evaluatedRule"
+            :extensions="ruleExtensions"
+            :style="{ fontSize: '14px' }"
+            :autofocus="false"
+            :disabled="true"
+            placeholder="Evaluated Rule"
+            :lineNumbers="false"
+          />
         </div>
     </div>
 
@@ -508,7 +566,7 @@ onUnmounted(async () => {
       </div>
     </div>
 
-    <div :class="['card', { 'card-collapsed': !isAstExpanded }]">
+    <div v-if="false" :class="['card', { 'card-collapsed': !isAstExpanded }]">
       <h2 @click="isAstExpanded = !isAstExpanded" class="collapsible-header">
         <span class="collapse-icon icon">{{ isAstExpanded ? '▼' : '▶' }}</span>
         AST Input (JSON from Go)
