@@ -167,6 +167,8 @@ type Rule interface {
 	Eval(*Ctx) Result
 	// String representation of the rule
 	String() string
+	// AST representation of the rule
+	ASTNode() ASTNode
 }
 
 type RuleFunc func(*Ctx) Result
@@ -177,6 +179,13 @@ func (f RuleFunc) Eval(ctx *Ctx) Result {
 
 func (f RuleFunc) String() string {
 	return "<fn>"
+}
+
+func (f RuleFunc) ASTNode() ASTNode {
+	return &ASTNodeFunction{
+		Name: "<anonymous>",
+		Args: &ASTNodeArray{Elements: []ASTNode{}},
+	}
 }
 
 type rule struct {
@@ -205,6 +214,13 @@ func (r *rule) String() string {
 		return strings.TrimSuffix(s[1:], ")")
 	}
 	return s
+}
+
+func (r *rule) ASTNode() ASTNode {
+	if r.Rule == nil {
+		return &ASTNodeLiteral{Type: "nil"}
+	}
+	return r.Rule.ASTNode()
 }
 
 type Result struct {

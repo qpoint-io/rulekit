@@ -1024,3 +1024,82 @@ func TestFieldNames(t *testing.T) {
 		require.Error(t, err, r)
 	}
 }
+
+func TestASTNode(t *testing.T) {
+	// Test all node types
+	rule := MustParse(`
+	field == 123
+	and (
+		str matches /test/ or (
+			(arr in [1, "two", 3.5] and func("arg"))
+			or !bool_field
+		)
+	)`)
+
+	ast := rule.ASTNode()
+	require.Equal(t, &ASTNodeOperator{
+		Operator: "and",
+		Left: &ASTNodeOperator{
+			Operator: "eq",
+			Left:     &ASTNodeField{Name: "field"},
+			Right:    &ASTNodeLiteral{Type: "int64", Value: int64(123)},
+		},
+		Right: &ASTNodeOperator{
+			Operator: "or",
+			Left: &ASTNodeOperator{
+				Operator: "matches",
+				Left:     &ASTNodeField{Name: "str"},
+				Right:    &ASTNodeLiteral{Type: "regex", Value: "/test/"},
+			},
+			Right: &ASTNodeOperator{
+				Operator: "or",
+				Left: &ASTNodeOperator{
+					Operator: "and",
+					Left: &ASTNodeOperator{
+						Operator: "in",
+						Left:     &ASTNodeField{Name: "arr"},
+						Right: &ASTNodeArray{Elements: []ASTNode{
+							&ASTNodeLiteral{Type: "int64", Value: int64(1)},
+							&ASTNodeLiteral{Type: "string", Value: "two"},
+							&ASTNodeLiteral{Type: "float64", Value: float64(3.5)},
+						}},
+					},
+					Right: &ASTNodeFunction{
+						Name: "func",
+						Args: &ASTNodeArray{Elements: []ASTNode{
+							&ASTNodeLiteral{Type: "string", Value: "arg"},
+						}},
+					},
+				},
+				Right: &ASTNodeOperator{
+					Operator: "not",
+					Right:    &ASTNodeField{Name: "bool_field"},
+				},
+			},
+		},
+	}, ast)
+
+	// Test all operators
+	operators := map[string]string{
+		"and":      `a and b`,
+		"or":       `a or b`,
+		"not":      `!a`,
+		"eq":       `a == b`,
+		"ne":       `a != b`,
+		"gt":       `a > 5`,
+		"lt":       `a < 5`,
+		"ge":       `a >= 5`,
+		"le":       `a <= 5`,
+		"contains": `a contains b`,
+		"matches":  `a matches /test/`,
+		"in":       `a in [1, "two", 3.5]`,
+	}
+
+	for op, expr := range operators {
+		r := MustParse(expr)
+		astNode := r.ASTNode()
+		opNode, ok := astNode.(*ASTNodeOperator)
+		require.True(t, ok, "expected operator node for %s", expr)
+		require.Equal(t, op, opNode.Operator, "expected operator %s for %s", op, expr)
+	}
+}

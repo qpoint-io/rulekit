@@ -51,6 +51,14 @@ func (n *nodeAnd) String() string {
 	return fmt.Sprintf("(%s and %s)", n.left.String(), n.right.String())
 }
 
+func (n *nodeAnd) ASTNode() ASTNode {
+	return &ASTNodeOperator{
+		Operator: "and",
+		Left:     n.left.ASTNode(),
+		Right:    n.right.ASTNode(),
+	}
+}
+
 // OR
 type nodeOr struct {
 	left  Rule
@@ -95,6 +103,14 @@ func (n *nodeOr) Eval(ctx *Ctx) Result {
 
 func (n *nodeOr) String() string {
 	return fmt.Sprintf("(%s or %s)", n.left.String(), n.right.String())
+}
+
+func (n *nodeOr) ASTNode() ASTNode {
+	return &ASTNodeOperator{
+		Operator: "or",
+		Left:     n.left.ASTNode(),
+		Right:    n.right.ASTNode(),
+	}
 }
 
 // NOT
@@ -142,6 +158,13 @@ func (n *nodeNot) String() string {
 	}
 
 	return "not (" + n.right.String() + ")"
+}
+
+func (n *nodeNot) ASTNode() ASTNode {
+	return &ASTNodeOperator{
+		Operator: "not",
+		Right:    n.right.ASTNode(),
+	}
 }
 
 // TEST_MATCHES
@@ -199,6 +222,14 @@ func (n *nodeMatch) String() string {
 	return n.lv.String() + " =~ " + n.rv.String()
 }
 
+func (n *nodeMatch) ASTNode() ASTNode {
+	return &ASTNodeOperator{
+		Operator: "matches",
+		Left:     n.lv.ASTNode(),
+		Right:    n.rv.ASTNode(),
+	}
+}
+
 // Comparison node
 type nodeCompare struct {
 	lv Rule
@@ -231,6 +262,14 @@ func (n *nodeCompare) Eval(ctx *Ctx) Result {
 
 func (n *nodeCompare) String() string {
 	return n.lv.String() + " " + operatorToString(n.op) + " " + n.rv.String()
+}
+
+func (n *nodeCompare) ASTNode() ASTNode {
+	return &ASTNodeOperator{
+		Operator: operatorToText(n.op),
+		Left:     n.lv.ASTNode(),
+		Right:    n.rv.ASTNode(),
+	}
 }
 
 // TEST_IN
@@ -273,4 +312,12 @@ func (n *nodeIn) Eval(ctx *Ctx) Result {
 
 func (n *nodeIn) String() string {
 	return n.lv.String() + " in " + n.rv.String()
+}
+
+func (n *nodeIn) ASTNode() ASTNode {
+	return &ASTNodeOperator{
+		Operator: "in",
+		Left:     n.lv.ASTNode(),
+		Right:    n.rv.ASTNode(),
+	}
 }

@@ -56,6 +56,13 @@ func (f *FunctionValue) String() string {
 	return f.fn + "(" + f.args.String() + ")"
 }
 
+func (f *FunctionValue) ASTNode() ASTNode {
+	return &ASTNodeFunction{
+		Name: f.fn,
+		Args: f.args.ASTNode().(*ASTNodeArray),
+	}
+}
+
 func newFunctionValue(fn string, args []Rule) *FunctionValue {
 	argsArr := newArrayValue(args)
 	argsArr.raw = strings.TrimPrefix(argsArr.raw, "[")

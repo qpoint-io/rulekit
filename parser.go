@@ -30,6 +30,31 @@ func SetErrorVerbose(verbose bool) {
 	ruleErrorVerbose = verbose
 }
 
+func operatorToText(op int) string {
+	switch op {
+	case op_EQ:
+		return "eq"
+	case op_NE:
+		return "ne"
+	case op_GT:
+		return "gt"
+	case op_GE:
+		return "ge"
+	case op_LT:
+		return "lt"
+	case op_LE:
+		return "le"
+	case op_CONTAINS:
+		return "contains"
+	case op_MATCHES:
+		return "matches"
+	case op_IN:
+		return "in"
+	default:
+		return "unknown"
+	}
+}
+
 func operatorToString(op int) string {
 	switch op {
 	case op_EQ:

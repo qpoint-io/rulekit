@@ -19,7 +19,7 @@ func compareString(left string, op int, right any) (ret bool) {
 		return compareStringRegex(left, op, right)
 	case net.IP:
 		// string ? ip
-		return compareStringString(left, op, right.String())
+		return compareStringString(left, op, IPString(right))
 	case *net.IPNet:
 		// string ? ipnet
 		return compareStringString(left, op, right.String())

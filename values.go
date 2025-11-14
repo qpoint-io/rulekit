@@ -2,6 +2,7 @@ package rulekit
 
 import (
 	"net"
+	"regexp"
 	"strings"
 
 	"github.com/qpoint-io/rulekit/set"
@@ -27,6 +28,12 @@ func (f FieldValue) String() string {
 	return string(f)
 }
 
+func (f FieldValue) ASTNode() ASTNode {
+	return &ASTNodeField{
+		Name: string(f),
+	}
+}
+
 type LiteralValue[T any] struct {
 	raw   string
 	value T
@@ -41,6 +48,37 @@ func (l *LiteralValue[T]) Eval(ctx *Ctx) Result {
 
 func (l *LiteralValue[T]) String() string {
 	return l.raw
+}
+
+func (l *LiteralValue[T]) ASTNode() ASTNode {
+	switch v := any(l.value).(type) {
+	case bool:
+		return &ASTNodeLiteral{Type: "bool", Value: v}
+	case int, int64:
+		return &ASTNodeLiteral{Type: "int64", Value: v}
+	case uint, uint64:
+		return &ASTNodeLiteral{Type: "uint64", Value: v}
+	case float32, float64:
+		return &ASTNodeLiteral{Type: "float64", Value: v}
+	case string:
+		return &ASTNodeLiteral{Type: "string", Value: v}
+	case []byte:
+		return &ASTNodeLiteral{Type: "bytes", Value: v}
+	case HexString:
+		return &ASTNodeLiteral{Type: "hexstring", Value: v}
+	case net.IP:
+		return &ASTNodeLiteral{Type: "ip", Value: IPString(v)}
+	case net.HardwareAddr:
+		return &ASTNodeLiteral{Type: "mac", Value: v}
+	case *net.IPNet:
+		return &ASTNodeLiteral{Type: "cidr", Value: v.String()}
+	case []any:
+		return &ASTNodeLiteral{Type: "array", Value: v}
+	case *regexp.Regexp:
+		return &ASTNodeLiteral{Type: "regex", Value: l.raw}
+	default:
+		return &ASTNodeLiteral{Type: "unknown", Value: l.raw}
+	}
 }
 
 type ArrayValue struct {
@@ -65,6 +103,16 @@ func (a *ArrayValue) Eval(ctx *Ctx) Result {
 
 func (a *ArrayValue) String() string {
 	return a.raw
+}
+
+func (a *ArrayValue) ASTNode() ASTNode {
+	elements := make([]ASTNode, len(a.vals))
+	for i, val := range a.vals {
+		elements[i] = val.ASTNode()
+	}
+	return &ASTNodeArray{
+		Elements: elements,
+	}
 }
 
 func newArrayValue(vals []Rule) *ArrayValue {
@@ -166,4 +214,11 @@ func IndexKV(m KV, key string) (any, bool) {
 		// Move to the next part
 		start = idx + 1
 	}
+}
+
+func IPString(ip net.IP) string {
+	if len(ip) == 0 {
+		return ""
+	}
+	return ip.String()
 }
