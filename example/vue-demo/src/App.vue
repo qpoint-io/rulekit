@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, shallowRef, onMounted } from 'vue'
+import { ref, computed, watch, shallowRef, onMounted, onUnmounted } from 'vue'
 import { Codemirror } from 'vue-codemirror'
 import { json } from '@codemirror/lang-json'
 import { oneDark } from '@codemirror/theme-one-dark'
@@ -48,6 +48,74 @@ const dataJsonError = ref('')
 const ruleParseError = ref('')
 const isParsing = ref(false)
 const isAstExpanded = ref(false)
+
+// Gif hover state and animation
+const isGifHovered = ref(false)
+const currentGifState = ref<'idle' | 'walking'>('idle')
+const birdPosition = ref(0) // 0 = left, 100 = right (percentage)
+const birdDirection = ref<'left' | 'right'>('right')
+const idleGif = '/gray_idle_8fps.gif'
+const walkingGif = '/gray_walk_fast_8fps.gif'
+const activeGif = '/gray_with_ball_8fps.gif'
+
+// Animation state
+let targetPosition = 0
+let animationFrameId: number | null = null
+const walkSpeed = 0.2 // percent per frame at 60fps
+
+const currentGif = computed(() => {
+  if (isGifHovered.value) {
+    return activeGif
+  }
+  return currentGifState.value === 'idle' ? idleGif : walkingGif
+})
+
+const birdPositionStyle = computed(() => {
+  return {
+    transform: `translateX(${birdPosition.value}%)`,
+    transition: 'none'
+  }
+})
+
+const birdFlipStyle = computed(() => {
+  return {
+    transform: birdDirection.value === 'left' ? 'scaleX(-1)' : 'scaleX(1)',
+    transition: 'none'
+  }
+})
+
+// Animation loop
+function animateBird() {
+  if (isGifHovered.value || currentGifState.value !== 'walking') {
+    return
+  }
+
+  const diff = targetPosition - birdPosition.value
+  
+  if (Math.abs(diff) > 0.5) {
+    // Move toward target
+    const step = Math.sign(diff) * Math.min(Math.abs(diff), walkSpeed)
+    birdPosition.value += step
+    animationFrameId = requestAnimationFrame(animateBird)
+  } else {
+    // Reached target
+    birdPosition.value = targetPosition
+    animationFrameId = null
+  }
+}
+
+function startWalking(newTargetPosition: number) {
+  targetPosition = newTargetPosition
+  
+  // Cancel existing animation
+  if (animationFrameId !== null) {
+    cancelAnimationFrame(animationFrameId)
+    animationFrameId = null
+  }
+  
+  // Start new animation
+  animateBird()
+}
 
 // CodeMirror extensions
 const extensions = shallowRef([
@@ -134,7 +202,7 @@ async function parseRule() {
 }
 
 // Debounce parse function
-const debouncedParse = debounce(parseRule, 20)
+const debouncedParse = debounce(parseRule, 80)
 
 watch(ruleInput, () => {
   debouncedParse()
@@ -173,6 +241,22 @@ watch(astJson, (newVal) => {
   localStorage.setItem(STORAGE_KEY_AST, newVal)
 })
 
+// Watch for hover state changes
+watch(isGifHovered, (hovered) => {
+  if (hovered) {
+    // Stop animation when hovered
+    if (animationFrameId !== null) {
+      cancelAnimationFrame(animationFrameId)
+      animationFrameId = null
+    }
+  } else {
+    // Resume animation if still walking
+    if (currentGifState.value === 'walking' && Math.abs(targetPosition - birdPosition.value) > 0.5) {
+      animateBird()
+    }
+  }
+})
+
 // Reset to defaults
 function resetToDefaults() {
   ruleInput.value = DEFAULT_RULE_INPUT
@@ -185,15 +269,99 @@ function resetToDefaults() {
   evaluateRule()
 }
 
-// Evaluate on mount
+// Random state switching for gif
+function randomGifStateSwitch() {
+  if (!isGifHovered.value) {
+    // Randomly switch between idle and walking
+    const newState = Math.random() > 0.5 ? 'idle' : 'walking'
+    
+    if (newState === 'walking') {
+      // Check current position and walk to the opposite edge
+      const currentPos = birdPosition.value
+      let newTarget: number
+      
+      // If in right half, walk left
+      if (currentPos >= 40) {
+        birdDirection.value = 'left'
+        // Walk to somewhere in the left 30%
+        newTarget = Math.random() * 30
+      } else {
+        // Otherwise walk right to the edge
+        birdDirection.value = 'right'
+        // Walk to somewhere in the right 50%-85%
+        newTarget = 50 + Math.random() * 35
+      }
+      
+      // Only actually walk if the distance is significant (more than 20%)
+      if (Math.abs(newTarget - currentPos) > 20) {
+        // Set state BEFORE starting animation so animateBird check passes
+        currentGifState.value = newState
+        startWalking(newTarget)
+      } else {
+        // Distance too small, try again soon
+        setTimeout(randomGifStateSwitch, 200)
+        return
+      }
+    } else {
+      // Stop animation when idle
+      if (animationFrameId !== null) {
+        cancelAnimationFrame(animationFrameId)
+        animationFrameId = null
+      }
+      currentGifState.value = newState
+    }
+  }
+  
+  // Schedule next switch with random interval (1-2 seconds)
+  const nextInterval = 1000 + Math.random() * 1000
+  setTimeout(randomGifStateSwitch, nextInterval)
+}
+
+// Preload gifs
 onMounted(() => {
+  // Preload all gifs
+  const img1 = new Image()
+  const img2 = new Image()
+  const img3 = new Image()
+  img1.src = idleGif
+  img2.src = walkingGif
+  img3.src = activeGif
+  
+  // Start random state switching
+  randomGifStateSwitch()
+  
   parseRule()
   evaluateRule()
+})
+
+// Cleanup on unmount
+onUnmounted(() => {
+  if (animationFrameId !== null) {
+    cancelAnimationFrame(animationFrameId)
+    animationFrameId = null
+  }
 })
 </script>
 
 <template>
   <div>
+    <!-- Animated gif above header -->
+    <div class="gif-container">
+      <div 
+        class="bird-position" 
+        :style="birdPositionStyle"
+        @mouseenter="isGifHovered = true" 
+        @mouseleave="isGifHovered = false"
+      >
+        <img 
+          :src="currentGif" 
+          :style="birdFlipStyle"
+          alt="Animated character"
+          class="corner-gif"
+        />
+      </div>
+    </div>
+
     <div class="header-container">
       <h1>Rulekit.js</h1>
       <button @click="resetToDefaults" class="reset-button">🔄 Reset to Defaults</button>
@@ -238,23 +406,6 @@ onMounted(() => {
       </div>
     </div>
 
-    <div :class="['card', { 'card-collapsed': !isAstExpanded }]">
-      <h2 @click="isAstExpanded = !isAstExpanded" class="collapsible-header">
-        <span class="collapse-icon">{{ isAstExpanded ? '▼' : '▶' }}</span>
-        🔧 AST Input (JSON from Go)
-      </h2>
-      <div v-if="isAstExpanded">
-        <codemirror
-          v-model="astJson"
-          :extensions="extensions"
-          :style="{ height: '400px', fontSize: '14px' }"
-          :autofocus="false"
-          :disabled="false"
-          placeholder="Paste AST JSON here..."
-        />
-      </div>
-    </div>
-
     <div v-if="result" class="card">
       <h2>✨ Result</h2>
       <div :class="['result', result.ok ? (result.value ? 'pass' : 'fail') : 'error']">
@@ -273,6 +424,23 @@ onMounted(() => {
       <div class="result error">
         <strong>⚠️ Parse Error</strong>
         <div>{{ error }}</div>
+      </div>
+    </div>
+
+    <div :class="['card', { 'card-collapsed': !isAstExpanded }]">
+      <h2 @click="isAstExpanded = !isAstExpanded" class="collapsible-header">
+        <span class="collapse-icon">{{ isAstExpanded ? '▼' : '▶' }}</span>
+        🔧 AST Input (JSON from Go)
+      </h2>
+      <div v-if="isAstExpanded">
+        <codemirror
+          v-model="astJson"
+          :extensions="extensions"
+          :style="{ height: '400px', fontSize: '14px' }"
+          :autofocus="false"
+          :disabled="false"
+          placeholder="Paste AST JSON here..."
+        />
       </div>
     </div>
   </div>

@@ -27,14 +27,13 @@ body {
   justify-content: center;
   min-width: 320px;
   min-height: 100vh;
-  padding-top: 3rem;
 }
 
 #app {
   width: max(1280px, min(100%, 2200px));
   max-width: calc(100vw - 4rem);
   margin: 0 auto;
-  padding: 2rem;
+  padding: 0 2rem 2rem 2rem;
 }
 
 .card {
@@ -186,6 +185,34 @@ button:hover {
   background: rgba(255, 165, 0, 0.1);
   border: 1px solid rgba(255, 165, 0, 0.3);
   color: #fb923c;
+}
+
+.gif-container {
+  position: relative;
+  width: 100%;
+  height: 160px;
+  padding: 1.5rem 3rem 0rem;
+  overflow: hidden;
+}
+
+.bird-position {
+  position: absolute;
+  left: 3rem;
+  top: 1.5rem;
+  cursor: none;
+  padding: 2rem;
+  width: calc(100% - 6rem - 120px);
+}
+
+.bird-position:hover {
+  cursor: none;
+}
+
+.corner-gif {
+  width: 120px;
+  height: auto;
+  display: block;
+  pointer-events: none;
 }
 
 .header-container {
