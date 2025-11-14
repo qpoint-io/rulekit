@@ -1,0 +1,26 @@
+{
+  "total": 4,
+  "passed": 4,
+  "results": [
+    {
+      "original": "port == 8080 and method =~ /^GET|POST$/",
+      "regenerated": "port == 8080 and method =~ /^GET|POST$/",
+      "match": true
+    },
+    {
+      "original": "status in [200, 201, 204]",
+      "regenerated": "status in [200, 201, 204]",
+      "match": true
+    },
+    {
+      "original": "(tags contains \"production\" or tags contains \"staging\") and priority > 5",
+      "regenerated": "(tags contains \"production\" or tags contains \"staging\") and priority > 5",
+      "match": true
+    },
+    {
+      "original": "request.method == \"POST\" and request.headers.content-type contains \"json\"",
+      "regenerated": "request.method == \"POST\" and request.headers.content-type contains \"json\"",
+      "match": true
+    }
+  ]
+}

@@ -1,0 +1,151 @@
+{
+  "rules": [
+    {
+      "ast": {
+        "node_type": "operator",
+        "operator": "and",
+        "left": {
+          "node_type": "operator",
+          "operator": "eq",
+          "left": {
+            "node_type": "field",
+            "name": "port"
+          },
+          "right": {
+            "node_type": "literal",
+            "type": "int64",
+            "value": 8080
+          }
+        },
+        "right": {
+          "node_type": "operator",
+          "operator": "matches",
+          "left": {
+            "node_type": "field",
+            "name": "method"
+          },
+          "right": {
+            "node_type": "literal",
+            "type": "regex",
+            "value": "/^GET|POST$/"
+          }
+        }
+      },
+      "expression": "port == 8080 and method =~ /^GET|POST$/"
+    },
+    {
+      "ast": {
+        "node_type": "operator",
+        "operator": "in",
+        "left": {
+          "node_type": "field",
+          "name": "status"
+        },
+        "right": {
+          "node_type": "array",
+          "elements": [
+            {
+              "node_type": "literal",
+              "type": "int64",
+              "value": 200
+            },
+            {
+              "node_type": "literal",
+              "type": "int64",
+              "value": 201
+            },
+            {
+              "node_type": "literal",
+              "type": "int64",
+              "value": 204
+            }
+          ]
+        }
+      },
+      "expression": "status in [200, 201, 204]"
+    },
+    {
+      "ast": {
+        "node_type": "operator",
+        "operator": "and",
+        "left": {
+          "node_type": "operator",
+          "operator": "or",
+          "left": {
+            "node_type": "operator",
+            "operator": "contains",
+            "left": {
+              "node_type": "field",
+              "name": "tags"
+            },
+            "right": {
+              "node_type": "literal",
+              "type": "string",
+              "value": "production"
+            }
+          },
+          "right": {
+            "node_type": "operator",
+            "operator": "contains",
+            "left": {
+              "node_type": "field",
+              "name": "tags"
+            },
+            "right": {
+              "node_type": "literal",
+              "type": "string",
+              "value": "staging"
+            }
+          }
+        },
+        "right": {
+          "node_type": "operator",
+          "operator": "gt",
+          "left": {
+            "node_type": "field",
+            "name": "priority"
+          },
+          "right": {
+            "node_type": "literal",
+            "type": "int64",
+            "value": 5
+          }
+        }
+      },
+      "expression": "(tags contains \"production\" or tags contains \"staging\") and priority \u003e 5"
+    },
+    {
+      "ast": {
+        "node_type": "operator",
+        "operator": "and",
+        "left": {
+          "node_type": "operator",
+          "operator": "eq",
+          "left": {
+            "node_type": "field",
+            "name": "request.method"
+          },
+          "right": {
+            "node_type": "literal",
+            "type": "string",
+            "value": "POST"
+          }
+        },
+        "right": {
+          "node_type": "operator",
+          "operator": "contains",
+          "left": {
+            "node_type": "field",
+            "name": "request.headers.content-type"
+          },
+          "right": {
+            "node_type": "literal",
+            "type": "string",
+            "value": "json"
+          }
+        }
+      },
+      "expression": "request.method == \"POST\" and request.headers.content-type contains \"json\""
+    }
+  ]
+}
