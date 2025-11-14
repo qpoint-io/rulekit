@@ -1,0 +1,67 @@
+-- Simple comparison
+http.method == "GET"
+
+-- Multiple conditions with AND/OR
+(http.status >= 200 and http.status < 300) or http.status == 304
+
+-- Regex matching
+domain matches /^example\.com$/
+process.path matches |^/usr/bin/|
+
+-- CIDR matching
+source.ip == 192.168.0.0/16
+destination.ip == 10.0.0.0/8
+
+-- IPv6 support
+client.ip == 2001:db8::/32
+
+-- Contains operator
+tags contains 'production'
+
+-- In operator with set
+http.method in ["GET", "POST", "PUT"]
+
+-- Hex string matching
+header.bytes == 47:45:54  -- "GET" in hex
+mac.address == AB:CD:EF:01:23:45
+
+-- Boolean literals
+is.authenticated == true
+is.internal == false
+
+-- Numeric comparisons
+process.uid != 0
+destination.port <= 1023
+response.time > 1000.5
+
+/* Multi-line block comment
+   This is a more complex rule that combines
+   multiple conditions */
+(tags == 'db-svc' or domain matches /example\.com$/)
+  and process.uid != 0
+  and destination.port <= 1023
+
+-- Function calls (if supported)
+len(http.path) > 100
+upper(http.method) == "GET"
+substr(domain, 0, 3) == "www"
+
+-- Nested field access
+request.headers.content-type contains 'json'
+response.body.user.id == 12345
+
+-- Complex nested expression
+not (
+  (process.uid == 0 and tags contains 'privileged')
+  or (destination.ip == 127.0.0.1 and destination.port < 1024)
+)
+
+-- Word-form operators
+http.status eq 200
+process.uid ne 0
+response.time gt 500
+request.size le 1024
+
+-- Case insensitive operators
+HTTP.METHOD EQ "GET" AND HTTP.STATUS GE 200
+

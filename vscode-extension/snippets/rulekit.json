@@ -1,0 +1,108 @@
+{
+  "IP CIDR Match": {
+    "prefix": "cidr",
+    "body": [
+      "${1:field} == ${2:192.168.0.0/16}"
+    ],
+    "description": "Check if field matches CIDR range"
+  },
+  "Regex Match (forward slash)": {
+    "prefix": "match",
+    "body": [
+      "${1:field} matches /${2:pattern}/"
+    ],
+    "description": "Regex match with /.../ syntax"
+  },
+  "Regex Match (pipe)": {
+    "prefix": "matchp",
+    "body": [
+      "${1:field} matches |${2:pattern}|"
+    ],
+    "description": "Regex match with |...| syntax"
+  },
+  "Contains Check": {
+    "prefix": "contains",
+    "body": [
+      "${1:field} contains '${2:value}'"
+    ],
+    "description": "Check if field contains value"
+  },
+  "In Set": {
+    "prefix": "in",
+    "body": [
+      "${1:field} in [${2:values}]"
+    ],
+    "description": "Check if field is in set"
+  },
+  "AND Expression": {
+    "prefix": "and",
+    "body": [
+      "${1:expr1} and ${2:expr2}"
+    ],
+    "description": "Logical AND"
+  },
+  "OR Expression": {
+    "prefix": "or",
+    "body": [
+      "${1:expr1} or ${2:expr2}"
+    ],
+    "description": "Logical OR"
+  },
+  "NOT Expression": {
+    "prefix": "not",
+    "body": [
+      "not ${1:expr}"
+    ],
+    "description": "Logical NOT"
+  },
+  "Equality Check": {
+    "prefix": "eq",
+    "body": [
+      "${1:field} == ${2:value}"
+    ],
+    "description": "Equality comparison"
+  },
+  "Not Equal Check": {
+    "prefix": "ne",
+    "body": [
+      "${1:field} != ${2:value}"
+    ],
+    "description": "Not equal comparison"
+  },
+  "Less Than": {
+    "prefix": "lt",
+    "body": [
+      "${1:field} < ${2:value}"
+    ],
+    "description": "Less than comparison"
+  },
+  "Greater Than": {
+    "prefix": "gt",
+    "body": [
+      "${1:field} > ${2:value}"
+    ],
+    "description": "Greater than comparison"
+  },
+  "Field with nested path": {
+    "prefix": "field",
+    "body": [
+      "${1:parent}.${2:child}"
+    ],
+    "description": "Field with nested property access"
+  },
+  "Block comment": {
+    "prefix": "comment",
+    "body": [
+      "/* ${1:comment} */"
+    ],
+    "description": "Block comment"
+  },
+  "Hex string": {
+    "prefix": "hex",
+    "body": [
+      "${1:47:45:54}"
+    ],
+    "description": "Hex string (e.g., 47:45:54)"
+  }
+}
+

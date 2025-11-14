@@ -1,0 +1,61 @@
+{
+  "name": "rulekit",
+  "displayName": "Rulekit Language Support",
+  "description": "Syntax highlighting and language support for Rulekit rule expressions",
+  "version": "0.1.1",
+  "publisher": "qpoint",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/qpoint/rulekit"
+  },
+  "engines": {
+    "vscode": "^1.70.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Snippets"
+  ],
+  "keywords": [
+    "rulekit",
+    "rules",
+    "expressions",
+    "filtering"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "rulekit",
+        "aliases": [
+          "Rulekit",
+          "rulekit"
+        ],
+        "extensions": [
+          ".rk"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "rulekit",
+        "scopeName": "source.rulekit",
+        "path": "./syntaxes/rulekit.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "rulekit",
+        "path": "./snippets/rulekit.json"
+      }
+    ]
+  },
+  "scripts": {
+    "package": "vsce package",
+    "publish": "vsce publish"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.70.0",
+    "vsce": "^2.15.0"
+  }
+}
+
