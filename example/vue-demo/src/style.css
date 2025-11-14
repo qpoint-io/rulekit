@@ -32,6 +32,7 @@ body {
   min-height: 100vh;
   cursor: url('/ball_cursor_16x16.png') 8 8, auto;
   position: relative;
+  background: #000B16;
 }
 
 /* Scanline effect */
@@ -193,7 +194,6 @@ body::after {
   box-shadow: inset 2px 2px 0 #000000;
   position: relative;
   z-index: 10000;
-  background: #282c34;
 }
 
 .cm-scroller {
@@ -202,7 +202,6 @@ body::after {
   line-height: 1.6 !important;
   position: relative;
   z-index: 10001;
-  background: #282c34;
 }
 
 .cm-content {

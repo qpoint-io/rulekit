@@ -2,7 +2,7 @@
 import { ref, computed, watch, shallowRef, onMounted, onUnmounted } from 'vue'
 import { Codemirror } from 'vue-codemirror'
 import { json } from '@codemirror/lang-json'
-import { oneDark } from '@codemirror/theme-one-dark'
+import { abyss } from '@fsegurai/codemirror-theme-abyss'
 import { rulekit } from './rulekit-wasm'
 import { ruleLanguage } from './ruleLanguage'
 
@@ -150,12 +150,12 @@ function startWalking(newTargetPosition: number) {
 // CodeMirror extensions
 const ruleExtensions = shallowRef([
   ruleLanguage,
-  oneDark
+  abyss
 ])
 
 const jsonExtensions = shallowRef([
   json(),
-  oneDark
+  abyss
 ])
 
 // Check if test data JSON is valid
