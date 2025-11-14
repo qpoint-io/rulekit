@@ -350,37 +350,37 @@ onUnmounted(() => {
       <div 
         class="bird-position" 
         :style="birdPositionStyle"
-        @mouseenter="isGifHovered = true" 
-        @mouseleave="isGifHovered = false"
       >
         <img 
           :src="currentGif" 
           :style="birdFlipStyle"
           alt="Animated character"
           class="corner-gif"
+          @mouseenter="isGifHovered = true" 
+          @mouseleave="isGifHovered = false"
         />
       </div>
     </div>
 
     <div class="header-container">
       <h1>Rulekit.js</h1>
-      <button @click="resetToDefaults" class="reset-button">🔄 Reset to Defaults</button>
+      <button @click="resetToDefaults" class="reset-button">Reset to Defaults</button>
     </div>
 
     <div class="inputs-container">
       <div class="card half-width">
-        <h2>✍️ Write Your Rule</h2>
+        <h2><span class="icon">▶</span> Write Your Rule</h2>
         <codemirror
           v-model="ruleInput"
           :extensions="extensions"
-          :style="{ height: '100px', fontSize: '14px', marginBottom: '1em' }"
+          :style="{ height: '160px', fontSize: '14px', marginBottom: '1em' }"
           :autofocus="false"
           :disabled="false"
           placeholder="Enter your rule here (e.g., ip in [1.2.3.4, 10.0.0.0/8])"
         />
 
         <div v-if="ruleParseError" class="json-error-message">
-          <strong>⚠️ Parse Error:</strong> {{ ruleParseError }}
+          <strong><span class="icon">⚠</span> Parse Error:</strong> {{ ruleParseError }}
         </div>
         <div v-else-if="isParsing" class="parsing-indicator">
           Parsing...
@@ -391,9 +391,9 @@ onUnmounted(() => {
       </div>
 
       <div class="card half-width">
-        <h2>📦 Test Data (JSON)</h2>
+        <h2><span class="icon">▣</span> Test Data (JSON)</h2>
         <div v-if="dataJsonError" class="json-error-message">
-          <strong>⚠️ Invalid JSON:</strong> {{ dataJsonError }}
+          <strong><span class="icon">⚠</span> Invalid JSON:</strong> {{ dataJsonError }}
         </div>
         <codemirror
           v-model="dataJson"
@@ -407,14 +407,16 @@ onUnmounted(() => {
     </div>
 
     <div v-if="result" class="card">
-      <h2>✨ Result</h2>
+      <h2><span class="icon">◆</span> Result</h2>
       <div :class="['result', result.ok ? (result.value ? 'pass' : 'fail') : 'error']">
         <div v-if="result.ok">
-          <strong>{{ result.value ? '✅ PASS' : '❌ FAIL' }}</strong>
+          <strong v-if="result.value">PASS</strong>
+          <strong v-else>FAIL</strong><br><br>
+
           <div>Value: {{ result.value }}</div>
         </div>
         <div v-else>
-          <strong>⚠️ ERROR</strong>
+          <strong><span class="icon">⚠</span> ERROR</strong>
           <div>{{ result.error }}</div>
         </div>
       </div>
@@ -422,15 +424,15 @@ onUnmounted(() => {
 
     <div v-if="error" class="card">
       <div class="result error">
-        <strong>⚠️ Parse Error</strong>
+        <strong><span class="icon">⚠</span> Parse Error</strong>
         <div>{{ error }}</div>
       </div>
     </div>
 
     <div :class="['card', { 'card-collapsed': !isAstExpanded }]">
       <h2 @click="isAstExpanded = !isAstExpanded" class="collapsible-header">
-        <span class="collapse-icon">{{ isAstExpanded ? '▼' : '▶' }}</span>
-        🔧 AST Input (JSON from Go)
+        <span class="collapse-icon icon">{{ isAstExpanded ? '▼' : '▶' }}</span>
+        AST Input (JSON from Go)
       </h2>
       <div v-if="isAstExpanded">
         <codemirror
