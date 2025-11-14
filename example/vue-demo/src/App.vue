@@ -3,8 +3,16 @@ import { ref, computed, watch, shallowRef, onMounted, onUnmounted } from 'vue'
 import { Codemirror } from 'vue-codemirror'
 import { json } from '@codemirror/lang-json'
 import { oneDark } from '@codemirror/theme-one-dark'
-import { Rule } from '../../ts-evaluator/src/index'
-import type { EvalResult } from '../../ts-evaluator/src/types'
+import { rulekit } from './rulekit-wasm'
+import { ruleLanguage } from './ruleLanguage'
+
+// Simple EvalResult type for display
+interface EvalResult {
+  ok: boolean
+  value?: any
+  error?: string
+  evaluatedRule?: string
+}
 
 // Sample AST from Go
 // TestEngineExample from rule_test.go
@@ -48,6 +56,8 @@ const dataJsonError = ref('')
 const ruleParseError = ref('')
 const isParsing = ref(false)
 const isAstExpanded = ref(false)
+const isWasmReady = ref(false)
+const currentRuleHandle = ref<number | undefined>(undefined)
 
 // Gif hover state and animation
 const isGifHovered = ref(false)
@@ -119,7 +129,12 @@ function startWalking(newTargetPosition: number) {
 }
 
 // CodeMirror extensions
-const extensions = shallowRef([
+const ruleExtensions = shallowRef([
+  ruleLanguage,
+  oneDark
+])
+
+const jsonExtensions = shallowRef([
   json(),
   oneDark
 ])
@@ -136,32 +151,54 @@ const isDataJsonValid = computed(() => {
   }
 })
 
-// Evaluate rule
-function evaluateRule() {
+// Evaluate rule using WASM
+async function evaluateRule() {
   error.value = ''
   result.value = null
   
-  // Don't evaluate if data JSON is invalid
-  if (!isDataJsonValid.value) {
+  // Don't evaluate if WASM isn't ready or data JSON is invalid
+  if (!isWasmReady.value || !isDataJsonValid.value) {
+    return
+  }
+  
+  // Don't evaluate if we don't have a valid rule handle
+  if (currentRuleHandle.value === undefined) {
     return
   }
   
   try {
-    const ast = JSON.parse(astJson.value)
     const data = JSON.parse(dataJson.value)
     
-    const rule = Rule.fromJSON(ast)
-    ruleText.value = rule.toString()
-    result.value = rule.eval(data)
+    // Evaluate using WASM
+    const evalResult = await rulekit.eval(currentRuleHandle.value, data)
+    console.log('evalResult', evalResult)
+    
+    // Convert WASM result to our display format
+    result.value = {
+      ok: evalResult.ok,
+      value: evalResult.value,
+      error: evalResult.error,
+      evaluatedRule: evalResult.evaluatedRule
+    }
   } catch (e: any) {
     error.value = e.message
   }
 }
 
-// Parse rule text via API
+// Parse rule text via WASM
 async function parseRule() {
   if (!ruleInput.value.trim()) {
     ruleParseError.value = 'Rule cannot be empty'
+    // Free old handle if it exists
+    if (currentRuleHandle.value !== undefined) {
+      await rulekit.free(currentRuleHandle.value)
+      currentRuleHandle.value = undefined
+    }
+    return
+  }
+
+  if (!isWasmReady.value) {
+    ruleParseError.value = 'WASM module not ready yet...'
     return
   }
 
@@ -169,29 +206,36 @@ async function parseRule() {
   ruleParseError.value = ''
 
   try {
-    const response = await fetch('/api/rulekit/parse', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ expr: ruleInput.value })
-    })
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: 'Failed to parse response' }))
-      throw new Error(errorData.error || `HTTP ${response.status}`)
+    // Free old handle before parsing new rule
+    if (currentRuleHandle.value !== undefined) {
+      await rulekit.free(currentRuleHandle.value)
+      currentRuleHandle.value = undefined
     }
 
-    const data = await response.json()
+    // Parse using WASM
+    const parsed = await rulekit.parse(ruleInput.value)
     
-    if (data.error) {
-      ruleParseError.value = data.error
+    if (parsed.error) {
+      ruleParseError.value = parsed.error
       return
     }
 
-    if (data.ast) {
-      astJson.value = JSON.stringify(data.ast, null, 2)
+    if (parsed.ast) {
+      // Update AST display
+      astJson.value = JSON.stringify(parsed.ast, null, 2)
+      
+      // Update rule text display
+      if (parsed.ruleString) {
+        ruleText.value = parsed.ruleString
+      }
+      
+      // Store handle for evaluation
+      currentRuleHandle.value = parsed.handle
+      
       ruleParseError.value = ''
+      
+      // Auto-evaluate after successful parse
+      await evaluateRule()
     } else {
       throw new Error('No AST in response')
     }
@@ -222,11 +266,20 @@ function debounce<T extends (...args: any[]) => any>(
   }
 }
 
-// Auto-evaluate with debounce when inputs change
+// Auto-evaluate with debounce when data changes
 const debouncedEvaluate = debounce(evaluateRule, 500)
 
-watch([astJson, dataJson], () => {
-  debouncedEvaluate()
+watch(dataJson, () => {
+  if (currentRuleHandle.value !== undefined) {
+    debouncedEvaluate()
+  }
+})
+
+// When AST is manually edited, need to re-parse to get a new handle
+watch(astJson, () => {
+  // Only trigger if user manually edited AST
+  // (skip if it was just updated by parseRule)
+  // This is a bit tricky - for now we'll just leave AST as display-only
 })
 
 // Save to localStorage when values change
@@ -259,15 +312,14 @@ watch(isGifHovered, (hovered) => {
 })
 
 // Reset to defaults
-function resetToDefaults() {
+async function resetToDefaults() {
   ruleInput.value = DEFAULT_RULE_INPUT
   dataJson.value = DEFAULT_DATA_JSON
   astJson.value = DEFAULT_AST_JSON
   result.value = null
   error.value = ''
   ruleParseError.value = ''
-  parseRule()
-  evaluateRule()
+  await parseRule()
 }
 
 // Random state switching for gif
@@ -322,8 +374,8 @@ function randomGifStateSwitch() {
   setTimeout(randomGifStateSwitch, nextInterval)
 }
 
-// Preload gifs
-onMounted(() => {
+// Preload gifs and initialize WASM
+onMounted(async () => {
   // Preload all gifs
   const img1 = new Image()
   const img2 = new Image()
@@ -335,15 +387,31 @@ onMounted(() => {
   // Start random state switching
   randomGifStateSwitch()
   
-  parseRule()
-  evaluateRule()
+  // Wait for WASM to be ready
+  try {
+    await rulekit.waitReady()
+    isWasmReady.value = true
+    console.log('✅ Rulekit WASM ready!')
+    
+    // Now parse and evaluate
+    await parseRule()
+  } catch (e: any) {
+    console.error('❌ Failed to initialize WASM:', e)
+    ruleParseError.value = 'Failed to load WASM module: ' + e.message
+  }
 })
 
 // Cleanup on unmount
-onUnmounted(() => {
+onUnmounted(async () => {
   if (animationFrameId !== null) {
     cancelAnimationFrame(animationFrameId)
     animationFrameId = null
+  }
+  
+  // Free rule handle
+  if (currentRuleHandle.value !== undefined) {
+    await rulekit.free(currentRuleHandle.value)
+    currentRuleHandle.value = undefined
   }
 })
 </script>
@@ -377,7 +445,7 @@ onUnmounted(() => {
         <h2><span class="icon">▶</span> Write Your Rule</h2>
         <codemirror
           v-model="ruleInput"
-          :extensions="extensions"
+          :extensions="ruleExtensions"
           :style="{ height: '160px', fontSize: '14px', marginBottom: '1em' }"
           :autofocus="false"
           :disabled="false"
@@ -390,7 +458,8 @@ onUnmounted(() => {
         <div v-else-if="isParsing" class="parsing-indicator">
           Parsing...
         </div>
-        <div v-else-if="ruleText" class="rule-expression">
+        <!-- TODO: this is disabled -->
+        <div v-else-if="ruleText && false" class="rule-expression">
           {{ ruleText }}
         </div>
       </div>
@@ -402,7 +471,7 @@ onUnmounted(() => {
         </div>
         <codemirror
           v-model="dataJson"
-          :extensions="extensions"
+          :extensions="jsonExtensions"
           :style="{ height: '400px', fontSize: '14px' }"
           :autofocus="false"
           :disabled="false"
@@ -411,25 +480,24 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div v-if="result" class="card">
-      <h2><span class="icon">◆</span> Result</h2>
-      <div :class="['result', result.ok ? (result.value ? 'pass' : 'fail') : 'error']">
-        <div v-if="result.ok">
-          <strong v-if="result.value">PASS</strong>
-          <strong v-else>FAIL</strong><br><br>
-
-          <div>Value: {{ result.value }}</div>
-        </div>
-        <div v-else>
-          <strong><span class="icon">⚠</span> ERROR</strong>
-          <div>{{ result.error }}</div>
-        </div>
+    <div v-if="result" class="card" :class="['result', result.ok ? (result.value ? 'pass' : 'fail') : 'error']">
+      <h2><span class="icon">◆</span> Result <span v-if="result" :class="['result-inline', result.ok ? (result.value ? 'pass' : 'fail') : 'error']">{{ result.value ? 'PASS' : 'FAIL' }}</span></h2>
+      
+      <div v-if="result.ok" style="margin-bottom: 1em;">Value
+        <div class="rule-expression">{{ result.value || (result.value === false ? 'false' : JSON.stringify(result.value)) }}</div>
       </div>
+      <div v-else>Error
+        <pre style="margin-top:0" class="rule-expression">{{ result.error }}</pre>
+      </div>
+
+        <div>Evaluated Rule
+          <div class="rule-expression">{{ result.evaluatedRule }}</div>
+        </div>
     </div>
 
     <div v-if="error" class="card">
       <div class="result error">
-        <strong><span class="icon">⚠</span> Parse Error</strong>
+        <strong><span class="icon">!</span> Parse Error</strong>
         <div>{{ error }}</div>
       </div>
     </div>
@@ -442,7 +510,7 @@ onUnmounted(() => {
       <div v-if="isAstExpanded">
         <codemirror
           v-model="astJson"
-          :extensions="extensions"
+          :extensions="jsonExtensions"
           :style="{ height: '400px', fontSize: '14px' }"
           :autofocus="false"
           :disabled="false"

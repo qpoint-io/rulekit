@@ -17,7 +17,13 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, '/api')
       }
+    },
+    fs: {
+      allow: ['..']
     }
+  },
+  optimizeDeps: {
+    exclude: ['rulekit-wasm']
   }
 })
 

@@ -23,3 +23,7 @@ dist-ssr
 *.sln
 *.sw?
 
+# WASM build artifacts (run `make wasm` from rulekit root to rebuild)
+public/rulekit.wasm
+public/wasm_exec.js
+

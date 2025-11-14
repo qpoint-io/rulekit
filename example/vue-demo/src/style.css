@@ -229,7 +229,11 @@ button:hover {
   text-shadow: 0 0 8px #96cbfe;
 }
 
-.result {
+.result:not(.card) {
+  font-size: 0.7em;
+}
+
+.result-inline {
   margin: 1em 0;
   padding: 1em;
   border-radius: 0;
@@ -239,28 +243,37 @@ button:hover {
   word-break: break-word;
 }
 
+.result-inline.pass {
+  color: #a8ff60;
+  text-shadow: 0 0 8px rgba(168, 255, 96, 0.5);
+}
+
 .result.pass {
   background: rgba(168, 255, 96, 0.1);
   border: 3px solid #a8ff60;
-  color: #a8ff60;
   box-shadow: 3px 3px 0 #242424, 0 0 20px rgba(168, 255, 96, 0.3);
-  text-shadow: 0 0 8px rgba(168, 255, 96, 0.5);
+}
+
+.result-inline.fail {
+  color: #ff6c60;
+  text-shadow: 0 0 8px rgba(255, 108, 96, 0.5);
 }
 
 .result.fail {
   background: rgba(255, 108, 96, 0.1);
   border: 3px solid #ff6c60;
-  color: #ff6c60;
   box-shadow: 3px 3px 0 #242424, 0 0 20px rgba(255, 108, 96, 0.3);
-  text-shadow: 0 0 8px rgba(255, 108, 96, 0.5);
+}
+
+.result-inline.error {
+  color: #e9c062;
+  text-shadow: 0 0 8px rgba(233, 192, 98, 0.5);
 }
 
 .result.error {
   background: rgba(233, 192, 98, 0.1);
   border: 3px solid #e9c062;
-  color: #e9c062;
   box-shadow: 3px 3px 0 #242424, 0 0 20px rgba(233, 192, 98, 0.3);
-  text-shadow: 0 0 8px rgba(233, 192, 98, 0.5);
 }
 
 .gif-container {
@@ -339,6 +352,44 @@ p {
 .reset-button:active {
   transform: translate(1px, 1px);
   box-shadow: 2px 2px 0 #ff73fd;
+}
+
+.wasm-badge {
+  display: inline-block;
+  padding: 0.25em 0.5em;
+  font-size: 0.4em;
+  background: #ff73fd;
+  color: #ffffb6;
+  border: 2px solid #8e458c;
+  border-radius: 2px;
+  margin-left: 0.5em;
+  vertical-align: middle;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    box-shadow: 0 0 5px rgba(155, 133, 157, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 15px rgba(155, 133, 157, 1);
+  }
+}
+
+.wasm-loading {
+  padding: 1em;
+  margin: 1em 0;
+  background: rgba(155, 133, 157, 0.1);
+  border: 2px solid #9b859d;
+  color: #9b859d;
+  text-align: center;
+  font-size: 0.8em;
+  animation: blink 1.5s ease-in-out infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 
 h2 {
