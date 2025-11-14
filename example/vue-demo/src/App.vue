@@ -8,12 +8,12 @@ import type { EvalResult } from '../../ts-evaluator/src/types'
 
 // Sample AST from Go
 // TestEngineExample from rule_test.go
-const sampleAST = {"node_type":"operator","operator":"or","left":{"node_type":"operator","operator":"or","left":{"node_type":"operator","operator":"or","left":{"node_type":"operator","operator":"or","left":{"node_type":"operator","operator":"eq","left":{"node_type":"field","name":"tags"},"right":{"node_type":"literal","type":"string","value":"db-svc"}},"right":{"node_type":"operator","operator":"matches","left":{"node_type":"field","name":"domain"},"right":{"node_type":"literal","type":"regex","value":"/example\\.com$/"}}},"right":{"node_type":"operator","operator":"matches","left":{"node_type":"field","name":"src.process.path"},"right":{"node_type":"literal","type":"regex","value":"|^/usr/bin/|"}}},"right":{"node_type":"operator","operator":"and","left":{"node_type":"operator","operator":"ne","left":{"node_type":"field","name":"process.uid"},"right":{"node_type":"literal","type":"int64","value":0}},"right":{"node_type":"operator","operator":"contains","left":{"node_type":"field","name":"tags"},"right":{"node_type":"literal","type":"string","value":"internal-svc"}}}},"right":{"node_type":"operator","operator":"and","left":{"node_type":"operator","operator":"le","left":{"node_type":"field","name":"destination.port"},"right":{"node_type":"literal","type":"int64","value":1023}},"right":{"node_type":"operator","operator":"eq","left":{"node_type":"field","name":"destination.ip"},"right":{"node_type":"literal","type":"cidr","value":"192.168.0.0/16"}}}}
+const sampleAST = {"node_type":"operator","operator":"or","left":{"node_type":"operator","operator":"or","left":{"node_type":"operator","operator":"or","left":{"node_type":"operator","operator":"or","left":{"node_type":"operator","operator":"eq","left":{"node_type":"field","name":"tags"},"right":{"node_type":"literal","type":"string","value":"db-svc"}},"right":{"node_type":"operator","operator":"matches","left":{"node_type":"field","name":"domain"},"right":{"node_type":"literal","type":"regex","value":"/example\\.com$/"}}},"right":{"node_type":"operator","operator":"matches","left":{"node_type":"field","name":"process.path"},"right":{"node_type":"literal","type":"regex","value":"|^/usr/bin/|"}}},"right":{"node_type":"operator","operator":"and","left":{"node_type":"operator","operator":"ne","left":{"node_type":"field","name":"process.uid"},"right":{"node_type":"literal","type":"int64","value":0}},"right":{"node_type":"operator","operator":"contains","left":{"node_type":"field","name":"tags"},"right":{"node_type":"literal","type":"string","value":"internal-svc"}}}},"right":{"node_type":"operator","operator":"and","left":{"node_type":"operator","operator":"le","left":{"node_type":"field","name":"destination.port"},"right":{"node_type":"literal","type":"int64","value":1023}},"right":{"node_type":"operator","operator":"eq","left":{"node_type":"field","name":"destination.ip"},"right":{"node_type":"literal","type":"cidr","value":"192.168.0.0/16"}}}}
 
 // Default values
 const DEFAULT_RULE_INPUT = `tags == 'db-svc'
 OR domain matches /example\.com$/ -- any domain or subdomain of example.com
-OR src.process.path matches |^/usr/bin/| -- patterns can be enclosed in |...| or /.../
+OR process.path matches |^/usr/bin/| -- patterns can be enclosed in |...| or /.../
 OR (process.uid != 0 AND tags contains 'internal-svc') 
 /* connections to LAN addresses over privileged ports */
 OR (destination.port <= 1023 AND destination.ip == 192.168.0.0/16)`
@@ -61,7 +61,7 @@ const activeGif = '/gray_with_ball_8fps.gif'
 // Animation state
 let targetPosition = 0
 let animationFrameId: number | null = null
-const walkSpeed = 0.2 // percent per frame at 60fps
+const walkSpeed = 0.1 // percent per frame at 60fps
 
 const currentGif = computed(() => {
   if (isGifHovered.value) {
@@ -168,7 +168,7 @@ async function parseRule() {
   ruleParseError.value = ''
 
   try {
-    const response = await fetch('http://0.0.0.0:10002/devtools/api/rulekit/parse', {
+    const response = await fetch('/api/rulekit/parse', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -281,7 +281,7 @@ function randomGifStateSwitch() {
       let newTarget: number
       
       // If in right half, walk left
-      if (currentPos >= 40) {
+      if (currentPos >= 90) {
         birdDirection.value = 'left'
         // Walk to somewhere in the left 30%
         newTarget = Math.random() * 30
