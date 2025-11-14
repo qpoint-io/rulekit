@@ -144,6 +144,16 @@ body::after {
   margin: 0;
 }
 
+.inputs-container .card {
+  display: flex;
+  flex-direction: column;
+}
+
+.inputs-container .cm-editor {
+  flex: 1;
+  min-height: 300px;
+}
+
 @media (max-width: 900px) {
   .inputs-container {
     flex-direction: column;
@@ -235,10 +245,8 @@ button:hover {
 
 .result-inline {
   margin: 1em 0;
-  padding: 1em;
   border-radius: 0;
   font-family: 'Press Start 2P', monospace;
-  font-size: 0.7em;
   overflow-x: auto;
   word-break: break-word;
 }
@@ -251,7 +259,7 @@ button:hover {
 .result.pass {
   background: rgba(168, 255, 96, 0.1);
   border: 3px solid #a8ff60;
-  box-shadow: 3px 3px 0 #242424, 0 0 20px rgba(168, 255, 96, 0.3);
+  box-shadow: 4px 4px 0 rgba(168, 255, 96, 0.3), inset 0 0 30px rgba(168, 255, 96, 0.3);
 }
 
 .result-inline.fail {
@@ -262,7 +270,7 @@ button:hover {
 .result.fail {
   background: rgba(255, 108, 96, 0.1);
   border: 3px solid #ff6c60;
-  box-shadow: 3px 3px 0 #242424, 0 0 20px rgba(255, 108, 96, 0.3);
+  box-shadow: 4px 4px 0 rgba(255, 108, 96, 0.3), inset 0 0 30px rgba(255, 108, 96, 0.3);
 }
 
 .result-inline.error {
@@ -273,7 +281,7 @@ button:hover {
 .result.error {
   background: rgba(233, 192, 98, 0.1);
   border: 3px solid #e9c062;
-  box-shadow: 3px 3px 0 #242424, 0 0 20px rgba(233, 192, 98, 0.3);
+  box-shadow: 4px 4px 0 rgba(233, 192, 98, 0.3), inset 0 0 30px rgba(233, 192, 98, 0.3);
 }
 
 .gif-container {

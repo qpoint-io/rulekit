@@ -151,6 +151,10 @@ const isDataJsonValid = computed(() => {
   }
 })
 
+const showResetButton = computed(() => {
+  return ruleInput.value !== DEFAULT_RULE_INPUT || dataJson.value !== DEFAULT_DATA_JSON
+})
+
 // Evaluate rule using WASM
 async function evaluateRule() {
   error.value = ''
@@ -267,7 +271,7 @@ function debounce<T extends (...args: any[]) => any>(
 }
 
 // Auto-evaluate with debounce when data changes
-const debouncedEvaluate = debounce(evaluateRule, 500)
+const debouncedEvaluate = debounce(evaluateRule, 80)
 
 watch(dataJson, () => {
   if (currentRuleHandle.value !== undefined) {
@@ -437,7 +441,7 @@ onUnmounted(async () => {
 
     <div class="header-container">
       <h1>Rulekit.js</h1>
-      <button @click="resetToDefaults" class="reset-button">Reset to Defaults</button>
+      <button v-if="showResetButton" @click="resetToDefaults" class="reset-button">Reset to Example Data</button>
     </div>
 
     <div class="inputs-container">
@@ -446,33 +450,22 @@ onUnmounted(async () => {
         <codemirror
           v-model="ruleInput"
           :extensions="ruleExtensions"
-          :style="{ height: '160px', fontSize: '14px', marginBottom: '1em' }"
+          :style="{ fontSize: '14px' }"
           :autofocus="false"
           :disabled="false"
           placeholder="Enter your rule here (e.g., ip in [1.2.3.4, 10.0.0.0/8])"
         />
-
-        <div v-if="ruleParseError" class="json-error-message">
-          <strong><span class="icon">⚠</span> Parse Error:</strong> {{ ruleParseError }}
-        </div>
-        <div v-else-if="isParsing" class="parsing-indicator">
-          Parsing...
-        </div>
-        <!-- TODO: this is disabled -->
-        <div v-else-if="ruleText && false" class="rule-expression">
-          {{ ruleText }}
-        </div>
       </div>
 
       <div class="card half-width">
         <h2><span class="icon">▣</span> Test Data (JSON)</h2>
         <div v-if="dataJsonError" class="json-error-message">
-          <strong><span class="icon">⚠</span> Invalid JSON:</strong> {{ dataJsonError }}
+          <strong>Invalid JSON:</strong> {{ dataJsonError }}
         </div>
         <codemirror
           v-model="dataJson"
           :extensions="jsonExtensions"
-          :style="{ height: '400px', fontSize: '14px' }"
+          :style="{ fontSize: '14px' }"
           :autofocus="false"
           :disabled="false"
           placeholder="Enter test data JSON..."
@@ -480,8 +473,17 @@ onUnmounted(async () => {
       </div>
     </div>
 
-    <div v-if="result" class="card" :class="['result', result.ok ? (result.value ? 'pass' : 'fail') : 'error']">
-      <h2><span class="icon">◆</span> Result <span v-if="result" :class="['result-inline', result.ok ? (result.value ? 'pass' : 'fail') : 'error']">{{ result.value ? 'PASS' : 'FAIL' }}</span></h2>
+    <div v-if="ruleParseError" class="card result error">
+      <h2>
+        <span class="result-inline error"><span style="font-size: 1.5em;">🮽</span> Invalid Rule</span>
+      </h2>
+      <pre style="margin-top:0" class="rule-expression">{{ ruleParseError }}</pre>
+    </div>
+
+    <div v-if="!ruleParseError && result" class="card" :class="['result', result.ok ? (result.value ? 'pass' : 'fail') : 'error']">
+      <h2><span v-if="result" :class="['result-inline', result.ok ? (result.value ? 'pass' : 'fail') : 'error']">
+        <span style="font-size: 1.5em;">{{ result.ok ? (result.value ? '🮱' : '🮽') : '🯄' }}</span> {{ result.value ? 'PASS' : 'FAIL' }}
+      </span></h2>
       
       <div v-if="result.ok" style="margin-bottom: 1em;">Value
         <div class="rule-expression">{{ result.value || (result.value === false ? 'false' : JSON.stringify(result.value)) }}</div>
