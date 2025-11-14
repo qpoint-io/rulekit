@@ -14,29 +14,33 @@ interface EvalResult {
   evaluatedRule?: string
 }
 
-// Sample AST from Go
-// TestEngineExample from rule_test.go
-const sampleAST = {"node_type":"operator","operator":"or","left":{"node_type":"operator","operator":"or","left":{"node_type":"operator","operator":"or","left":{"node_type":"operator","operator":"or","left":{"node_type":"operator","operator":"eq","left":{"node_type":"field","name":"tags"},"right":{"node_type":"literal","type":"string","value":"db-svc"}},"right":{"node_type":"operator","operator":"matches","left":{"node_type":"field","name":"domain"},"right":{"node_type":"literal","type":"regex","value":"/example\\.com$/"}}},"right":{"node_type":"operator","operator":"matches","left":{"node_type":"field","name":"process.path"},"right":{"node_type":"literal","type":"regex","value":"|^/usr/bin/|"}}},"right":{"node_type":"operator","operator":"and","left":{"node_type":"operator","operator":"ne","left":{"node_type":"field","name":"process.uid"},"right":{"node_type":"literal","type":"int64","value":0}},"right":{"node_type":"operator","operator":"contains","left":{"node_type":"field","name":"tags"},"right":{"node_type":"literal","type":"string","value":"internal-svc"}}}},"right":{"node_type":"operator","operator":"and","left":{"node_type":"operator","operator":"le","left":{"node_type":"field","name":"destination.port"},"right":{"node_type":"literal","type":"int64","value":1023}},"right":{"node_type":"operator","operator":"eq","left":{"node_type":"field","name":"destination.ip"},"right":{"node_type":"literal","type":"cidr","value":"192.168.0.0/16"}}}}
 
 // Default values
-const DEFAULT_RULE_INPUT = `tags == 'db-svc'
-OR domain matches /example\.com$/ -- any domain or subdomain of example.com
-OR process.path matches |^/usr/bin/| -- patterns can be enclosed in |...| or /.../
-OR (process.uid != 0 AND tags contains 'internal-svc') 
-/* connections to LAN addresses over privileged ports */
-OR (destination.port <= 1023 AND destination.ip == 192.168.0.0/16)`
+const DEFAULT_RULE_INPUT = `-- restrict database connections
+dst.port in [
+  3306,  -- MySQL
+  5432,  -- PostgreSQL
+  27017, -- MongoDB
+  6379   -- Redis
+]
+and not src.pod.namespace in ["api", "backend", "monitoring"]
+
+-- allow essential services
+or dst.domain in ["registry.k8s.io", "k8s.gcr.io", "gcr.io", "docker.io"]`
 
 const DEFAULT_DATA_JSON = JSON.stringify({
-  "tags":   ["db-svc", "internal-vlan", "unprivileged-user"],
-  "domain": "example.com",
-  "process": {
-    "uid":  1000,
-    "path": "/usr/bin/some-other-process",
+  "dst": {
+    "domain": "registry.k8s.io",
+    "port": 3306,
   },
-  "port": 8080,
+  "src": {
+    "ip": "192.168.0.1",
+    "port": 8080,
+    "pod": {
+      "namespace": "monitoring",
+    },
+  },
 }, null, 2)
-
-const DEFAULT_AST_JSON = JSON.stringify(sampleAST, null, 2)
 
 // LocalStorage keys
 const STORAGE_KEY_RULE = 'rulekit-rule-input'
@@ -46,7 +50,7 @@ const STORAGE_KEY_AST = 'rulekit-ast-json'
 // Load from localStorage or use defaults
 const ruleInput = ref(localStorage.getItem(STORAGE_KEY_RULE) || DEFAULT_RULE_INPUT)
 const dataJson = ref(localStorage.getItem(STORAGE_KEY_DATA) || DEFAULT_DATA_JSON)
-const astJson = ref(localStorage.getItem(STORAGE_KEY_AST) || DEFAULT_AST_JSON)
+const astJson = ref(localStorage.getItem(STORAGE_KEY_AST) || '')
 
 // Reactive state
 const result = ref<EvalResult | null>(null)
