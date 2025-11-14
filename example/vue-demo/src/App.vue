@@ -54,6 +54,7 @@ const isGifHovered = ref(false)
 const currentGifState = ref<'idle' | 'walking'>('idle')
 const birdPosition = ref(0) // 0 = left, 100 = right (percentage)
 const birdDirection = ref<'left' | 'right'>('right')
+const lastWalkTime = ref(Date.now()) // Track last time bird entered walk state
 const idleGif = '/gray_idle_8fps.gif'
 const walkingGif = '/gray_walk_fast_8fps.gif'
 const activeGif = '/gray_with_ball_8fps.gif'
@@ -272,8 +273,11 @@ function resetToDefaults() {
 // Random state switching for gif
 function randomGifStateSwitch() {
   if (!isGifHovered.value) {
-    // Randomly switch between idle and walking
-    const newState = Math.random() > 0.5 ? 'idle' : 'walking'
+    const timeSinceLastWalk = Date.now() - lastWalkTime.value
+    const shouldForceWalk = timeSinceLastWalk > 6000 // Force walk if >6 seconds
+    
+    // Randomly switch between idle and walking, or force walking if it's been too long
+    const newState = shouldForceWalk || Math.random() > 0.5 ? 'walking' : 'idle'
     
     if (newState === 'walking') {
       // Check current position and walk to the opposite edge
@@ -296,6 +300,7 @@ function randomGifStateSwitch() {
       if (Math.abs(newTarget - currentPos) > 20) {
         // Set state BEFORE starting animation so animateBird check passes
         currentGifState.value = newState
+        lastWalkTime.value = Date.now() // Update last walk time
         startWalking(newTarget)
       } else {
         // Distance too small, try again soon
