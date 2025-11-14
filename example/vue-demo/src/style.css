@@ -76,7 +76,7 @@ body::after {
 }
 
 .card {
-  padding: 2em;
+  padding: 3em 2em 2em 2em;
   background: #1a1a1a;
   border: 3px solid #484848;
   border-radius: 0;
@@ -288,7 +288,7 @@ button:hover {
   position: relative;
   width: 100%;
   height: 160px;
-  padding: 1.5rem 3rem 0rem;
+  padding: 0 1.5rem;
   overflow: hidden;
 }
 
@@ -316,7 +316,7 @@ button:hover {
 .header-container {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: end;
   margin-bottom: 1.5em;
 }
 
@@ -521,3 +521,22 @@ h3 {
   box-shadow: 3px 3px 0 #ff6c60, 0 0 15px rgba(255, 108, 96, 0.5);
 }
 
+.docs-link {
+  position: absolute;
+  top: 0;
+  right: 0;
+  font-size: 0.8em;
+  text-decoration: none;
+  padding: 0.5em 1em;
+  border: 4px solid #3F3F3F;
+  border-top-style: none;
+  border-right-style: none;
+}
+
+.gif-container::selection {
+  background: transparent;
+}
+
+.gif-container img {
+  image-rendering: pixelated;
+}

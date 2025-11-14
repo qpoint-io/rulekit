@@ -18,13 +18,18 @@ interface EvalResult {
 
 // Default values
 const DEFAULT_RULE_INPUT = `-- restrict database connections
-dst.port in [
-  3306,  -- MySQL
-  5432,  -- PostgreSQL
-  27017, -- MongoDB
-  6379   -- Redis
-]
-and not src.pod.namespace in ["api", "backend", "monitoring"]
+(
+  dst.port in [
+    3306,  -- MySQL
+    5432,  -- PostgreSQL
+    27017, -- MongoDB
+    6379   -- Redis
+  ]
+  and (
+    src.pod.namespace in ["api", "backend"]
+    or starts_with(src.pod.namespace, "kube-")
+  )
+)
 
 -- allow essential services
 or dst.domain in ["registry.k8s.io", "k8s.gcr.io", "gcr.io", "docker.io"]`
@@ -33,14 +38,7 @@ const DEFAULT_DATA_JSON_PASS = JSON.stringify({
   "dst": {
     "domain": "registry.k8s.io",
     "port": 3306,
-  },
-  "src": {
-    "ip": "192.168.0.1",
-    "port": 8080,
-    "pod": {
-      "namespace": "monitoring",
-    },
-  },
+  }
 }, null, 2)
 
 const DEFAULT_DATA_JSON_FAIL = JSON.stringify({
@@ -464,39 +462,35 @@ onUnmounted(async () => {
 
 <template>
   <div>
-    <!-- Animated gif above header -->
-    <div class="gif-container">
-      <div 
-        class="bird-position" 
-        :style="birdPositionStyle"
-      >
-        <img
-          draggable="false"
-          :src="currentGif" 
-          :style="birdFlipStyle"
-          alt="Animated character"
-          class="corner-gif"
-          @click="clickOnBird"
-          @mouseenter="isGifHovered = true" 
-          @mouseleave="isGifHovered = false"
-        />
-      </div>
-    </div>
-
     <div class="header-container">
-      <h1>Rulekit.js</h1>
+      <h1>Rulekit</h1>
+      <div class="gif-container">
+        <div class="bird-position" :style="birdPositionStyle">
+          <img
+            draggable="false"
+            :src="currentGif" 
+            :style="birdFlipStyle"
+            alt="Mickey"
+            class="corner-gif"
+            @click="clickOnBird"
+            @mouseenter="isGifHovered = true" 
+            @mouseleave="isGifHovered = false"
+          />
+        </div>
+      </div>
     </div>
 
     <div class="inputs-container">
       <div class="card half-width">
+        <a class="docs-link" href="https://github.com/qpoint-io/rulekit" target="_blank" title="Documentation">?</a>
         <div class="card-header-with-button">
-          <h2>Write Your Rule</h2>
+          <h2>Rule</h2>
           <button v-if="showResetButton" @click="resetToDefaults" class="inline-button">Reset to Example Rule</button>
         </div>
         <codemirror
           v-model="ruleInput"
           :extensions="ruleExtensions"
-          :style="{ fontSize: '14px' }"
+          :style="{ fontSize: '14px', cursor: 'text', maxHeight: '500px' }"
           :autofocus="false"
           :disabled="false"
           placeholder="Enter your rule here (e.g., ip in [1.2.3.4, 10.0.0.0/8])"
@@ -518,7 +512,7 @@ onUnmounted(async () => {
         <codemirror
           v-model="dataJson"
           :extensions="jsonExtensions"
-          :style="{ fontSize: '14px' }"
+          :style="{ fontSize: '14px', cursor: 'text', maxHeight: '500px' }"
           :autofocus="false"
           :disabled="false"
           placeholder="Enter test data JSON..."
@@ -535,10 +529,10 @@ onUnmounted(async () => {
 
     <div v-if="!ruleParseError && result" class="card" :class="['result', result.passFailErrStr]">
       <h2><span v-if="result" :class="['result-inline', result.passFailErrStr]">
-        <span style="font-size: 1.5em;">{{ result.ok ? (result.value ? '🮱' : '🮽') : '🯄' }}</span> {{ result.passFailErrStr }}
+        <span style="font-size: 1.5em;">{{ result.ok ? (result.value ? '🮱' : '🮽') : '🯄' }}</span> {{ result.passFailErrStr?.toUpperCase() }}
       </span></h2>
       
-      <div v-if="result.ok" style="margin-bottom: 1em;">Value
+      <div v-if="result.ok" style="margin-bottom: 1em;">Return Value
         <div class="rule-expression" :class="[result.passFailErrStr]">{{ result.value || (result.value === false ? 'false' : JSON.stringify(result.value)) }}</div>
       </div>
       <div v-else>Error
@@ -550,7 +544,7 @@ onUnmounted(async () => {
           <codemirror
             v-model="result.evaluatedRule"
             :extensions="ruleExtensions"
-            :style="{ fontSize: '14px' }"
+            :style="{ fontSize: '14px', cursor: 'text', maxHeight: '500px' }"
             :autofocus="false"
             :disabled="true"
             placeholder="Evaluated Rule"
@@ -575,7 +569,7 @@ onUnmounted(async () => {
         <codemirror
           v-model="astJson"
           :extensions="jsonExtensions"
-          :style="{ height: '400px', fontSize: '14px' }"
+          :style="{ height: '400px', fontSize: '14px', cursor: 'text' }"
           :autofocus="false"
           :disabled="false"
           placeholder="Paste AST JSON here..."
