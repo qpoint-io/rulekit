@@ -5,6 +5,7 @@ import { json } from '@codemirror/lang-json'
 import { abyss } from '@fsegurai/codemirror-theme-abyss'
 import { rulekit } from './rulekit-wasm'
 import { ruleLanguage } from './ruleLanguage'
+import AstRenderer from './AstRenderer.vue'
 
 // Simple EvalResult type for display
 interface EvalResult {
@@ -77,6 +78,7 @@ const isParsing = ref(false)
 const isAstExpanded = ref(false)
 const isWasmReady = ref(false)
 const currentRuleHandle = ref<number | undefined>(undefined)
+const astNode = ref<any>(null)
 
 // Gif hover state and animation
 const isGifHovered = ref(false)
@@ -247,6 +249,7 @@ async function parseRule() {
     if (parsed.ast) {
       // Update AST display
       astJson.value = JSON.stringify(parsed.ast, null, 2)
+      astNode.value = parsed.ast
       
       // Update rule text display
       if (parsed.ruleString) {
@@ -495,6 +498,12 @@ onUnmounted(async () => {
           :disabled="false"
           placeholder="Enter your rule here (e.g., ip in [1.2.3.4, 10.0.0.0/8])"
         />
+      </div>
+
+      <!-- AST Visualization -->
+      <div v-if="!ruleParseError && astNode" class="card ast-visualization">
+        <h2>Rule Builder</h2>
+        <AstRenderer :node="astNode" />
       </div>
 
       <div class="card half-width">
