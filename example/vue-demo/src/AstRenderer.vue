@@ -69,7 +69,8 @@ select {
 </style>
 
 <script setup lang="ts">
-import type { ASTNode, ASTNodeLiteral, ASTNodeOperator } from './ast'
+import type { ASTNode, ASTNodeLiteral } from './ast'
+import Trio from './Trio.vue'
 
 defineProps<{
     node: ASTNode,
@@ -78,9 +79,8 @@ defineProps<{
 
 const opStyle = (node: ASTNode) => {
     return {
-        'display': 'grid',
-        'grid-template-columns': 'repeat(3, fit-content(1000px))',
-        'grid-template-rows': 'repeat(3, fit-content(1000px))',
+        'display': 'inline-flex',
+        'flex-direction': 'row',
         'align-items': 'center',
         'gap': '0.25rem',
     }
@@ -88,112 +88,80 @@ const opStyle = (node: ASTNode) => {
 
 const opStyle2 = (node: ASTNode) => {
     let
-        container = opStyle(node),
-        left = {
-            'grid-area': '1 / 1 / 2 / 2',
+        container: any = opStyle(node),
+        left: any = {
         },
-        operator = {
-            'grid-area': '1 / 2 / 2 / 3',
+        operator: any = {
         },
-        right = {
-            'grid-area': '1 / 3 / 2 / 4',
+        right: any = {
         };
-    if (node.node_type === 'operator') {
-        switch (node.operator) {
-            case 'and':
-            case 'or':
-                if (!hasChildren(node.left) && !hasChildren(node.right)) {
-                    container['grid-template-columns'] = 'repeat(3, fit-content(1000px))';
-                    container['grid-template-rows'] = 'fit-content(1000px)';
-                    left = {
-                        'grid-area': '1 / 1 / 2 / 2',
-                    }
-                    operator = {
-                        'grid-area': '1 / 2 / 2 / 3',
-                    }
-                    right = {
-                        'grid-area': '1 / 3 / 2 / 4',
-                    }
-                } else {
-                    left = {
-                        'grid-area': '1 / 1 / 2 / 2',
-                    }
-                    operator = {
-                        'grid-area': '2 / 1 / 3 / 2',
-                    }
-                    if (hasChildren(node.right)) {
-                        right = {
-                            'grid-area': '2 / 2 / 3 / 3',
-                        }
-                    } else {
-                        right = {
-                            'grid-area': '2 / 2 / 3 / 3',
-                        }
-                    }
-                }
-                break;
-            case 'not':
-                left = {
-                    'grid-area': '1 / 2 / 2 / 3',
-                }
-                operator = {
-                    'grid-area': '1 / 1 / 2 / 2',
-                }
-                break;
-            case 'in':
-                if (hasChildren(node.left)) {
 
-                } else {
+    switch (node.node_type) {
+        case 'operator':
+            if (node.operator != 'and' && node.operator != 'or') {
+                container['flex-direction'] = 'row';
+                container['align-items'] = 'center';
+                container['background-color'] = 'green';
+            } else {
+                container['flex-direction'] = 'column';
+                container['align-items'] = 'start';
+                container['background-color'] = 'blue';
+                if (isInline(node.left) && isInline(node.right)) {
+                    // container['flex-direction'] = 'row';
+                    // container['align-items'] = 'center';
+                    // container['background-color'] = 'red';
 
+                    // if (node.node_type === 'operator' && isInline(node.left) && !isInline(node.right)) {
+                    //     left['flex-grow'] = 1;
+                    // } else if (node.node_type === 'operator' && !isInline(node.left) && isInline(node.right)) {
+                    //     right['flex-grow'] = 1;
+                    // }
+                } else if (!isInline(node.left) && !isInline(node.right)) {
+
+
+                    // if (node.node_type === 'operator' && isInline(node.left) && !isInline(node.right)) {
+                    //     left['flex-grow'] = 1;
+                    // } else if (node.node_type === 'operator' && !isInline(node.left) && isInline(node.right)) {
+                    //     right['flex-grow'] = 1;
+                    // }
                 }
-                break;
-            default:
-                left = {
-                    'grid-area': '1 / 1 / 2 / 2',
-                }
-                operator = {
-                    'grid-area': '1 / 2 / 2 / 3',
-                }
-                right = {
-                    'grid-area': '1 / 3 / 2 / 4',
-                }
-                break;
-        }
+            }
+            break;
     }
+
 
     return {
         container, left, operator, right,
     }
 }
 
-
-const hasChildren = (node: ASTNode | null): boolean => {
+const isInline = (node: ASTNode | null): boolean => {
     if (node === null) {
+        return true;
+    }
+
+    if (node.node_type === 'array') {
+        return !!node.elements.find(element => isInline(element)) === true;
+    } else if (node.node_type === 'function') {
+        return !!node.args.elements.find(element => isInline(element)) === true;
+    } else if (node.node_type === 'field') {
+        return true;
+    } else if (node.node_type === 'literal') {
+        return true;
+    } else if (node.node_type === 'operator') {
+        if (node.operator == 'not') {
+            return true;
+        }
+        // if (node.operator == 'in') {
+        //     return true;
+        // }
+        // if (!isInline(node.left) || !isInline(node.right)) {
+        //     return false;
+        // }
         return false;
     }
-
-    switch (node.node_type) {
-        case 'operator':
-            if (node.right?.node_type === 'operator' || node.left?.node_type === 'operator') {
-                return true;
-            }
-            if (node.operator == "not") {
-                return hasChildren(node.right);
-            } else {
-                return hasChildren(node.left) || hasChildren(node.right);
-            }
-        case 'array':
-            return node.elements.find(element => hasChildren(element)) !== undefined;
-        case 'function':
-            return node.args.elements.find(element => hasChildren(element)) !== undefined;
-        case 'field':
-            return false;
-        case 'literal':
-            return false;
-        default:
-            return false;
-    }
-};
+    return true;
+}
 
 const literalColor = (type: ASTNodeLiteral['type']): string => {
     switch (type) {
