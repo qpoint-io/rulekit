@@ -1,5 +1,5 @@
 <template>
-    <div style="font-size: 0.8rem !important; display:inline-block; padding: 0.25rem;" v-if="node">
+    <div style="font-size: 0.8rem !important;" v-if="node" :style="opStyle2(node).container">
         <template v-if="node.node_type === 'operator'" :class="{ 'alternate': alternate }">
             <!-- style="display: flex; align-items: center;" :style="{
                 'flex-direction': node.operator == 'not' ? 'row' : 'column',
@@ -13,12 +13,9 @@
                 </div>
             </template>
 <template v-else -->
-            <div :style="opStyle2(node).container">
-                <AstRenderer v-if="node.left" :node="node.left" :alternate="!alternate" :style="opStyle2(node).left" />
-                <span style="color: #47c1ff;" :style="opStyle2(node).operator">{{ node.operator }}</span>
-                <AstRenderer v-if="node.right" :node="node.right" :alternate="!alternate"
-                    :style="opStyle2(node).right" />
-            </div>
+            <AstRenderer v-if="node.left" :node="node.left" :alternate="!alternate" :style="opStyle2(node).left" />
+            <span style="color: #47c1ff;" :style="opStyle2(node).operator">{{ node.operator }}</span>
+            <AstRenderer v-if="node.right" :node="node.right" :alternate="!alternate" :style="opStyle2(node).right" />
         </template>
         <template v-else-if="node.node_type === 'field'">
             <select :style="{ 'color': 'inherit' }" readonly>
@@ -79,16 +76,17 @@ defineProps<{
     alternate?: boolean
 }>()
 
-const opStyle = (node: ASTNodeOperator) => {
+const opStyle = (node: ASTNode) => {
     return {
         'display': 'grid',
-        'grid-template-columns': 'repeat(3, fit-content(1fr))',
-        'grid-template-rows': 'repeat(3, fit-content(1fr))',
+        'grid-template-columns': 'repeat(3, fit-content(1000px))',
+        'grid-template-rows': 'repeat(3, fit-content(1000px))',
         'align-items': 'center',
+        'gap': '0.25rem',
     }
 }
 
-const opStyle2 = (node: ASTNodeOperator) => {
+const opStyle2 = (node: ASTNode) => {
     let
         container = opStyle(node),
         left = {
@@ -100,12 +98,56 @@ const opStyle2 = (node: ASTNodeOperator) => {
         right = {
             'grid-area': '1 / 3 / 2 / 4',
         };
-    switch (node.operator) {
-        case 'and':
-        case 'or':
-            if (!hasChildren(node.left) && !hasChildren(node.right)) {
-                container['grid-template-columns'] = 'repeat(3, fit-content(1fr))';
-                container['grid-template-rows'] = 'fit-content(1fr)';
+    if (node.node_type === 'operator') {
+        switch (node.operator) {
+            case 'and':
+            case 'or':
+                if (!hasChildren(node.left) && !hasChildren(node.right)) {
+                    container['grid-template-columns'] = 'repeat(3, fit-content(1000px))';
+                    container['grid-template-rows'] = 'fit-content(1000px)';
+                    left = {
+                        'grid-area': '1 / 1 / 2 / 2',
+                    }
+                    operator = {
+                        'grid-area': '1 / 2 / 2 / 3',
+                    }
+                    right = {
+                        'grid-area': '1 / 3 / 2 / 4',
+                    }
+                } else {
+                    left = {
+                        'grid-area': '1 / 1 / 2 / 2',
+                    }
+                    operator = {
+                        'grid-area': '2 / 1 / 3 / 2',
+                    }
+                    if (hasChildren(node.right)) {
+                        right = {
+                            'grid-area': '2 / 2 / 3 / 3',
+                        }
+                    } else {
+                        right = {
+                            'grid-area': '2 / 2 / 3 / 3',
+                        }
+                    }
+                }
+                break;
+            case 'not':
+                left = {
+                    'grid-area': '1 / 2 / 2 / 3',
+                }
+                operator = {
+                    'grid-area': '1 / 1 / 2 / 2',
+                }
+                break;
+            case 'in':
+                if (hasChildren(node.left)) {
+
+                } else {
+
+                }
+                break;
+            default:
                 left = {
                     'grid-area': '1 / 1 / 2 / 2',
                 }
@@ -115,50 +157,8 @@ const opStyle2 = (node: ASTNodeOperator) => {
                 right = {
                     'grid-area': '1 / 3 / 2 / 4',
                 }
-            } else {
-                left = {
-                    'grid-area': '1 / 1 / 2 / 2',
-                }
-                operator = {
-                    'grid-area': '2 / 1 / 3 / 2',
-                }
-                if (hasChildren(node.right)) {
-                    right = {
-                        'grid-area': '2 / 2 / 3 / 3',
-                    }
-                } else {
-                    right = {
-                        'grid-area': '2 / 2 / 3 / 3',
-                    }
-                }
-            }
-            break;
-        case 'not':
-            left = {
-                'grid-area': '1 / 2 / 2 / 3',
-            }
-            operator = {
-                'grid-area': '1 / 1 / 2 / 2',
-            }
-            break;
-        case 'in':
-            if (hasChildren(node.left)) {
-
-            } else {
-
-            }
-            break;
-        default:
-            left = {
-                'grid-area': '1 / 1 / 2 / 2',
-            }
-            operator = {
-                'grid-area': '1 / 2 / 2 / 3',
-            }
-            right = {
-                'grid-area': '1 / 3 / 2 / 4',
-            }
-            break;
+                break;
+        }
     }
 
     return {
