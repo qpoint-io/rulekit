@@ -5,6 +5,8 @@ import { json } from '@codemirror/lang-json'
 import { abyss } from '@fsegurai/codemirror-theme-abyss'
 import { rulekit } from './rulekit-wasm'
 import { ruleLanguage } from './ruleLanguage'
+import AstRenderer from './AstRenderer.vue'
+import { ASTNode } from './ast'
 
 // Simple EvalResult type for display
 interface EvalResult {
@@ -121,7 +123,7 @@ function animateBird() {
   }
 
   const diff = targetPosition - birdPosition.value
-  
+
   if (Math.abs(diff) > 0.5) {
     // Move toward target
     const step = Math.sign(diff) * Math.min(Math.abs(diff), walkSpeed)
@@ -136,13 +138,13 @@ function animateBird() {
 
 function startWalking(newTargetPosition: number) {
   targetPosition = newTargetPosition
-  
+
   // Cancel existing animation
   if (animationFrameId !== null) {
     cancelAnimationFrame(animationFrameId)
     animationFrameId = null
   }
-  
+
   // Start new animation
   animateBird()
 }
@@ -178,24 +180,24 @@ const showResetButton = computed(() => {
 async function evaluateRule() {
   error.value = ''
   result.value = null
-  
+
   // Don't evaluate if WASM isn't ready or data JSON is invalid
   if (!isWasmReady.value || !isDataJsonValid.value) {
     return
   }
-  
+
   // Don't evaluate if we don't have a valid rule handle
   if (currentRuleHandle.value === undefined) {
     return
   }
-  
+
   try {
     const data = JSON.parse(dataJson.value)
-    
+
     // Evaluate using WASM
     const evalResult = await rulekit.eval(currentRuleHandle.value, data)
     console.log('evalResult', evalResult)
-    
+
     // Convert WASM result to our display format
     result.value = {
       ok: evalResult.ok,
@@ -238,7 +240,7 @@ async function parseRule() {
 
     // Parse using WASM
     const parsed = await rulekit.parse(ruleInput.value)
-    
+
     if (parsed.error) {
       ruleParseError.value = parsed.error
       return
@@ -247,17 +249,17 @@ async function parseRule() {
     if (parsed.ast) {
       // Update AST display
       astJson.value = JSON.stringify(parsed.ast, null, 2)
-      
+
       // Update rule text display
       if (parsed.ruleString) {
         ruleText.value = parsed.ruleString
       }
-      
+
       // Store handle for evaluation
       currentRuleHandle.value = parsed.handle
-      
+
       ruleParseError.value = ''
-      
+
       // Auto-evaluate after successful parse
       await evaluateRule()
     } else {
@@ -353,6 +355,18 @@ async function setFailData() {
   await evaluateRule()
 }
 
+const astNode = computed(() => {
+  if (!astJson.value) return null
+  try {
+    const n = JSON.parse(astJson.value) as ASTNode
+    console.log('astNode', n)
+    return n
+  } catch (e: any) {
+    console.error('Error parsing AST JSON:', e)
+    return null
+  }
+})
+
 // Click on bird
 function clickOnBird() {
   birdDirection.value = birdDirection.value === 'left' ? 'right' : 'left'
@@ -374,15 +388,15 @@ function randomGifStateSwitch() {
   if (!isGifHovered.value) {
     const timeSinceLastWalk = Date.now() - lastWalkTime.value
     const shouldForceWalk = timeSinceLastWalk > 6000 // Force walk if >6 seconds
-    
+
     // Randomly switch between idle and walking, or force walking if it's been too long
     const newState = shouldForceWalk || Math.random() > 0.5 ? 'walking' : 'idle'
-    
+
     if (newState === 'walking') {
       // Check current position and walk to the opposite edge
       const currentPos = birdPosition.value
       let newTarget: number
-      
+
       // If in right half, walk left
       if (currentPos >= 90) {
         birdDirection.value = 'left'
@@ -394,7 +408,7 @@ function randomGifStateSwitch() {
         // Walk to somewhere in the right 50%-85%
         newTarget = 50 + Math.random() * 35
       }
-      
+
       // Only actually walk if the distance is significant (more than 20%)
       if (Math.abs(newTarget - currentPos) > 20) {
         // Set state BEFORE starting animation so animateBird check passes
@@ -412,7 +426,7 @@ function randomGifStateSwitch() {
       currentGifState.value = newState
     }
   }
-  
+
   // Schedule next switch with random interval (1-2 seconds)
   const nextInterval = 1000 + Math.random() * 1000
   setTimeout(randomGifStateSwitch, nextInterval)
@@ -427,16 +441,16 @@ onMounted(async () => {
   img1.src = idleGif
   img2.src = walkingGif
   img3.src = activeGif
-  
+
   // Start random state switching
   randomGifStateSwitch()
-  
+
   // Wait for WASM to be ready
   try {
     await rulekit.waitReady()
     isWasmReady.value = true
     console.log('✅ Rulekit WASM ready!')
-    
+
     // Now parse and evaluate
     await parseRule()
   } catch (e: any) {
@@ -451,7 +465,7 @@ onUnmounted(async () => {
     cancelAnimationFrame(animationFrameId)
     animationFrameId = null
   }
-  
+
   // Free rule handle
   if (currentRuleHandle.value !== undefined) {
     await rulekit.free(currentRuleHandle.value)
@@ -466,16 +480,8 @@ onUnmounted(async () => {
       <h1>Rulekit</h1>
       <div class="gif-container">
         <div class="bird-position" :style="birdPositionStyle">
-          <img
-            draggable="false"
-            :src="currentGif" 
-            :style="birdFlipStyle"
-            alt="Mickey"
-            class="corner-gif"
-            @click="clickOnBird"
-            @mouseenter="isGifHovered = true" 
-            @mouseleave="isGifHovered = false"
-          />
+          <img draggable="false" :src="currentGif" :style="birdFlipStyle" alt="Mickey" class="corner-gif"
+            @click="clickOnBird" @mouseenter="isGifHovered = true" @mouseleave="isGifHovered = false" />
         </div>
       </div>
     </div>
@@ -487,14 +493,9 @@ onUnmounted(async () => {
           <h2>Rule</h2>
           <button v-if="showResetButton" @click="resetToDefaults" class="inline-button">Reset to Example Rule</button>
         </div>
-        <codemirror
-          v-model="ruleInput"
-          :extensions="ruleExtensions"
-          :style="{ fontSize: '14px', cursor: 'text', maxHeight: '500px' }"
-          :autofocus="false"
-          :disabled="false"
-          placeholder="Enter your rule here (e.g., ip in [1.2.3.4, 10.0.0.0/8])"
-        />
+        <codemirror v-model="ruleInput" :extensions="ruleExtensions"
+          :style="{ fontSize: '14px', cursor: 'text', maxHeight: '500px' }" :autofocus="false" :disabled="false"
+          placeholder="Enter your rule here (e.g., ip in [1.2.3.4, 10.0.0.0/8])" />
       </div>
 
       <div class="card half-width">
@@ -507,16 +508,12 @@ onUnmounted(async () => {
           </div>
         </div>
         <div v-if="dataJsonError" class="json-error-message">
-          <strong>Invalid JSON</strong> <pre style="margin:0" class="rule-expression error">{{ dataJsonError }}</pre>
+          <strong>Invalid JSON</strong>
+          <pre style="margin:0" class="rule-expression error">{{ dataJsonError }}</pre>
         </div>
-        <codemirror
-          v-model="dataJson"
-          :extensions="jsonExtensions"
-          :style="{ fontSize: '14px', cursor: 'text', maxHeight: '500px' }"
-          :autofocus="false"
-          :disabled="false"
-          placeholder="Enter test data JSON..."
-        />
+        <codemirror v-model="dataJson" :extensions="jsonExtensions"
+          :style="{ fontSize: '14px', cursor: 'text', maxHeight: '500px' }" :autofocus="false" :disabled="false"
+          placeholder="Enter test data JSON..." />
       </div>
     </div>
 
@@ -529,28 +526,24 @@ onUnmounted(async () => {
 
     <div v-if="!ruleParseError && result" class="card" :class="['result', result.passFailErrStr]">
       <h2><span v-if="result" :class="['result-inline', result.passFailErrStr]">
-        <span style="font-size: 1.5em;">{{ result.ok ? (result.value ? '🮱' : '🮽') : '🯄' }}</span> {{ result.passFailErrStr?.toUpperCase() }}
-      </span></h2>
-      
+          <span style="font-size: 1.5em;">{{ result.ok ? (result.value ? '🮱' : '🮽') : '🯄' }}</span> {{
+            result.passFailErrStr?.toUpperCase() }}
+        </span></h2>
+
       <div v-if="result.ok" style="margin-bottom: 1em;">Return Value
-        <div class="rule-expression" :class="[result.passFailErrStr]">{{ result.value || (result.value === false ? 'false' : JSON.stringify(result.value)) }}</div>
+        <div class="rule-expression" :class="[result.passFailErrStr]">{{ result.value || (result.value === false ?
+          'false' : JSON.stringify(result.value)) }}</div>
       </div>
       <div v-else>Error
         <pre style="margin-top:0" class="rule-expression error">{{ result.error }}</pre>
       </div>
 
-        <div>Evaluated Rule
-          
-          <codemirror
-            v-model="result.evaluatedRule"
-            :extensions="ruleExtensions"
-            :style="{ fontSize: '14px', cursor: 'text', maxHeight: '500px' }"
-            :autofocus="false"
-            :disabled="true"
-            placeholder="Evaluated Rule"
-            :lineNumbers="false"
-          />
-        </div>
+      <div>Evaluated Rule
+
+        <codemirror v-model="result.evaluatedRule" :extensions="ruleExtensions"
+          :style="{ fontSize: '14px', cursor: 'text', maxHeight: '500px' }" :autofocus="false" :disabled="true"
+          placeholder="Evaluated Rule" :lineNumbers="false" />
+      </div>
     </div>
 
     <div v-if="error" class="card">
@@ -560,22 +553,20 @@ onUnmounted(async () => {
       </div>
     </div>
 
-    <div v-if="false" :class="['card', { 'card-collapsed': !isAstExpanded }]">
+    <div v-if="astNode" class="card">
+      <AstRenderer style="font-family: 'Departure Mono', 'Monaco', 'Menlo', monospace !important;" :node="astNode" />
+    </div>
+
+    <div :class="['card', { 'card-collapsed': !isAstExpanded }]">
       <h2 @click="isAstExpanded = !isAstExpanded" class="collapsible-header">
         <span class="collapse-icon icon">{{ isAstExpanded ? '▼' : '▶' }}</span>
         AST Input (JSON from Go)
       </h2>
       <div v-if="isAstExpanded">
-        <codemirror
-          v-model="astJson"
-          :extensions="jsonExtensions"
-          :style="{ height: '400px', fontSize: '14px', cursor: 'text' }"
-          :autofocus="false"
-          :disabled="false"
-          placeholder="Paste AST JSON here..."
-        />
+        <codemirror v-model="astJson" :extensions="jsonExtensions"
+          :style="{ height: '400px', fontSize: '14px', cursor: 'text' }" :autofocus="false" :disabled="false"
+          placeholder="Paste AST JSON here..." />
       </div>
     </div>
   </div>
 </template>
-
