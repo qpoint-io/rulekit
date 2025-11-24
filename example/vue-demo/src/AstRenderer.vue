@@ -1,36 +1,33 @@
 <template>
-    <div style="font-size: 0.8rem !important;" v-if="node" :style="opStyle2(node).container">
-        <template v-if="node.node_type === 'operator'" :class="{ 'alternate': alternate }">
-            <!-- style="display: flex; align-items: center;" :style="{
-                'flex-direction': node.operator == 'not' ? 'row' : 'column',
-            }" -->
-            <!--template v-if="node.operator == 'not'">
-                <span style="color: #47c1ff;">not</span>
-                <div :style="{
-                    'display': hasChildren(node.right) ? 'inline' : 'inline',
-                }">
-                    <AstRenderer v-if="node.right" :node="node.right" :alternate="!alternate" />
-                </div>
+    <div v-if="node" style="font-size: 0.8rem !important; margin-bottom: 0.25rem;">
+        <Trio v-if="node.node_type === 'operator'" :rows="trioRows(node)">
+            <template #l>
+                <AstRenderer v-if="node.left" :node="node.left"
+                    :style="!isInline(node.left) ? containerStyle(node.left) : {}" />
             </template>
-<template v-else -->
-            <AstRenderer v-if="node.left" :node="node.left" :alternate="!alternate" :style="opStyle2(node).left" />
-            <span style="color: #47c1ff;" :style="opStyle2(node).operator">{{ node.operator }}</span>
-            <AstRenderer v-if="node.right" :node="node.right" :alternate="!alternate" :style="opStyle2(node).right" />
-        </template>
+            <template #o>
+                <span style="color: #47c1ff; padding: 0.25rem;">{{ node.operator }}</span>
+            </template>
+            <template #r>
+                <AstRenderer v-if="node.right" :node="node.right"
+                    :force-break="node.right.node_type === 'operator' && ['and', 'or'].includes(node.right.operator)"
+                    :style="(node.right.node_type === 'operator' && ['and', 'or'].includes(node.right.operator)) ? containerStyle(node.right) : {}" />
+            </template>
+        </Trio>
         <template v-else-if="node.node_type === 'field'">
             <select :style="{ 'color': 'inherit' }" readonly>
                 <option selected>{{ node.name }}</option>
             </select>
         </template>
         <template v-else-if="node.node_type === 'literal'">
-            <input :style="{ 'color': literalColor(node.type) }" type="text" :value="node.value" />
+            <input :style="{ 'color': literalColor(node.type) }" type="text" :value="node.value" readonly />
         </template>
         <template v-else-if="node.node_type === 'array'">
             <div
-                :style="{ 'display': 'inline-flex', 'flex-direction': 'row', 'gap': '0.25rem', 'align-items': 'center' }">
+                :style="{ 'display': 'inline-flex', 'flex-direction': 'row', 'gap': '0.25rem', 'align-items': 'baseline' }">
                 <span style="font-size: 1.25em; margin-right: -0.25rem; font-weight: bold;">[</span>
                 <template v-for="(element, index) in node.elements" :key="element">
-                    <AstRenderer :node="element" :alternate="!alternate" />
+                    <AstRenderer :node="element" />
                     <span v-if="index < node.elements.length - 1"
                         style="font-weight: bold; font-size: 1.25em; margin-left: -0.25rem;">,</span>
                 </template>
@@ -40,16 +37,17 @@
         <template v-else-if="node.node_type === 'function'">
             <span>{{ node.name }}</span>
             <div
-                :style="{ 'display': 'inline-flex', 'flex-direction': 'row', 'gap': '0.25rem', 'align-items': 'center' }">
+                :style="{ 'display': 'inline-flex', 'flex-direction': 'row', 'gap': '0.25rem', 'align-items': 'baseline' }">
                 <span style="font-size: 1.25em; margin-right: -0.25rem; font-weight: bold;">(</span>
                 <template v-for="(element, index) in node.args.elements" :key="element">
-                    <AstRenderer :node="element" :alternate="!alternate" />
+                    <AstRenderer :node="element" />
                     <span v-if="index < node.args.elements.length - 1"
                         style="font-weight: bold; font-size: 1.25em; margin-left: -0.25rem;">,</span>
                 </template>
                 <span style="font-size: 1.25em; margin-left: -0.25rem; font-weight: bold;">)</span>
             </div>
         </template>
+        <span v-else>TODO</span>
     </div>
 </template>
 
@@ -66,72 +64,51 @@ select {
     padding: 0.25rem;
     min-width: 10px;
 }
+
+* {
+    font-family: 'Departure Mono', 'Monaco', 'Menlo', monospace !important;
+}
 </style>
 
 <script setup lang="ts">
-import type { ASTNode, ASTNodeLiteral } from './ast'
+import type { ASTNode, ASTNodeLiteral, ASTNodeOperator } from './ast'
 import Trio from './Trio.vue'
+type element = 'l' | 'o' | 'r';
 
-defineProps<{
+const props = defineProps<{
     node: ASTNode,
-    alternate?: boolean
+    forceBreak?: boolean,
 }>()
 
-const opStyle = (node: ASTNode) => {
-    return {
-        'display': 'inline-flex',
-        'flex-direction': 'row',
-        'align-items': 'center',
-        'gap': '0.25rem',
+const containerStyle = (node: ASTNode) => {
+    if (node.node_type === 'operator') {
+        if (['and', 'or'].includes(node.operator) || props.forceBreak) {
+            return {
+                'background-color': 'rgba(150, 150, 150, 0.1)',
+                'padding': '0.25rem',
+                'border': '3px solid #1a1a1a',
+            }
+        }
     }
+    return {};
 }
 
-const opStyle2 = (node: ASTNode) => {
-    let
-        container: any = opStyle(node),
-        left: any = {
-        },
-        operator: any = {
-        },
-        right: any = {
-        };
-
-    switch (node.node_type) {
-        case 'operator':
-            if (node.operator != 'and' && node.operator != 'or') {
-                container['flex-direction'] = 'row';
-                container['align-items'] = 'center';
-                container['background-color'] = 'green';
+const trioRows = (node: ASTNodeOperator): element[][] => {
+    switch (node.operator) {
+        case 'not':
+            return [['o', 'r']];
+        case 'in':
+        case 'and':
+        case 'or':
+            if (isInline(node.left) && isInline(node.right) && !props.forceBreak) {
+                return [['l', 'o', 'r']];
+            } else if (isInline(node.right)) {
+                return [['l'], ['o', 'r']];
             } else {
-                container['flex-direction'] = 'column';
-                container['align-items'] = 'start';
-                container['background-color'] = 'blue';
-                if (isInline(node.left) && isInline(node.right)) {
-                    // container['flex-direction'] = 'row';
-                    // container['align-items'] = 'center';
-                    // container['background-color'] = 'red';
-
-                    // if (node.node_type === 'operator' && isInline(node.left) && !isInline(node.right)) {
-                    //     left['flex-grow'] = 1;
-                    // } else if (node.node_type === 'operator' && !isInline(node.left) && isInline(node.right)) {
-                    //     right['flex-grow'] = 1;
-                    // }
-                } else if (!isInline(node.left) && !isInline(node.right)) {
-
-
-                    // if (node.node_type === 'operator' && isInline(node.left) && !isInline(node.right)) {
-                    //     left['flex-grow'] = 1;
-                    // } else if (node.node_type === 'operator' && !isInline(node.left) && isInline(node.right)) {
-                    //     right['flex-grow'] = 1;
-                    // }
-                }
+                return [['l'], ['o', 'r']];
             }
-            break;
-    }
-
-
-    return {
-        container, left, operator, right,
+        default:
+            return [['l', 'o', 'r']];
     }
 }
 
@@ -149,15 +126,9 @@ const isInline = (node: ASTNode | null): boolean => {
     } else if (node.node_type === 'literal') {
         return true;
     } else if (node.node_type === 'operator') {
-        if (node.operator == 'not') {
-            return true;
+        if (['in', 'not'].includes(node.operator)) {
+            return isInline(node.left) && isInline(node.right);
         }
-        // if (node.operator == 'in') {
-        //     return true;
-        // }
-        // if (!isInline(node.left) || !isInline(node.right)) {
-        //     return false;
-        // }
         return false;
     }
     return true;

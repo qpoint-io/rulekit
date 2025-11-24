@@ -1,9 +1,11 @@
 <template>
-    <div style="display: inline-flex; flex-direction: row; gap: 0.25rem;">
-        <div v-for="row in rows" :key="JSON.stringify(row)"
-            style="display:inline-flex; flex-direction: column; gap: 0.25rem;">
+    <div style="display: inline-block;">
+        <div v-for="row in rows" :key="JSON.stringify(row)" style="display:flex; flex-direction: row; gap: 0.25rem;"
+            :style="{
+                'align-items': row.length == 3 ? 'baseline' : 'start',
+            }">
             <template v-for="el in row" :key="el">
-                <component :is="el" />
+                <slot :name="el" />
             </template>
         </div>
     </div>
@@ -20,9 +22,4 @@ defineSlots<{
 defineProps<{
     rows: element[][]
 }>()
-
-import { useSlots } from 'vue'
-
-
-const { l, o, r } = useSlots()
 </script>

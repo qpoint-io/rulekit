@@ -538,11 +538,17 @@ onUnmounted(async () => {
         <pre style="margin-top:0" class="rule-expression error">{{ result.error }}</pre>
       </div>
 
-      <div>Evaluated Rule
-
+      <div style="margin-bottom: 1em;">Evaluated Rule
         <codemirror v-model="result.evaluatedRule" :extensions="ruleExtensions"
-          :style="{ fontSize: '14px', cursor: 'text', maxHeight: '500px' }" :autofocus="false" :disabled="true"
-          placeholder="Evaluated Rule" :lineNumbers="false" />
+          :style="{ fontSize: '14px', cursor: 'text' }" :autofocus="false" :disabled="true"
+          placeholder="Evaluated Rule" />
+      </div>
+
+      <div>Rule Tree
+        <AstRenderer :node="astNode" :style="{
+          'background-color': '#000B16',
+          'padding': '0.5rem',
+        }" />
       </div>
     </div>
 
@@ -551,10 +557,6 @@ onUnmounted(async () => {
         <strong><span class="icon">!</span> Parse Error</strong>
         <div>{{ error }}</div>
       </div>
-    </div>
-
-    <div v-if="astNode" class="card">
-      <AstRenderer style="font-family: 'Departure Mono', 'Monaco', 'Menlo', monospace !important;" :node="astNode" />
     </div>
 
     <div :class="['card', { 'card-collapsed': !isAstExpanded }]">
