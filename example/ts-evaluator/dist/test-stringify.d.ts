@@ -1,0 +1,4 @@
+/**
+ * Test stringify functionality
+ */
+export {};
