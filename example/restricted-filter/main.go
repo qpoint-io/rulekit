@@ -9,9 +9,8 @@ import (
 )
 
 // sqlColumnNameRe matches valid SQL column names: starts with letter or underscore,
-// followed by letters, digits, or underscores. Dots are allowed to support
-// qualified names (e.g. table.column).
-var sqlColumnNameRe = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_.]*$`)
+// followed by letters, digits, or underscores.
+var sqlColumnNameRe = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
 // sqlSafeOperators are operators that have direct SQL equivalents.
 var sqlSafeOperators = map[string]bool{
@@ -142,6 +141,89 @@ func restrictOperator(n *rulekit.ASTNodeOperator, errs *[]string) {
 	}
 }
 
+// ToClickHouseSQL converts a validated rule into a ClickHouse SQL WHERE clause string.
+// It runs RestrictToSQL first; if the rule isn't SQL-compatible, it returns the validation error.
+func ToClickHouseSQL(r rulekit.Rule) (string, error) {
+	if err := RestrictToSQL(r); err != nil {
+		return "", err
+	}
+	return sqlExpr(r.ASTNode()), nil
+}
+
+func sqlExpr(node rulekit.ASTNode) string {
+	switch n := node.(type) {
+	case *rulekit.ASTNodeOperator:
+		return sqlOperator(n)
+	case *rulekit.ASTNodeField:
+		return sqlField(n)
+	case *rulekit.ASTNodeLiteral:
+		return sqlLiteral(n)
+	case *rulekit.ASTNodeArray:
+		return sqlArray(n)
+	default:
+		panic(fmt.Sprintf("unexpected AST node type %T", node))
+	}
+}
+
+func sqlOperator(n *rulekit.ASTNodeOperator) string {
+	switch n.Operator {
+	case "and":
+		return "(" + sqlExpr(n.Left) + " AND " + sqlExpr(n.Right) + ")"
+	case "or":
+		return "(" + sqlExpr(n.Left) + " OR " + sqlExpr(n.Right) + ")"
+	case "not":
+		return "NOT (" + sqlExpr(n.Right) + ")"
+	case "in":
+		return sqlExpr(n.Left) + " IN " + sqlExpr(n.Right)
+	case "contains":
+		return "position(" + sqlExpr(n.Left) + ", " + sqlExpr(n.Right) + ") > 0"
+	case "eq":
+		return sqlExpr(n.Left) + " = " + sqlExpr(n.Right)
+	case "ne":
+		return sqlExpr(n.Left) + " != " + sqlExpr(n.Right)
+	case "gt":
+		return sqlExpr(n.Left) + " > " + sqlExpr(n.Right)
+	case "ge":
+		return sqlExpr(n.Left) + " >= " + sqlExpr(n.Right)
+	case "lt":
+		return sqlExpr(n.Left) + " < " + sqlExpr(n.Right)
+	case "le":
+		return sqlExpr(n.Left) + " <= " + sqlExpr(n.Right)
+	default:
+		panic(fmt.Sprintf("unexpected operator %q", n.Operator))
+	}
+}
+
+func sqlField(n *rulekit.ASTNodeField) string {
+	return "`" + n.Name + "`"
+}
+
+func sqlLiteral(n *rulekit.ASTNodeLiteral) string {
+	switch n.Type {
+	case "string":
+		s := n.Value.(string)
+		escaped := strings.ReplaceAll(s, "'", "''")
+		return "'" + escaped + "'"
+	case "int64", "uint64", "float64":
+		return fmt.Sprintf("%v", n.Value)
+	case "bool":
+		if n.Value.(bool) {
+			return "true"
+		}
+		return "false"
+	default:
+		panic(fmt.Sprintf("unexpected literal type %q", n.Type))
+	}
+}
+
+func sqlArray(n *rulekit.ASTNodeArray) string {
+	elems := make([]string, len(n.Elements))
+	for i, elem := range n.Elements {
+		elems[i] = sqlExpr(elem)
+	}
+	return "(" + strings.Join(elems, ", ") + ")"
+}
+
 func main() {
 	tests := []struct {
 		name    string
@@ -161,10 +243,10 @@ func main() {
 		{name: "contains operator", rule: `path contains "/api"`},
 		{name: "boolean literal", rule: `enabled == true`},
 		{name: "float literal", rule: `score > 0.5`},
-		{name: "dotted field name", rule: `src.port == 8080`},
 		{name: "not equals", rule: `status != 404`},
 
 		// Invalid rules
+		{name: "dotted field name", rule: `src.port == 8080`, wantErr: true},
 		{name: "function call", rule: `starts_with(path, "/api")`, wantErr: true},
 		{name: "function in comparison", rule: `starts_with(path, "/api") == true`, wantErr: true},
 		{name: "function nested in and", rule: `port == 80 and starts_with(path, "/api")`, wantErr: true},
@@ -211,6 +293,67 @@ func main() {
 			for _, line := range strings.Split(err.Error(), "\n") {
 				fmt.Printf("      %s%s%s\n", dim, line, reset)
 			}
+		}
+		fmt.Println()
+	}
+
+	// --- SQL conversion tests ---
+	fmt.Println(strings.Repeat("─", 60))
+	fmt.Println("ClickHouse SQL conversion tests")
+	fmt.Println(strings.Repeat("─", 60))
+	fmt.Println()
+
+	sqlTests := []struct {
+		name string
+		rule string
+		want string
+	}{
+		{name: "simple equality", rule: `port == 8080`, want: "`port` = 8080"},
+		{name: "string comparison", rule: `method == "GET"`, want: "`method` = 'GET'"},
+		{name: "not equals", rule: `status != 404`, want: "`status` != 404"},
+		{name: "greater than", rule: `port > 1024`, want: "`port` > 1024"},
+		{name: "greater or equal", rule: `port >= 1024`, want: "`port` >= 1024"},
+		{name: "less than", rule: `status < 500`, want: "`status` < 500"},
+		{name: "less or equal", rule: `port <= 65535`, want: "`port` <= 65535"},
+		{name: "boolean literal", rule: `enabled == true`, want: "`enabled` = true"},
+		{name: "float literal", rule: `score > 0.5`, want: "`score` > 0.5"},
+		{name: "and logic", rule: `port == 8080 and method == "GET"`, want: "(`port` = 8080 AND `method` = 'GET')"},
+		{name: "or logic", rule: `port == 80 or port == 443`, want: "(`port` = 80 OR `port` = 443)"},
+		{name: "nested and/or", rule: `(port == 80 or port == 443) and method == "POST"`, want: "((`port` = 80 OR `port` = 443) AND `method` = 'POST')"},
+		{name: "not expression", rule: `not (port == 8080)`, want: "NOT (`port` = 8080)"},
+		{name: "in expression", rule: `method in ["GET", "POST", "PUT"]`, want: "`method` IN ('GET', 'POST', 'PUT')"},
+		{name: "contains operator", rule: `path contains "/api"`, want: "position(`path`, '/api') > 0"},
+		{name: "string with quote", rule: `name == "it's"`, want: "`name` = 'it''s'"},
+		{name: "deeply nested", rule: `((port == 80 or port == 443) and method == "GET") or (status >= 400 and status < 500)`, want: "(((`port` = 80 OR `port` = 443) AND `method` = 'GET') OR (`status` >= 400 AND `status` < 500))"},
+		{name: "not nested in and", rule: `(not (status == 500)) and method == "GET"`, want: "(NOT (`status` = 500) AND `method` = 'GET')"},
+	}
+
+	for _, tt := range sqlTests {
+		r, err := rulekit.Parse(tt.rule)
+		if err != nil {
+			fmt.Printf("%sFAIL%s  %s\n", red, reset, tt.name)
+			fmt.Printf("      %s%s%s\n", cyan, tt.rule, reset)
+			fmt.Printf("      %sparse error: %v%s\n\n", red, err, reset)
+			continue
+		}
+
+		got, err := ToClickHouseSQL(r)
+		if err != nil {
+			fmt.Printf("%sFAIL%s  %s\n", red, reset, tt.name)
+			fmt.Printf("      %s%s%s\n", cyan, tt.rule, reset)
+			fmt.Printf("      %s%v%s\n\n", red, err, reset)
+			continue
+		}
+
+		if got == tt.want {
+			fmt.Printf("%sPASS%s  %s\n", green, reset, tt.name)
+		} else {
+			fmt.Printf("%sFAIL%s  %s\n", red, reset, tt.name)
+		}
+		fmt.Printf("      %s%s%s\n", cyan, tt.rule, reset)
+		fmt.Printf("      %s→ WHERE %s%s\n", dim, got, reset)
+		if got != tt.want {
+			fmt.Printf("      %swant: %s%s\n", red, tt.want, reset)
 		}
 		fmt.Println()
 	}
