@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+regex = "1"
+ipnet = "2"
 
 [build-dependencies]
 rust-bison-skeleton = "0.41"

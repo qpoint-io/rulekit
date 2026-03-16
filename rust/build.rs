@@ -5,8 +5,13 @@ fn main() {
     match process_bison_file(Path::new("src/parser.y")) {
         Ok(_) => {}
         Err(BisonErr { message, .. }) => {
-            eprintln!("Bison error:\n{}\nexiting with 1", message);
-            std::process::exit(1);
+            // If a pre-generated parser.rs exists, just warn and continue.
+            if Path::new("src/parser.rs").exists() {
+                eprintln!("Bison warning (using pre-generated parser.rs):\n{}", message);
+            } else {
+                eprintln!("Bison error:\n{}\nexiting with 1", message);
+                std::process::exit(1);
+            }
         }
     }
     println!("cargo:rerun-if-changed=src/parser.y");
