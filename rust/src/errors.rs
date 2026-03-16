@@ -6,6 +6,7 @@ pub enum EvalError {
     MissingFields(HashSet<String>),
     InvalidOperation(String),
     UnknownFunction(String),
+    InvalidFunctionArg { name: String, expected: String, got: String },
     Multiple(Vec<EvalError>),
 }
 
@@ -19,6 +20,9 @@ impl fmt::Display for EvalError {
             }
             EvalError::InvalidOperation(msg) => write!(f, "invalid operation: {}", msg),
             EvalError::UnknownFunction(name) => write!(f, "unknown function: {}", name),
+            EvalError::InvalidFunctionArg { name, expected, got } => {
+                write!(f, "invalid argument {}: expected {}, got {}", name, expected, got)
+            }
             EvalError::Multiple(errs) => {
                 for (i, e) in errs.iter().enumerate() {
                     if i > 0 {

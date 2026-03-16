@@ -7,6 +7,7 @@ use regex::Regex;
 use crate::ast::{Expr, LiteralValue, Operator};
 use crate::compare;
 use crate::errors::{coalesce_errors, EvalError};
+use crate::functions::{get_stdlib, FunctionDef};
 
 /// Runtime value produced during evaluation.
 #[derive(Debug, Clone)]
@@ -59,9 +60,46 @@ impl std::fmt::Display for Value {
 /// A nested key-value map used as evaluation context.
 pub type KV = HashMap<String, Value>;
 
-/// Evaluation context holding the key-value data.
+/// Evaluation context holding the key-value data, custom functions, and macros.
 pub struct Ctx {
     pub kv: KV,
+    pub functions: HashMap<String, FunctionDef>,
+    pub macros: HashMap<String, Expr>,
+}
+
+impl Ctx {
+    /// Create a new context with the given KV data and empty functions/macros.
+    pub fn new(kv: KV) -> Self {
+        Ctx {
+            kv,
+            functions: HashMap::new(),
+            macros: HashMap::new(),
+        }
+    }
+
+    /// Validate the context for name conflicts between stdlib, custom functions, and macros.
+    pub fn validate(&self) -> Result<(), EvalError> {
+        for name in self.functions.keys() {
+            if get_stdlib(name).is_some() {
+                return Err(EvalError::InvalidOperation(
+                    format!("function {:?}: name conflicts with a stdlib function", name),
+                ));
+            }
+        }
+        for name in self.macros.keys() {
+            if get_stdlib(name).is_some() {
+                return Err(EvalError::InvalidOperation(
+                    format!("macro {:?}: name conflicts with a stdlib function", name),
+                ));
+            }
+            if self.functions.contains_key(name) {
+                return Err(EvalError::InvalidOperation(
+                    format!("macro {:?}: name conflicts with a custom function", name),
+                ));
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Result of evaluating an expression.
@@ -174,9 +212,7 @@ impl Expr {
                 Err(e) => EvalResult::with_error(e),
             },
             Expr::Array(elems) => eval_array(elems, ctx),
-            Expr::FunctionCall { name, .. } => EvalResult::with_error(
-                EvalError::UnknownFunction(format!("{} (functions not yet implemented)", name)),
-            ),
+            Expr::FunctionCall { name, args } => eval_function_call(name, args, ctx),
         }
     }
 }
@@ -310,6 +346,50 @@ fn eval_field(name: &str, ctx: &Ctx) -> EvalResult {
     }
 }
 
+fn eval_function_call(name: &str, args: &[Expr], ctx: &Ctx) -> EvalResult {
+    // 1. Stdlib functions
+    if let Some(fndef) = get_stdlib(name) {
+        return eval_fn_with_def(name, fndef, args, ctx);
+    }
+    // 2. Custom functions
+    if let Some(fndef) = ctx.functions.get(name) {
+        return eval_fn_with_def(name, fndef, args, ctx);
+    }
+    // 3. Macros (zero args)
+    if let Some(macro_expr) = ctx.macros.get(name) {
+        if !args.is_empty() {
+            return EvalResult::with_error(EvalError::InvalidOperation(
+                format!("macro {:?} expects 0 arguments, got {}", name, args.len()),
+            ));
+        }
+        return macro_expr.clone().eval(ctx);
+    }
+    // 4. Unknown
+    EvalResult::with_error(EvalError::UnknownFunction(name.to_string()))
+}
+
+fn eval_fn_with_def(name: &str, fndef: &FunctionDef, args: &[Expr], ctx: &Ctx) -> EvalResult {
+    if fndef.args.len() != args.len() {
+        return EvalResult::with_error(EvalError::InvalidOperation(
+            format!(
+                "function {:?} expects {} arguments, got {}",
+                name,
+                fndef.args.len(),
+                args.len()
+            ),
+        ));
+    }
+    let mut arg_map = HashMap::with_capacity(args.len());
+    for (i, arg_expr) in args.iter().enumerate() {
+        let r = arg_expr.eval(ctx);
+        if !r.ok() {
+            return r;
+        }
+        arg_map.insert(fndef.args[i].to_string(), r.value);
+    }
+    (fndef.eval)(&arg_map)
+}
+
 fn eval_array(elems: &[Expr], ctx: &Ctx) -> EvalResult {
     let mut vals = Vec::with_capacity(elems.len());
     for elem in elems {
@@ -351,7 +431,7 @@ mod tests {
 
     #[test]
     fn test_eval_literal() {
-        let ctx = Ctx { kv: HashMap::new() };
+        let ctx = Ctx::new(HashMap::new());
         let expr = Expr::Literal(LiteralValue::Int(42));
         let r = expr.eval(&ctx);
         assert!(r.ok());
@@ -362,7 +442,7 @@ mod tests {
     fn test_eval_field_lookup() {
         let mut kv = HashMap::new();
         kv.insert("port".into(), Value::Int(8080));
-        let ctx = Ctx { kv };
+        let ctx = Ctx::new(kv);
 
         let expr = Expr::Field("port".into());
         let r = expr.eval(&ctx);
@@ -372,7 +452,7 @@ mod tests {
 
     #[test]
     fn test_eval_field_missing() {
-        let ctx = Ctx { kv: HashMap::new() };
+        let ctx = Ctx::new(HashMap::new());
         let expr = Expr::Field("port".into());
         let r = expr.eval(&ctx);
         assert!(!r.ok());
@@ -383,7 +463,7 @@ mod tests {
     fn test_eval_compare_eq() {
         let mut kv = HashMap::new();
         kv.insert("port".into(), Value::Int(8080));
-        let ctx = Ctx { kv };
+        let ctx = Ctx::new(kv);
 
         let expr = Expr::Compare {
             left: Box::new(Expr::Field("port".into())),
@@ -399,7 +479,7 @@ mod tests {
         let mut kv = HashMap::new();
         kv.insert("a".into(), Value::Bool(false));
         kv.insert("b".into(), Value::Bool(true));
-        let ctx = Ctx { kv };
+        let ctx = Ctx::new(kv);
 
         let expr = Expr::And {
             left: Box::new(Expr::Field("a".into())),
@@ -413,7 +493,7 @@ mod tests {
     fn test_eval_or_short_circuit() {
         let mut kv = HashMap::new();
         kv.insert("a".into(), Value::Bool(true));
-        let ctx = Ctx { kv };
+        let ctx = Ctx::new(kv);
 
         let expr = Expr::Or {
             left: Box::new(Expr::Field("a".into())),
@@ -427,7 +507,7 @@ mod tests {
     fn test_eval_not() {
         let mut kv = HashMap::new();
         kv.insert("flag".into(), Value::Bool(false));
-        let ctx = Ctx { kv };
+        let ctx = Ctx::new(kv);
 
         let expr = Expr::Not {
             expr: Box::new(Expr::Field("flag".into())),
@@ -440,7 +520,7 @@ mod tests {
     fn test_eval_match() {
         let mut kv = HashMap::new();
         kv.insert("domain".into(), Value::String("example.com".into()));
-        let ctx = Ctx { kv };
+        let ctx = Ctx::new(kv);
 
         let expr = Expr::Match {
             left: Box::new(Expr::Field("domain".into())),
@@ -454,7 +534,7 @@ mod tests {
     fn test_eval_in_array() {
         let mut kv = HashMap::new();
         kv.insert("port".into(), Value::Int(443));
-        let ctx = Ctx { kv };
+        let ctx = Ctx::new(kv);
 
         let expr = Expr::In {
             left: Box::new(Expr::Field("port".into())),
@@ -472,7 +552,7 @@ mod tests {
     fn test_eval_in_cidr() {
         let mut kv = HashMap::new();
         kv.insert("ip".into(), Value::Ip("10.1.2.3".parse().unwrap()));
-        let ctx = Ctx { kv };
+        let ctx = Ctx::new(kv);
 
         let expr = Expr::In {
             left: Box::new(Expr::Field("ip".into())),

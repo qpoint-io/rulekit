@@ -2,6 +2,7 @@ mod ast;
 mod compare;
 mod errors;
 mod eval;
+mod functions;
 mod types;
 #[allow(dead_code, unused_imports, unused_variables, unused_assignments, non_upper_case_globals, non_snake_case, unreachable_code, unused_parens, unused_mut)]
 mod parser;
@@ -10,7 +11,8 @@ mod lexer;
 
 use std::collections::HashMap;
 
-use crate::eval::{is_zero, Ctx, Value};
+use crate::eval::{is_zero, Ctx, EvalResult, Value};
+use crate::functions::FunctionDef;
 use crate::lexer::Lexer;
 use crate::parser::Parser;
 
@@ -33,8 +35,12 @@ const YELLOW: &str = "\x1b[33m";
 const CYAN: &str = "\x1b[36m";
 
 fn run_test(rule: &str, kv: HashMap<String, Value>) {
+    run_test_ctx(rule, Ctx::new(kv));
+}
+
+fn run_test_ctx(rule: &str, ctx: Ctx) {
     let expr = parse(rule);
-    let ctx = Ctx { kv: kv.clone() };
+    let kv = ctx.kv.clone();
     let result = expr.eval(&ctx);
 
     // rule
@@ -190,4 +196,46 @@ fn main() {
     run_test("5 > 3", kv! {});
     run_test("true and false", kv! {});
     run_test(r#""hello" == "hello""#, kv! {});
+
+    // --- functions ---
+    println!("{BOLD}{CYAN}--- functions ---{RESET}\n");
+
+    run_test(r#"starts_with(host, "example")"#, kv! {
+        "host" => Value::String("example.com".into()),
+    });
+
+    run_test(r#"starts_with(host, "other")"#, kv! {
+        "host" => Value::String("example.com".into()),
+    });
+
+    // Custom function
+    {
+        let mut ctx = Ctx::new(HashMap::new());
+        ctx.functions.insert("greet".into(), FunctionDef {
+            args: &["name"],
+            eval: |args| {
+                let name = match &args["name"] {
+                    Value::String(s) => s.clone(),
+                    other => format!("{}", other),
+                };
+                EvalResult { value: Value::String(format!("hello, {}!", name)), error: None }
+            },
+        });
+        run_test_ctx(r#"greet("world")"#, ctx);
+    }
+
+    // --- macros ---
+    println!("{BOLD}{CYAN}--- macros ---{RESET}\n");
+
+    {
+        let mut ctx = Ctx::new(kv! { "port" => Value::Int(443) });
+        ctx.macros.insert("is_web".into(), parse("port == 80 or port == 443"));
+        run_test_ctx("is_web()", ctx);
+    }
+
+    {
+        let mut ctx = Ctx::new(kv! { "port" => Value::Int(9090) });
+        ctx.macros.insert("is_web".into(), parse("port == 80 or port == 443"));
+        run_test_ctx("is_web()", ctx);
+    }
 }
