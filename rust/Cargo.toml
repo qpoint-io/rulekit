@@ -1,0 +1,9 @@
+[package]
+name = "rulekit"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+[build-dependencies]
+rust-bison-skeleton = "0.41"
