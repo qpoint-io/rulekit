@@ -20,8 +20,10 @@ pub enum Value {
     IpCidr(IpNet),
     HexString(Vec<u8>),
     Regex(Regex),
+    #[allow(dead_code)]
     Bytes(Vec<u8>),
     Array(Vec<Value>),
+    #[allow(dead_code)]
     Map(HashMap<String, Value>),
     Null,
 }
@@ -199,6 +201,14 @@ fn literal_to_value(lit: &LiteralValue) -> Result<Value, EvalError> {
 impl Expr {
     /// Evaluate this expression against the given context.
     pub fn eval(&self, ctx: &Ctx) -> EvalResult {
+        if let Err(e) = ctx.validate() {
+            return EvalResult::with_error(e);
+        }
+        self.eval_inner(ctx)
+    }
+
+    /// Inner evaluation — skips validation (used for recursive calls).
+    fn eval_inner(&self, ctx: &Ctx) -> EvalResult {
         match self {
             Expr::And { left, right } => eval_and(left, right, ctx),
             Expr::Or { left, right } => eval_or(left, right, ctx),
@@ -218,12 +228,12 @@ impl Expr {
 }
 
 fn eval_and(left: &Expr, right: &Expr, ctx: &Ctx) -> EvalResult {
-    let rleft = left.eval(ctx);
+    let rleft = left.eval_inner(ctx);
     if rleft.fail() {
         return rleft;
     }
 
-    let rright = right.eval(ctx);
+    let rright = right.eval_inner(ctx);
     if rright.fail() {
         return rright;
     }
@@ -248,12 +258,12 @@ fn eval_and(left: &Expr, right: &Expr, ctx: &Ctx) -> EvalResult {
 }
 
 fn eval_or(left: &Expr, right: &Expr, ctx: &Ctx) -> EvalResult {
-    let rleft = left.eval(ctx);
+    let rleft = left.eval_inner(ctx);
     if rleft.pass() {
         return rleft;
     }
 
-    let rright = right.eval(ctx);
+    let rright = right.eval_inner(ctx);
     if rright.pass() {
         return rright;
     }
@@ -277,7 +287,7 @@ fn eval_or(left: &Expr, right: &Expr, ctx: &Ctx) -> EvalResult {
 }
 
 fn eval_not(expr: &Expr, ctx: &Ctx) -> EvalResult {
-    let r = expr.eval(ctx);
+    let r = expr.eval_inner(ctx);
     if !r.ok() {
         return EvalResult::with_error(r.error.unwrap());
     }
@@ -285,11 +295,11 @@ fn eval_not(expr: &Expr, ctx: &Ctx) -> EvalResult {
 }
 
 fn eval_compare(left: &Expr, op: Operator, right: &Expr, ctx: &Ctx) -> EvalResult {
-    let lv = left.eval(ctx);
+    let lv = left.eval_inner(ctx);
     if !lv.ok() {
         return lv;
     }
-    let rv = right.eval(ctx);
+    let rv = right.eval_inner(ctx);
     if !rv.ok() {
         return rv;
     }
@@ -298,11 +308,11 @@ fn eval_compare(left: &Expr, op: Operator, right: &Expr, ctx: &Ctx) -> EvalResul
 }
 
 fn eval_match(left: &Expr, right: &Expr, ctx: &Ctx) -> EvalResult {
-    let lv = left.eval(ctx);
+    let lv = left.eval_inner(ctx);
     if !lv.ok() {
         return lv;
     }
-    let rv = right.eval(ctx);
+    let rv = right.eval_inner(ctx);
     if !rv.ok() {
         return rv;
     }
@@ -311,11 +321,11 @@ fn eval_match(left: &Expr, right: &Expr, ctx: &Ctx) -> EvalResult {
 }
 
 fn eval_in(left: &Expr, right: &Expr, ctx: &Ctx) -> EvalResult {
-    let lv = left.eval(ctx);
+    let lv = left.eval_inner(ctx);
     if !lv.ok() {
         return lv;
     }
-    let rv = right.eval(ctx);
+    let rv = right.eval_inner(ctx);
     if !rv.ok() {
         return rv;
     }
@@ -362,7 +372,7 @@ fn eval_function_call(name: &str, args: &[Expr], ctx: &Ctx) -> EvalResult {
                 format!("macro {:?} expects 0 arguments, got {}", name, args.len()),
             ));
         }
-        return macro_expr.clone().eval(ctx);
+        return macro_expr.clone().eval_inner(ctx);
     }
     // 4. Unknown
     EvalResult::with_error(EvalError::UnknownFunction(name.to_string()))
@@ -379,21 +389,21 @@ fn eval_fn_with_def(name: &str, fndef: &FunctionDef, args: &[Expr], ctx: &Ctx) -
             ),
         ));
     }
-    let mut arg_map = HashMap::with_capacity(args.len());
-    for (i, arg_expr) in args.iter().enumerate() {
-        let r = arg_expr.eval(ctx);
+    let mut vals = Vec::with_capacity(args.len());
+    for arg_expr in args {
+        let r = arg_expr.eval_inner(ctx);
         if !r.ok() {
             return r;
         }
-        arg_map.insert(fndef.args[i].to_string(), r.value);
+        vals.push(r.value);
     }
-    (fndef.eval)(&arg_map)
+    fndef.call(&vals)
 }
 
 fn eval_array(elems: &[Expr], ctx: &Ctx) -> EvalResult {
     let mut vals = Vec::with_capacity(elems.len());
     for elem in elems {
-        let r = elem.eval(ctx);
+        let r = elem.eval_inner(ctx);
         if !r.ok() {
             return r;
         }

@@ -11,7 +11,7 @@ mod lexer;
 
 use std::collections::HashMap;
 
-use crate::eval::{is_zero, Ctx, EvalResult, Value};
+use crate::eval::{is_zero, Ctx, Value};
 use crate::functions::FunctionDef;
 use crate::lexer::Lexer;
 use crate::parser::Parser;
@@ -208,20 +208,22 @@ fn main() {
         "host" => Value::String("example.com".into()),
     });
 
-    // Custom function
+    // Custom function (typed closure)
     {
         let mut ctx = Ctx::new(HashMap::new());
-        ctx.functions.insert("greet".into(), FunctionDef {
-            args: &["name"],
-            eval: |args| {
-                let name = match &args["name"] {
-                    Value::String(s) => s.clone(),
-                    other => format!("{}", other),
-                };
-                EvalResult { value: Value::String(format!("hello, {}!", name)), error: None }
-            },
-        });
+        ctx.functions.insert("greet".into(), FunctionDef::new(&["name"], |name: String| {
+            Value::String(format!("hello, {}!", name))
+        }));
         run_test_ctx(r#"greet("world")"#, ctx);
+    }
+
+    // Type mismatch: passing Int where String is expected (auto InvalidFunctionArg)
+    {
+        let mut ctx = Ctx::new(kv! { "port" => Value::Int(8080) });
+        ctx.functions.insert("require_string".into(), FunctionDef::new(&["val"], |val: String| {
+            Value::String(val)
+        }));
+        run_test_ctx("require_string(port)", ctx);
     }
 
     // --- macros ---

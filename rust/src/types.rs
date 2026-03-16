@@ -31,6 +31,7 @@ impl Token {
 /// these variants via an extraction function or module of the same name.
 #[derive(Clone, Debug)]
 pub enum Value {
+    #[allow(dead_code)]
     None,
     Uninitialized,
     Stolen,

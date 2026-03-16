@@ -8,7 +8,9 @@ pub enum Operator {
     Lt,
     Le,
     Contains,
+    #[allow(dead_code)]
     Matches,
+    #[allow(dead_code)]
     In,
 }
 
