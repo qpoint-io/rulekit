@@ -142,13 +142,27 @@ Plain dotted fields do not fall back to flat keys. If the input contains a top-l
 
 ### JSON Input Helpers
 
-`DecodeJSON` converts JSON documents into `rulekit.KV`. Plain JSON decodes dynamically by default. Annotated key suffixes are opt-in:
+`DecodeJSON` converts JSON documents into `rulekit.KV`. Plain JSON decodes dynamically by default. Annotated key suffixes are opt-in and are intended for values that JSON cannot represent natively:
 
 ```go
 kv, err := rulekit.DecodeJSON(data, rulekit.JSONOptions{AnnotatedKeys: true})
 ```
 
-Supported suffixes include `.$ip`, `.$cidr`, `.$mac`, `.$bytes_hex`, `.$bytes_base64`, `.$int64`, `.$uint64`, and `.$float64`. Fully typed JSON values are also supported with objects such as `{ "$type": "ip", "value": "1.2.3.4" }`.
+Supported suffixes include `.$ip`, `.$cidr`, `.$mac`, `.$hex`, `.$base64`, `.$bytes_hex`, `.$bytes_base64`, `.$string`, `.$bool`, `.$int64`, `.$uint64`, and `.$float64`.
+
+Fully typed documents are a separate mode. In this mode, every field value must be a typed object and annotated keys are rejected:
+
+```go
+kv, err := rulekit.DecodeJSON(data, rulekit.JSONOptions{TypedDocument: true})
+```
+
+```json
+{
+  "src": { "$type": "ip", "value": "1.2.3.4" },
+  "payload": { "$type": "bytes", "encoding": "hex", "value": "474554" },
+  "u64": { "$type": "uint64", "value": "18446744073709551615" }
+}
+```
 
 ### AST API
 

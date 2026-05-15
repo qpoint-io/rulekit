@@ -534,21 +534,6 @@ type parser struct {
 	pos    int
 }
 
-func parseRule(input string) (Rule, error) {
-	expr, err := parseAST(input)
-	if err != nil {
-		return nil, err
-	}
-	rule, err := lowerAST(expr)
-	if err != nil {
-		if lowerErr, ok := err.(*astLowerError); ok {
-			return nil, newParseError(input, token{start: lowerErr.span.Start, end: lowerErr.span.End}, lowerErr.msg)
-		}
-		return nil, err
-	}
-	return rule, nil
-}
-
 func parseAST(input string) (astNode, error) {
 	expr, _, err := parseASTWithTokens(input)
 	return expr, err
@@ -876,22 +861,6 @@ func isInequality(op int) bool {
 	return op == op_GT || op == op_GE || op == op_LT || op == op_LE
 }
 
-func validInequalityOperand(r Rule) bool {
-	if _, ok := r.(FieldValue); ok {
-		return true
-	}
-	if _, ok := r.(*PathValue); ok {
-		return true
-	}
-	if _, ok := r.(*FunctionValue); ok {
-		return true
-	}
-	if literalIs[int64](r) || literalIs[uint64](r) || literalIs[float64](r) {
-		return true
-	}
-	return false
-}
-
 func literalIs[T any](r Rule) bool {
 	lit, ok := r.(*LiteralValue[any])
 	if !ok {
@@ -952,14 +921,4 @@ func getSuggestion(err string) string {
 		return "field names must be valid identifiers (e.g. 'field_name' or 'field.name')"
 	}
 	return ""
-}
-
-func safeIndex[T any](slice []T, a, b int) []T {
-	if a < 0 || b < 0 || a > b {
-		return nil
-	}
-	if b > len(slice) {
-		b = len(slice)
-	}
-	return slice[a:b]
 }
