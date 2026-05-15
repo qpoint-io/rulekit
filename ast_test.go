@@ -92,7 +92,10 @@ func TestFormat(t *testing.T) {
 
 	multiline, err := Format(ast, FormatOptions{Mode: FormatMultiline, Indent: "    "})
 	require.NoError(t, err)
-	require.Equal(t, `(a == 1 or b == 2)
+	require.Equal(t, `(
+    a == 1
+    or b == 2
+)
 and c == 3
 and request.headers["user-agent"] == "curl"`, multiline)
 

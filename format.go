@@ -42,15 +42,77 @@ func formatMultiline(node astNode, opts FormatOptions, depth int) string {
 	if !ok || (binary.op != astOpAnd && binary.op != astOpOr) {
 		return printAST(node)
 	}
-
-	left := printASTWithParent(binary.left, astPrecedence(binary), false)
-	if leftBinary, ok := binary.left.(*astBinary); ok && leftBinary.op == binary.op {
-		left = formatMultiline(binary.left, opts, depth)
-	}
-	right := printASTWithParent(binary.right, astPrecedence(binary), true)
-	if rightBinary, ok := binary.right.(*astBinary); ok && rightBinary.op == binary.op {
-		right = formatMultiline(binary.right, opts, depth)
+	if hasSameOperatorChild(binary) {
+		return formatMultilineChain(binary, opts, depth)
 	}
 
-	return left + "\n" + strings.Repeat(opts.Indent, depth) + astOperatorString(binary.op) + " " + right
+	left := formatMultilineOperand(binary.left, opts, depth, binary.op, false)
+	right := formatMultilineOperand(binary.right, opts, depth, binary.op, true)
+	operator := astOperatorString(binary.op)
+	indent := strings.Repeat(opts.Indent, depth)
+
+	if leftBinary, ok := binary.left.(*astBinary); ok && astPrecedence(leftBinary) < astPrecedence(binary) {
+		return left + " " + operator + " " + right
+	}
+	if rightBinary, ok := binary.right.(*astBinary); ok && astPrecedence(rightBinary) < astPrecedence(binary) {
+		return left + " " + operator + " " + right
+	}
+	return left + "\n" + indent + operator + " " + right
+}
+
+func hasSameOperatorChild(binary *astBinary) bool {
+	left, leftOK := binary.left.(*astBinary)
+	right, rightOK := binary.right.(*astBinary)
+	return leftOK && left.op == binary.op || rightOK && right.op == binary.op
+}
+
+func formatMultilineChain(binary *astBinary, opts FormatOptions, depth int) string {
+	operands := flattenOperator(binary, binary.op)
+	operator := astOperatorString(binary.op)
+	indent := strings.Repeat(opts.Indent, depth)
+	parts := make([]string, 0, len(operands))
+	for i, operand := range operands {
+		formatted := formatMultilineOperand(operand, opts, depth, binary.op, i > 0)
+		if i > 0 {
+			formatted = indent + operator + " " + formatted
+		}
+		parts = append(parts, formatted)
+	}
+	return strings.Join(parts, "\n")
+}
+
+func flattenOperator(node astNode, op astOperator) []astNode {
+	if binary, ok := node.(*astBinary); ok && binary.op == op {
+		left := flattenOperator(binary.left, op)
+		right := flattenOperator(binary.right, op)
+		return append(left, right...)
+	}
+	return []astNode{node}
+}
+
+func formatMultilineOperand(node astNode, opts FormatOptions, depth int, parentOp astOperator, rightChild bool) string {
+	if binary, ok := node.(*astBinary); ok {
+		if astPrecedence(binary) < infixPrecedence(tokenKindFromASTOperator(parentOp)) {
+			return formatGroupedMultiline(binary, opts, depth)
+		}
+		if binary.op == parentOp {
+			return formatMultiline(binary, opts, depth)
+		}
+	}
+	return printASTWithParent(node, infixPrecedence(tokenKindFromASTOperator(parentOp)), rightChild)
+}
+
+func formatGroupedMultiline(node astNode, opts FormatOptions, depth int) string {
+	inner := formatMultiline(node, opts, 0)
+	innerIndent := strings.Repeat(opts.Indent, depth+1)
+	closingIndent := strings.Repeat(opts.Indent, depth)
+	return "(\n" + indentLines(inner, innerIndent) + "\n" + closingIndent + ")"
+}
+
+func indentLines(s, indent string) string {
+	lines := strings.Split(s, "\n")
+	for i := range lines {
+		lines[i] = indent + lines[i]
+	}
+	return strings.Join(lines, "\n")
 }
