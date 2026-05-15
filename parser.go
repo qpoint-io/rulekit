@@ -521,6 +521,21 @@ type parser struct {
 }
 
 func parseRule(input string) (Rule, error) {
+	expr, err := parseAST(input)
+	if err != nil {
+		return nil, err
+	}
+	rule, err := lowerAST(expr)
+	if err != nil {
+		if lowerErr, ok := err.(*astLowerError); ok {
+			return nil, newParseError(input, token{start: lowerErr.span.Start, end: lowerErr.span.End}, lowerErr.msg)
+		}
+		return nil, err
+	}
+	return rule, nil
+}
+
+func parseAST(input string) (astNode, error) {
 	tokens, err := lex(input)
 	if err != nil {
 		return nil, newParseError(input, tokens[len(tokens)-1], err.Error())
@@ -536,7 +551,7 @@ func parseRule(input string) (Rule, error) {
 	return expr, nil
 }
 
-func (p *parser) parseExpr(minPrec int) (Rule, error) {
+func (p *parser) parseExpr(minPrec int) (astNode, error) {
 	left, err := p.parsePrimary()
 	if err != nil {
 		return nil, err
@@ -560,20 +575,16 @@ func (p *parser) parseExpr(minPrec int) (Rule, error) {
 			if err != nil {
 				return nil, err
 			}
-			if tok.kind == op_AND {
-				left = &nodeAnd{left: left, right: right}
-			} else {
-				left = &nodeOr{left: left, right: right}
-			}
+			left = &astBinary{span: joinSpan(left.astSpan(), right.astSpan()), left: left, op: astOperatorFromToken(tok.kind), rawOp: tok.raw, right: right}
 		case op_EQ, op_NE, op_CONTAINS, op_GT, op_GE, op_LT, op_LE:
 			right, err := p.parseExpr(prec + 1)
 			if err != nil {
 				return nil, err
 			}
-			if isInequality(tok.kind) && (!validInequalityOperand(left) || !validInequalityOperand(right)) {
+			if isInequality(tok.kind) && (!astValidInequalityOperand(left) || !astValidInequalityOperand(right)) {
 				return nil, p.errorf(tok, "invalid operation")
 			}
-			left = &nodeCompare{lv: left, op: tok.kind, rv: right}
+			left = &astBinary{span: joinSpan(left.astSpan(), right.astSpan()), left: left, op: astOperatorFromToken(tok.kind), rawOp: tok.raw, right: right}
 		case op_MATCHES:
 			rhs := p.peek()
 			if rhs.kind != token_REGEX {
@@ -587,39 +598,33 @@ func (p *parser) parseExpr(minPrec int) (Rule, error) {
 			if err != nil {
 				return nil, err
 			}
-			left = &nodeMatch{lv: left, rv: right}
+			left = &astBinary{span: joinSpan(left.astSpan(), right.astSpan()), left: left, op: astOpMatches, rawOp: tok.raw, right: right}
 		case op_IN:
 			right, err := p.parseExpr(prec + 1)
 			if err != nil {
 				return nil, err
 			}
-			if literalIs[*net.IPNet](right) {
-				left = &nodeCompare{lv: left, op: op_EQ, rv: right}
-				break
+			if !astLiteralIs(right, token_IP_CIDR) {
+				if _, ok := right.(*astArray); !ok {
+					return nil, p.errorf(tok, "in requires an array or CIDR value")
+				}
 			}
-			if _, ok := right.(*ArrayValue); !ok {
-				return nil, p.errorf(tok, "in requires an array or CIDR value")
-			}
-			left = &nodeIn{lv: left, rv: right}
+			left = &astBinary{span: joinSpan(left.astSpan(), right.astSpan()), left: left, op: astOpIn, rawOp: tok.raw, right: right}
 		}
 	}
 	return left, nil
 }
 
-func (p *parser) parsePrimary() (Rule, error) {
+func (p *parser) parsePrimary() (astNode, error) {
 	tok := p.next()
 	switch tok.kind {
 	case token_FIELD:
 		if p.peek().kind == token_LPAREN {
 			return p.parseFunction(tok)
 		}
-		return FieldValue(tok.raw), nil
+		return &astPath{span: spanFromToken(tok), segments: fieldPathSegments(tok.raw)}, nil
 	case token_STRING, token_INT, token_FLOAT, token_BOOL, token_IP, token_IP_CIDR, token_HEX_STRING, token_REGEX:
-		v, err := parseValueToken(tok.kind, []byte(tok.raw))
-		if err != nil {
-			return nil, p.errorf(tok, "%s", err.Error())
-		}
-		return v, nil
+		return &astLiteral{span: spanFromToken(tok), kind: tok.kind, raw: tok.raw}, nil
 	case token_LPAREN:
 		expr, err := p.parseExpr(0)
 		if err != nil {
@@ -639,7 +644,7 @@ func (p *parser) parsePrimary() (Rule, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &nodeNot{right: right}, nil
+		return &astUnary{span: joinSpan(spanFromToken(tok), right.astSpan()), op: astOpNot, rawOp: tok.raw, right: right}, nil
 	case token_EOF:
 		return nil, p.errorf(tok, "empty expression")
 	default:
@@ -647,7 +652,7 @@ func (p *parser) parsePrimary() (Rule, error) {
 	}
 }
 
-func (p *parser) parsePostfix(left Rule) (Rule, error) {
+func (p *parser) parsePostfix(left astNode) (astNode, error) {
 	for {
 		switch p.peek().kind {
 		case token_LBRACKET:
@@ -656,11 +661,12 @@ func (p *parser) parsePostfix(left Rule) (Rule, error) {
 			if err != nil {
 				return nil, err
 			}
-			path, ok := asPathValue(left)
+			path, ok := asASTPath(left)
 			if !ok {
 				return nil, p.errorf(start, "bracket indexing requires a field path")
 			}
 			path.segments = append(path.segments, seg)
+			path.span.End = p.tokens[p.pos-1].end
 			left = path
 		case token_DOT:
 			dot := p.next()
@@ -668,11 +674,12 @@ func (p *parser) parsePostfix(left Rule) (Rule, error) {
 			if err != nil {
 				return nil, err
 			}
-			path, ok := asPathValue(left)
+			path, ok := asASTPath(left)
 			if !ok {
 				return nil, p.errorf(dot, "dot traversal requires a field path")
 			}
 			path.segments = append(path.segments, fieldPathSegments(tok.raw)...)
+			path.span.End = tok.end
 			left = path
 		default:
 			return left, nil
@@ -695,12 +702,12 @@ func (p *parser) isRootBracketPath() bool {
 	}
 }
 
-func (p *parser) parseRootBracketPath(start token) (Rule, error) {
+func (p *parser) parseRootBracketPath(start token) (astNode, error) {
 	seg, err := p.parseBracketSegment(start)
 	if err != nil {
 		return nil, err
 	}
-	return &PathValue{segments: []pathSegment{seg}}, nil
+	return &astPath{span: astSpan{Start: start.start, End: p.tokens[p.pos-1].end}, segments: []pathSegment{seg}}, nil
 }
 
 func (p *parser) parseBracketSegment(start token) (pathSegment, error) {
@@ -735,11 +742,11 @@ func (p *parser) parseBracketSegment(start token) (pathSegment, error) {
 	return seg, nil
 }
 
-func (p *parser) parseArray(start token) (Rule, error) {
+func (p *parser) parseArray(start token) (astNode, error) {
 	if p.peek().kind == token_RBRACKET {
 		return nil, p.errorf(p.peek(), "array requires at least one value")
 	}
-	var vals []Rule
+	var vals []astNode
 	for {
 		val, err := p.parseArrayValue()
 		if err != nil {
@@ -758,10 +765,10 @@ func (p *parser) parseArray(start token) (Rule, error) {
 		return nil, err
 	}
 	_ = start
-	return newArrayValue(vals), nil
+	return &astArray{span: astSpan{Start: start.start, End: p.tokens[p.pos-1].end}, vals: vals}, nil
 }
 
-func (p *parser) parseArrayValue() (Rule, error) {
+func (p *parser) parseArrayValue() (astNode, error) {
 	tok := p.peek()
 	switch tok.kind {
 	case token_LBRACKET:
@@ -777,9 +784,9 @@ func (p *parser) parseArrayValue() (Rule, error) {
 	}
 }
 
-func (p *parser) parseFunction(name token) (Rule, error) {
+func (p *parser) parseFunction(name token) (astNode, error) {
 	p.next()
-	var args []Rule
+	var args []astNode
 	if p.peek().kind != token_RPAREN {
 		for {
 			arg, err := p.parseExpr(0)
@@ -797,11 +804,16 @@ func (p *parser) parseFunction(name token) (Rule, error) {
 	if err != nil {
 		return nil, err
 	}
-	fv := newFunctionValue(name.raw, args)
-	if err := fv.ValidateStdlibFnArgs(); err != nil {
+	if stdlibFn, ok := StdlibFuncs[name.raw]; ok && len(stdlibFn.Args) != len(args) {
+		err := fmt.Errorf("function %q expects %d arguments, got %d", name.raw, len(stdlibFn.Args), len(args))
 		return nil, p.errorf(token{start: end.end, end: end.end}, "%s", err.Error())
 	}
-	return fv, nil
+	return &astCall{span: astSpan{Start: name.start, End: end.end}, name: name.raw, args: args}, nil
+}
+
+func asASTPath(node astNode) (*astPath, bool) {
+	path, ok := node.(*astPath)
+	return path, ok
 }
 
 func (p *parser) expect(kind int) (token, error) {
