@@ -80,3 +80,22 @@ func TestPublicASTAPI(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, `request.headers["user-agent"] == "curl"`, rule.String())
 }
+
+func TestFormat(t *testing.T) {
+	ast, err := ParseAST(`(a == 1 or b == 2) and c == 3 and request.headers["user-agent"] == "curl"`)
+	require.NoError(t, err)
+
+	compact, err := Format(ast, FormatOptions{Mode: FormatCompact})
+	require.NoError(t, err)
+	require.Equal(t, `(a == 1 or b == 2) and c == 3 and request.headers["user-agent"] == "curl"`, compact)
+
+	multiline, err := Format(ast, FormatOptions{Mode: FormatMultiline, Indent: "    "})
+	require.NoError(t, err)
+	require.Equal(t, `(a == 1 or b == 2)
+and c == 3
+and request.headers["user-agent"] == "curl"`, multiline)
+
+	roundTrip, err := ParseAST(multiline)
+	require.NoError(t, err)
+	require.Equal(t, compact, roundTrip.String())
+}

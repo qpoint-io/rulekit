@@ -164,6 +164,13 @@ rule, err := rulekit.Compile(ast)
 
 The public AST view is read-only. Build edited expressions by parsing replacement source and compiling the resulting AST.
 
+Use `Format` for explicit canonical output modes:
+
+```go
+compact, err := rulekit.Format(ast, rulekit.FormatOptions{Mode: rulekit.FormatCompact})
+multiline, err := rulekit.Format(ast, rulekit.FormatOptions{Mode: rulekit.FormatMultiline, Indent: "  "})
+```
+
 ## Macros
 
 Macros can be used for complex or commonly-used rules. They are defined in the evaluation context:
