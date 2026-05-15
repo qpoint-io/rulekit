@@ -164,6 +164,8 @@ rule, err := rulekit.Compile(ast)
 
 The public AST view is read-only. Build edited expressions by parsing replacement source and compiling the resulting AST.
 
+`AST.Tokens()` returns the token stream with byte spans plus leading and trailing whitespace/comment trivia for source-aware tools.
+
 Use `Format` for explicit canonical output modes:
 
 ```go

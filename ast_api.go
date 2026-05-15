@@ -13,6 +13,16 @@ type Span struct {
 type AST struct {
 	source string
 	root   astNode
+	tokens []Token
+}
+
+// Token is a lossless lexical token with attached trivia.
+type Token struct {
+	Kind           string
+	Raw            string
+	Span           Span
+	LeadingTrivia  string
+	TrailingTrivia string
 }
 
 // ASTKind identifies the shape of an AST node.
@@ -57,11 +67,11 @@ type ASTNode interface {
 
 // ParseAST parses an expression and returns its editable-source AST boundary.
 func ParseAST(expr string) (*AST, error) {
-	root, err := parseAST(expr)
+	root, tokens, err := parseASTWithTokens(expr)
 	if err != nil {
 		return nil, err
 	}
-	return &AST{source: expr, root: root}, nil
+	return &AST{source: expr, root: root, tokens: publicTokens(tokens)}, nil
 }
 
 // Compile lowers a parsed AST to the evaluator Rule representation.
@@ -93,6 +103,16 @@ func (a *AST) Source() string {
 		return ""
 	}
 	return a.source
+}
+
+// Tokens returns the parsed token stream, including the EOF token.
+func (a *AST) Tokens() []Token {
+	if a == nil {
+		return nil
+	}
+	tokens := make([]Token, len(a.tokens))
+	copy(tokens, a.tokens)
+	return tokens
 }
 
 // String returns the compact canonical AST expression.
@@ -199,6 +219,55 @@ func publicOperator(op astOperator) Operator {
 
 func publicSpan(span astSpan) Span {
 	return Span{Start: span.Start, End: span.End}
+}
+
+func publicTokens(tokens []token) []Token {
+	out := make([]Token, 0, len(tokens))
+	for _, tok := range tokens {
+		out = append(out, Token{
+			Kind:           tokenKindString(tok.kind),
+			Raw:            tok.raw,
+			Span:           Span{Start: tok.start, End: tok.end},
+			LeadingTrivia:  tok.leadingTrivia,
+			TrailingTrivia: tok.trailingTrivia,
+		})
+	}
+	return out
+}
+
+func tokenKindString(kind int) string {
+	switch kind {
+	case token_EOF:
+		return "EOF"
+	case token_ERROR:
+		return "ERROR"
+	case op_NOT:
+		return "NOT"
+	case op_AND:
+		return "AND"
+	case op_OR:
+		return "OR"
+	case op_EQ:
+		return "EQ"
+	case op_NE:
+		return "NE"
+	case op_GT:
+		return "GT"
+	case op_GE:
+		return "GE"
+	case op_LT:
+		return "LT"
+	case op_LE:
+		return "LE"
+	case op_CONTAINS:
+		return "CONTAINS"
+	case op_MATCHES:
+		return "MATCHES"
+	case op_IN:
+		return "IN"
+	default:
+		return valueTokenString(kind)
+	}
 }
 
 func publicChildren(children ...astNode) []ASTNode {
