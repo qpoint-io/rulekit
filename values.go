@@ -2,6 +2,8 @@ package rulekit
 
 import (
 	"net"
+	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/qpoint-io/rulekit/set"
@@ -25,6 +27,89 @@ func (f FieldValue) Eval(ctx *Ctx) Result {
 
 func (f FieldValue) String() string {
 	return string(f)
+}
+
+// PathValue evaluates an explicit map/slice path, including bracket key and
+// numeric index segments.
+type PathValue struct {
+	segments []pathSegment
+}
+
+type pathSegment struct {
+	key     string
+	index   int
+	isIndex bool
+	bracket bool
+}
+
+func (p *PathValue) Eval(ctx *Ctx) Result {
+	val, ok := indexPath(ctx.KV, p.segments)
+	if !ok {
+		return Result{
+			Error:         &ErrMissingFields{Fields: set.NewSet(p.String())},
+			EvaluatedRule: p,
+		}
+	}
+	return Result{
+		Value:         val,
+		EvaluatedRule: p,
+	}
+}
+
+func (p *PathValue) String() string {
+	var raw strings.Builder
+	for i, seg := range p.segments {
+		if seg.isIndex {
+			raw.WriteString("[")
+			raw.WriteString(strconv.Itoa(seg.index))
+			raw.WriteString("]")
+			continue
+		}
+
+		if seg.bracket || !isIdentifierSegment(seg.key) {
+			raw.WriteString("[")
+			raw.WriteString(strconv.Quote(seg.key))
+			raw.WriteString("]")
+			continue
+		}
+
+		if i > 0 {
+			raw.WriteString(".")
+		}
+		raw.WriteString(seg.key)
+	}
+	return raw.String()
+}
+
+func asPathValue(r Rule) (*PathValue, bool) {
+	switch v := r.(type) {
+	case FieldValue:
+		return &PathValue{segments: fieldPathSegments(string(v))}, true
+	case *PathValue:
+		return v, true
+	default:
+		return nil, false
+	}
+}
+
+func fieldPathSegments(path string) []pathSegment {
+	parts := strings.Split(path, ".")
+	segments := make([]pathSegment, 0, len(parts))
+	for _, part := range parts {
+		segments = append(segments, pathSegment{key: part})
+	}
+	return segments
+}
+
+func parsePathKey(raw string) (string, error) {
+	str := raw
+	if str[0] == '\'' {
+		str = str[1 : len(str)-1]
+		str = strings.ReplaceAll(str, `"`, `\"`)
+		str = strings.ReplaceAll(str, `\'`, `'`)
+		str = `"` + str + `"`
+	}
+	return strconv.Unquote(str)
 }
 
 type LiteralValue[T any] struct {
@@ -120,50 +205,54 @@ func isZero(val any) bool {
 	return false
 }
 
-// IndexKV gets element key from a map, interpreting it as a path if it contains a period.
+// IndexKV gets a value from a map by interpreting periods as explicit path traversal.
 func IndexKV(m KV, key string) (any, bool) {
-	if m == nil {
+	return indexPath(m, fieldPathSegments(key))
+}
+
+func indexPath(m KV, segments []pathSegment) (any, bool) {
+	if m == nil || len(segments) == 0 {
 		return nil, false
 	}
 
-	// Iterative approach to traverse the path
-	currentMap := m
-	start := 0
-
-	for {
-		part := key[start:]
-		// First check for direct key match (most common case)
-		if val, ok := currentMap[part]; ok {
-			return val, true
+	var current any = map[string]any(m)
+	for _, seg := range segments {
+		if seg.isIndex {
+			val, ok := indexAny(current, seg.index)
+			if !ok {
+				return nil, false
+			}
+			current = val
+			continue
 		}
 
-		// Find the next period
-		idx := strings.IndexByte(part, '.')
-		if idx == -1 {
-			// No more periods, this is the last part
-			part = key[start:]
-			val, ok := currentMap[part]
-			return val, ok
-		}
-
-		// Adjust idx to be relative to the full string
-		idx += start
-		part = key[start:idx]
-
-		// Get the value for this part
-		val, ok := currentMap[part]
+		currentMap, ok := current.(map[string]any)
 		if !ok {
 			return nil, false
 		}
-
-		// Convert to map for next iteration
-		nextMap, ok := val.(map[string]any)
+		val, ok := currentMap[seg.key]
 		if !ok {
 			return nil, false
 		}
-		currentMap = nextMap
-
-		// Move to the next part
-		start = idx + 1
+		current = val
 	}
+	return current, true
+}
+
+func indexAny(value any, index int) (any, bool) {
+	if index < 0 || value == nil {
+		return nil, false
+	}
+	rv := reflect.ValueOf(value)
+	if rv.Kind() != reflect.Slice && rv.Kind() != reflect.Array {
+		return nil, false
+	}
+	if index >= rv.Len() {
+		return nil, false
+	}
+	return rv.Index(index).Interface(), true
+}
+
+func isIdentifierSegment(s string) bool {
+	return s != "" && !strings.Contains(s, ".")
 }

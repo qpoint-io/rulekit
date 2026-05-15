@@ -121,6 +121,35 @@ The Result also provides additional helper methods:
 | **Function** | VALUE   | `starts_with(url, "https://")` | A function call with optional arguments. Can be built-in or custom.                           |
 | **Macro**    | VALUE   | `isValidRequest()`             | A zero-argument function that encapsulates a predefined rule.                                 |
 
+### Path Access
+
+Dot syntax traverses nested maps and objects:
+
+```perl
+destination.ip == 192.168.1.1
+```
+
+Use bracket syntax for exact map keys that contain dots, spaces, slashes, reserved words, or other punctuation:
+
+```perl
+labels["app.kubernetes.io/name"] == "api"
+request.headers["user-agent"] == "curl"
+["destination.ip"] == 192.168.1.1
+items[0].name == "first"
+```
+
+Plain dotted fields do not fall back to flat keys. If the input contains a top-level key named `destination.ip`, use `["destination.ip"]`.
+
+### JSON Input Helpers
+
+`DecodeJSON` converts JSON documents into `rulekit.KV`. Plain JSON decodes dynamically by default. Annotated key suffixes are opt-in:
+
+```go
+kv, err := rulekit.DecodeJSON(data, rulekit.JSONOptions{AnnotatedKeys: true})
+```
+
+Supported suffixes include `.$ip`, `.$cidr`, `.$mac`, `.$bytes_hex`, `.$bytes_base64`, `.$int64`, `.$uint64`, and `.$float64`. Fully typed JSON values are also supported with objects such as `{ "$type": "ip", "value": "1.2.3.4" }`.
+
 ## Macros
 
 Macros can be used for complex or commonly-used rules. They are defined in the evaluation context:

@@ -28,6 +28,7 @@ const (
 	token_RPAREN
 	token_LBRACKET
 	token_RBRACKET
+	token_DOT
 	token_COMMA
 
 	op_NOT
@@ -204,6 +205,8 @@ func valueTokenString(typ int) string {
 		return `"["`
 	case token_RBRACKET:
 		return `"]"`
+	case token_DOT:
+		return `"."`
 	case token_COMMA:
 		return `","`
 	default:
@@ -273,6 +276,9 @@ func (l *lexer) next() token {
 	case ',':
 		l.pos++
 		return token{kind: token_COMMA, raw: ",", start: start, end: l.pos}
+	case '.':
+		l.pos++
+		return token{kind: token_DOT, raw: ".", start: start, end: l.pos}
 	case '!':
 		if l.match("!=") {
 			return token{kind: op_NE, raw: "!=", start: start, end: l.pos}
@@ -535,6 +541,10 @@ func (p *parser) parseExpr(minPrec int) (Rule, error) {
 	if err != nil {
 		return nil, err
 	}
+	left, err = p.parsePostfix(left)
+	if err != nil {
+		return nil, err
+	}
 
 	for {
 		tok := p.peek()
@@ -570,6 +580,10 @@ func (p *parser) parseExpr(minPrec int) (Rule, error) {
 				return nil, p.errorf(rhs, "matches requires a regex value")
 			}
 			right, err := p.parsePrimary()
+			if err != nil {
+				return nil, err
+			}
+			right, err = p.parsePostfix(right)
 			if err != nil {
 				return nil, err
 			}
@@ -616,6 +630,9 @@ func (p *parser) parsePrimary() (Rule, error) {
 		}
 		return expr, nil
 	case token_LBRACKET:
+		if p.isRootBracketPath() {
+			return p.parseRootBracketPath(tok)
+		}
 		return p.parseArray(tok)
 	case op_NOT:
 		right, err := p.parseExpr(4)
@@ -628,6 +645,94 @@ func (p *parser) parsePrimary() (Rule, error) {
 	default:
 		return nil, p.errorf(tok, "unexpected token %q", tok.raw)
 	}
+}
+
+func (p *parser) parsePostfix(left Rule) (Rule, error) {
+	for {
+		switch p.peek().kind {
+		case token_LBRACKET:
+			start := p.next()
+			seg, err := p.parseBracketSegment(start)
+			if err != nil {
+				return nil, err
+			}
+			path, ok := asPathValue(left)
+			if !ok {
+				return nil, p.errorf(start, "bracket indexing requires a field path")
+			}
+			path.segments = append(path.segments, seg)
+			left = path
+		case token_DOT:
+			dot := p.next()
+			tok, err := p.expect(token_FIELD)
+			if err != nil {
+				return nil, err
+			}
+			path, ok := asPathValue(left)
+			if !ok {
+				return nil, p.errorf(dot, "dot traversal requires a field path")
+			}
+			path.segments = append(path.segments, fieldPathSegments(tok.raw)...)
+			left = path
+		default:
+			return left, nil
+		}
+	}
+}
+
+func (p *parser) isRootBracketPath() bool {
+	if p.pos+2 >= len(p.tokens) {
+		return false
+	}
+	if p.tokens[p.pos].kind != token_STRING || p.tokens[p.pos+1].kind != token_RBRACKET {
+		return false
+	}
+	switch p.tokens[p.pos+2].kind {
+	case token_LBRACKET, token_DOT, op_EQ, op_NE, op_GT, op_GE, op_LT, op_LE, op_CONTAINS, op_MATCHES, op_IN:
+		return true
+	default:
+		return false
+	}
+}
+
+func (p *parser) parseRootBracketPath(start token) (Rule, error) {
+	seg, err := p.parseBracketSegment(start)
+	if err != nil {
+		return nil, err
+	}
+	return &PathValue{segments: []pathSegment{seg}}, nil
+}
+
+func (p *parser) parseBracketSegment(start token) (pathSegment, error) {
+	tok := p.next()
+	var seg pathSegment
+	switch tok.kind {
+	case token_STRING:
+		key, err := parsePathKey(tok.raw)
+		if err != nil {
+			return pathSegment{}, p.errorf(tok, "%s", err.Error())
+		}
+		if key == "" {
+			return pathSegment{}, p.errorf(tok, "bracket key must not be empty")
+		}
+		seg = pathSegment{key: key, bracket: true}
+	case token_INT:
+		if strings.HasPrefix(tok.raw, "+") || strings.HasPrefix(tok.raw, "-") {
+			return pathSegment{}, p.errorf(tok, "array index must be an unsigned integer")
+		}
+		idx, err := strconv.ParseUint(tok.raw, 10, 0)
+		if err != nil {
+			return pathSegment{}, p.errorf(tok, "array index must be an unsigned integer")
+		}
+		seg = pathSegment{index: int(idx), isIndex: true, bracket: true}
+	default:
+		return pathSegment{}, p.errorf(tok, "bracket key must be a quoted string or unsigned integer")
+	}
+	if _, err := p.expect(token_RBRACKET); err != nil {
+		return pathSegment{}, err
+	}
+	_ = start
+	return seg, nil
 }
 
 func (p *parser) parseArray(start token) (Rule, error) {
@@ -659,8 +764,14 @@ func (p *parser) parseArray(start token) (Rule, error) {
 func (p *parser) parseArrayValue() (Rule, error) {
 	tok := p.peek()
 	switch tok.kind {
+	case token_LBRACKET:
+		return nil, p.errorf(tok, "nested arrays are not allowed")
 	case token_FIELD, token_STRING, token_INT, token_FLOAT, token_BOOL, token_IP, token_IP_CIDR, token_HEX_STRING, token_REGEX:
-		return p.parsePrimary()
+		val, err := p.parsePrimary()
+		if err != nil {
+			return nil, err
+		}
+		return p.parsePostfix(val)
 	default:
 		return nil, p.errorf(tok, "array values must be literals or fields")
 	}
@@ -671,7 +782,7 @@ func (p *parser) parseFunction(name token) (Rule, error) {
 	var args []Rule
 	if p.peek().kind != token_RPAREN {
 		for {
-			arg, err := p.parsePrimary()
+			arg, err := p.parseExpr(0)
 			if err != nil {
 				return nil, err
 			}
@@ -736,6 +847,9 @@ func isInequality(op int) bool {
 
 func validInequalityOperand(r Rule) bool {
 	if _, ok := r.(FieldValue); ok {
+		return true
+	}
+	if _, ok := r.(*PathValue); ok {
 		return true
 	}
 	if _, ok := r.(*FunctionValue); ok {
