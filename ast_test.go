@@ -55,3 +55,28 @@ func TestPrintASTSemanticRoundTrip(t *testing.T) {
 		})
 	}
 }
+
+func TestPublicASTAPI(t *testing.T) {
+	ast, err := ParseAST(`request.headers["user-agent"] == "curl"`)
+	require.NoError(t, err)
+	require.Equal(t, `request.headers["user-agent"] == "curl"`, ast.String())
+	require.Equal(t, `request.headers["user-agent"] == "curl"`, ast.Source())
+
+	root := ast.Root()
+	require.Equal(t, ASTBinary, root.Kind())
+	require.Equal(t, OperatorEQ, NodeOperator(root))
+	require.Equal(t, "==", NodeRawOperator(root))
+	require.Len(t, root.Children(), 2)
+
+	segments, ok := NodePath(root.Children()[0])
+	require.True(t, ok)
+	require.Equal(t, []PathSegment{
+		{Key: "request"},
+		{Key: "headers"},
+		{Key: "user-agent", Bracket: true},
+	}, segments)
+
+	rule, err := Compile(ast)
+	require.NoError(t, err)
+	require.Equal(t, `request.headers["user-agent"] == "curl"`, rule.String())
+}

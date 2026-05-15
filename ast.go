@@ -115,6 +115,12 @@ type astLiteral struct {
 }
 
 func (n *astLiteral) astSpan() astSpan { return n.span }
+func (n *astLiteral) Kind() ASTKind    { return ASTLiteral }
+func (n *astLiteral) Span() Span       { return publicSpan(n.span) }
+func (n *astLiteral) String() string   { return printAST(n) }
+func (n *astLiteral) Children() []ASTNode {
+	return nil
+}
 
 type astPath struct {
 	span     astSpan
@@ -122,6 +128,12 @@ type astPath struct {
 }
 
 func (n *astPath) astSpan() astSpan { return n.span }
+func (n *astPath) Kind() ASTKind    { return ASTPath }
+func (n *astPath) Span() Span       { return publicSpan(n.span) }
+func (n *astPath) String() string   { return printAST(n) }
+func (n *astPath) Children() []ASTNode {
+	return nil
+}
 
 type astArray struct {
 	span astSpan
@@ -129,6 +141,12 @@ type astArray struct {
 }
 
 func (n *astArray) astSpan() astSpan { return n.span }
+func (n *astArray) Kind() ASTKind    { return ASTArray }
+func (n *astArray) Span() Span       { return publicSpan(n.span) }
+func (n *astArray) String() string   { return printAST(n) }
+func (n *astArray) Children() []ASTNode {
+	return publicChildSlice(n.vals)
+}
 
 type astCall struct {
 	span astSpan
@@ -137,6 +155,12 @@ type astCall struct {
 }
 
 func (n *astCall) astSpan() astSpan { return n.span }
+func (n *astCall) Kind() ASTKind    { return ASTCall }
+func (n *astCall) Span() Span       { return publicSpan(n.span) }
+func (n *astCall) String() string   { return printAST(n) }
+func (n *astCall) Children() []ASTNode {
+	return publicChildSlice(n.args)
+}
 
 type astUnary struct {
 	span  astSpan
@@ -146,6 +170,12 @@ type astUnary struct {
 }
 
 func (n *astUnary) astSpan() astSpan { return n.span }
+func (n *astUnary) Kind() ASTKind    { return ASTUnary }
+func (n *astUnary) Span() Span       { return publicSpan(n.span) }
+func (n *astUnary) String() string   { return printAST(n) }
+func (n *astUnary) Children() []ASTNode {
+	return publicChildren(n.right)
+}
 
 type astBinary struct {
 	span  astSpan
@@ -156,6 +186,12 @@ type astBinary struct {
 }
 
 func (n *astBinary) astSpan() astSpan { return n.span }
+func (n *astBinary) Kind() ASTKind    { return ASTBinary }
+func (n *astBinary) Span() Span       { return publicSpan(n.span) }
+func (n *astBinary) String() string   { return printAST(n) }
+func (n *astBinary) Children() []ASTNode {
+	return publicChildren(n.left, n.right)
+}
 
 type astLowerError struct {
 	span astSpan
