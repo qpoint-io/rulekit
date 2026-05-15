@@ -92,6 +92,25 @@ The Pratt parser should handle expression structure:
 
 Prefer a pull-style lexer API such as `Next()` over a goroutine/channel lexer. The state-function pattern is still useful, but a pull API keeps parser control flow simple and avoids unnecessary channel overhead for short rule expressions.
 
+## Migration Strategy
+
+Rewrite the existing v1 feature set using the new lexer/parser/AST architecture before adding new language features.
+
+This keeps parser architecture risk separate from language-design risk. The existing behavior should become the migration contract, and new syntax should only be added after the new implementation has strong parity with the current parser.
+
+Suggested sequence:
+
+1. Implement lexer parity for the current token set and accepted syntax.
+2. Implement Pratt parser parity for existing expressions: literals, fields, arrays, calls, `not`, `and`, `or`, comparisons, `matches`, and `in`.
+3. Build the explicit AST for the v1 grammar only.
+4. Evaluate the AST directly or lower it to a current-style runtime representation.
+5. Match current compact `String()` output where tests and public behavior depend on it.
+6. Add parity tests that compare old and new parser behavior for parse success, compact output, eval result, missing-field behavior, and representative syntax errors.
+7. Switch the existing `Parse()` API to the new parser once parity is strong.
+8. Add v2 language/editor features after the replacement parser is stable.
+
+Do not require exact yacc parse-error wording during the migration. Preserve useful line/column diagnostics and clear messages, but avoid coupling the new parser to generated-parser phrasing.
+
 ## AST and Round-Tripping
 
 The AST should be designed as the shared model for both freeform text editing and a GUI expression editor. That means it should support both directions:
