@@ -98,11 +98,11 @@ import (
 
 // Parse parses a rule expression and returns a Rule.
 func Parse(str string) (Rule, error) {
-	r, err := parseRule(str)
+	ast, err := ParseAST(str)
 	if err != nil {
 		return nil, err
 	}
-	return &rule{r}, nil
+	return Compile(ast)
 }
 
 func MustParse(str string) Rule {

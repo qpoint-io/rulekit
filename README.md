@@ -150,6 +150,20 @@ kv, err := rulekit.DecodeJSON(data, rulekit.JSONOptions{AnnotatedKeys: true})
 
 Supported suffixes include `.$ip`, `.$cidr`, `.$mac`, `.$bytes_hex`, `.$bytes_base64`, `.$int64`, `.$uint64`, and `.$float64`. Fully typed JSON values are also supported with objects such as `{ "$type": "ip", "value": "1.2.3.4" }`.
 
+### AST API
+
+Use `ParseAST` when tools need to inspect expression structure before compiling to an evaluator rule:
+
+```go
+ast, err := rulekit.ParseAST(`request.headers["user-agent"] == "curl"`)
+if err != nil { /* ... */ }
+
+fmt.Println(ast.String()) // compact canonical expression
+rule, err := rulekit.Compile(ast)
+```
+
+The public AST view is read-only. Build edited expressions by parsing replacement source and compiling the resulting AST.
+
 ## Macros
 
 Macros can be used for complex or commonly-used rules. They are defined in the evaluation context:
