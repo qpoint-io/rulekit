@@ -113,3 +113,22 @@ func TestASTTokensIncludeTrivia(t *testing.T) {
 	require.Equal(t, " -- explain\n ", tokens[3].LeadingTrivia)
 	require.Equal(t, Span{Start: 0, End: 5}, ast.Root().Children()[0].Children()[0].Span())
 }
+
+func TestRewritePreservesUnchangedSource(t *testing.T) {
+	ast, err := ParseAST("field == 1 -- keep\n and other == 2")
+	require.NoError(t, err)
+
+	replacement, err := ParseAST(`field == 3`)
+	require.NoError(t, err)
+
+	rewritten, err := Rewrite(ast, []Edit{{
+		Target:      ast.Root().Children()[0],
+		Replacement: replacement,
+	}}, FormatOptions{Mode: FormatCompact})
+	require.NoError(t, err)
+	require.Equal(t, "field == 3 -- keep\n and other == 2", rewritten)
+
+	roundTrip, err := ParseAST(rewritten)
+	require.NoError(t, err)
+	require.Equal(t, `field == 3 and other == 2`, roundTrip.String())
+}

@@ -173,6 +173,12 @@ compact, err := rulekit.Format(ast, rulekit.FormatOptions{Mode: rulekit.FormatCo
 multiline, err := rulekit.Format(ast, rulekit.FormatOptions{Mode: rulekit.FormatMultiline, Indent: "  "})
 ```
 
+Use `Rewrite` to preserve unchanged source while replacing selected AST nodes:
+
+```go
+updated, err := rulekit.Rewrite(ast, []rulekit.Edit{{Target: node, Replacement: replacementAST}}, rulekit.FormatOptions{Mode: rulekit.FormatCompact})
+```
+
 ## Macros
 
 Macros can be used for complex or commonly-used rules. They are defined in the evaluation context:
