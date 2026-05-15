@@ -1,6 +1,9 @@
 package rulekit
 
-import "net"
+import (
+	"net"
+	"strings"
+)
 
 type astSpan struct {
 	Start int
@@ -244,5 +247,78 @@ func astValidInequalityOperand(node astNode) bool {
 		return n.kind == token_INT || n.kind == token_FLOAT
 	default:
 		return false
+	}
+}
+
+func printAST(node astNode) string {
+	return printASTWithParent(node, 0, false)
+}
+
+func printASTWithParent(node astNode, parentPrec int, rightChild bool) string {
+	prec := astPrecedence(node)
+	var out string
+
+	switch n := node.(type) {
+	case *astLiteral:
+		out = n.raw
+	case *astPath:
+		out = (&PathValue{segments: n.segments}).String()
+	case *astArray:
+		parts := make([]string, 0, len(n.vals))
+		for _, val := range n.vals {
+			parts = append(parts, printAST(val))
+		}
+		out = "[" + strings.Join(parts, ", ") + "]"
+	case *astCall:
+		parts := make([]string, 0, len(n.args))
+		for _, arg := range n.args {
+			parts = append(parts, printAST(arg))
+		}
+		out = n.name + "(" + strings.Join(parts, ", ") + ")"
+	case *astUnary:
+		right := printASTWithParent(n.right, astPrecedence(n), true)
+		if _, ok := n.right.(*astBinary); ok {
+			right = "(" + printAST(n.right) + ")"
+		}
+		out = "not " + right
+	case *astBinary:
+		out = printASTWithParent(n.left, prec, false) + " " + astOperatorString(n.op) + " " + printASTWithParent(n.right, prec, true)
+	}
+
+	if prec > 0 && (prec < parentPrec || (rightChild && prec == parentPrec)) {
+		return "(" + out + ")"
+	}
+	return out
+}
+
+func astPrecedence(node astNode) int {
+	switch n := node.(type) {
+	case *astUnary:
+		return 4
+	case *astBinary:
+		switch n.op {
+		case astOpOr:
+			return 1
+		case astOpAnd:
+			return 2
+		case astOpEQ, astOpNE, astOpGT, astOpGE, astOpLT, astOpLE, astOpContains, astOpMatches, astOpIn:
+			return 3
+		}
+	}
+	return 5
+}
+
+func astOperatorString(op astOperator) string {
+	switch op {
+	case astOpAnd:
+		return "and"
+	case astOpOr:
+		return "or"
+	case astOpMatches:
+		return "=~"
+	case astOpIn:
+		return "in"
+	default:
+		return operatorToString(tokenKindFromASTOperator(op))
 	}
 }

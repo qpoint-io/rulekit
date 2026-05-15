@@ -1,0 +1,57 @@
+package rulekit
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+func TestPrintASTCompact(t *testing.T) {
+	tests := map[string]string{
+		`field == "value" and other != 1`:               `field == "value" and other != 1`,
+		`domain matches /example\.com$/ OR tags == "x"`: `domain =~ /example\.com$/ or tags == "x"`,
+		`a or (b and c)`:                                `a or b and c`,
+		`(a or b) and c`:                                `(a or b) and c`,
+		`request.headers["user-agent"] == "curl"`:       `request.headers["user-agent"] == "curl"`,
+		`items[0].name in ["first", "second"]`:          `items[0].name in ["first", "second"]`,
+		`starts_with(path, "/api")`:                     `starts_with(path, "/api")`,
+	}
+
+	for input, want := range tests {
+		t.Run(input, func(t *testing.T) {
+			ast, err := parseAST(input)
+			require.NoError(t, err)
+			require.Equal(t, want, printAST(ast))
+		})
+	}
+}
+
+func TestPrintASTSemanticRoundTrip(t *testing.T) {
+	expressions := []string{
+		`field == "value" and other != 1`,
+		`domain matches /example\.com$/ OR tags == "x"`,
+		`(a or b) and c`,
+		`not (a == 1 or b == 2)`,
+		`request.headers["user-agent"] == "curl"`,
+		`items[0].name in ["first", "second"]`,
+		`ip in 192.168.0.0/16`,
+		`starts_with(path, "/api")`,
+	}
+
+	for _, input := range expressions {
+		t.Run(input, func(t *testing.T) {
+			ast, err := parseAST(input)
+			require.NoError(t, err)
+
+			printed := printAST(ast)
+			roundTripped, err := parseAST(printed)
+			require.NoError(t, err)
+
+			originalRule, err := lowerAST(ast)
+			require.NoError(t, err)
+			printedRule, err := lowerAST(roundTripped)
+			require.NoError(t, err)
+			require.Equal(t, originalRule.String(), printedRule.String())
+		})
+	}
+}
