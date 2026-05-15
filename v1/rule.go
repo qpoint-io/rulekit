@@ -94,15 +94,28 @@ package rulekit
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 )
 
 // Parse parses a rule expression and returns a Rule.
 func Parse(str string) (Rule, error) {
-	r, err := parseRule(str)
-	if err != nil {
-		return nil, err
+	lexer := newLex([]byte(str))
+	ok := ruleParse(lexer)
+
+	if ok == 0 {
+		return &rule{lexer.result}, nil
 	}
-	return &rule{r}, nil
+
+	// If there's an error, create a more detailed error message
+	line, col := getLineColumn(str, lexer.p)
+
+	return nil, &ParseError{
+		Line:       line,
+		Column:     col,
+		Message:    lexer.err,
+		Input:      str,
+		Suggestion: getSuggestion(lexer.err),
+	}
 }
 
 func MustParse(str string) Rule {
@@ -279,4 +292,58 @@ func (e *ParseError) Error() string {
 	}
 
 	return result
+}
+
+// Helper function to get line and column from byte position
+func getLineColumn(input string, pos int) (line, col int) {
+	line = 1
+	col = 1
+
+	for i, ch := range input {
+		if i >= pos {
+			break
+		}
+		if ch == '\n' {
+			line++
+			col = 1
+		} else {
+			col += utf8.RuneLen(ch)
+		}
+	}
+	return
+}
+
+// getSuggestion returns a helpful message based on the error
+func getSuggestion(err string) string {
+	switch {
+	case strings.Contains(err, "parsing token_STRING"):
+		return "string values must be properly quoted with matching quotes (e.g. \"hello\")"
+	case strings.Contains(err, "parsing token_INT"):
+		return "integer values must be valid integers without decimals (e.g. 42)"
+	case strings.Contains(err, "parsing token_FLOAT"):
+		return "floating-point numbers must be in the format 1.23"
+	case strings.Contains(err, "parsing token_BOOL"):
+		return "boolean values must be either 'true' or 'false' (case insensitive)"
+	case strings.Contains(err, "parsing token_IP"):
+		return "IP addresses must be in valid IPv4 (e.g. 192.168.1.1) or IPv6 format"
+	case strings.Contains(err, "parsing token_IP_CIDR"):
+		return "CIDR blocks must be in valid format (e.g. 192.168.1.0/24)"
+	case strings.Contains(err, "parsing token_HEX_STRING"):
+		return "hex strings must contain valid hex digits optionally separated by colons"
+	case strings.Contains(err, "parsing token_REGEX"):
+		return "regex patterns must be surrounded by / or | and contain valid regex syntax"
+	case strings.Contains(err, "parsing token_FIELD"):
+		return "field names must be valid identifiers (e.g. 'field_name' or 'field.name')"
+	}
+	return ""
+}
+
+func safeIndex[T any](slice []T, a, b int) []T {
+	if a < 0 || b < 0 || a > b {
+		return nil
+	}
+	if b > len(slice) {
+		b = len(slice)
+	}
+	return slice[a:b]
 }
