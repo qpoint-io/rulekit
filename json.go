@@ -14,10 +14,17 @@ import (
 type JSONOptions struct {
 	// AnnotatedKeys enables suffix-based type hints such as "src.$ip".
 	AnnotatedKeys bool
+	// TypedDocument requires every JSON field value to use a typed object such as
+	// {"$type":"ip","value":"1.2.3.4"}. It cannot be combined with AnnotatedKeys.
+	TypedDocument bool
 }
 
 // DecodeJSON decodes a JSON object into a Rulekit KV value map.
 func DecodeJSON(data []byte, opts JSONOptions) (KV, error) {
+	if opts.AnnotatedKeys && opts.TypedDocument {
+		return nil, fmt.Errorf("json options AnnotatedKeys and TypedDocument are mutually exclusive")
+	}
+
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.UseNumber()
 
@@ -37,11 +44,15 @@ func DecodeJSON(data []byte, opts JSONOptions) (KV, error) {
 }
 
 func normalizeJSONValue(value any, opts JSONOptions) (any, error) {
+	if opts.TypedDocument {
+		return normalizeTypedJSONDocument(value)
+	}
+	return normalizePlainJSONValue(value, opts)
+}
+
+func normalizePlainJSONValue(value any, opts JSONOptions) (any, error) {
 	switch v := value.(type) {
 	case map[string]any:
-		if typ, ok := v["$type"].(string); ok {
-			return decodeTypedJSONValue(typ, v)
-		}
 		out := make(map[string]any, len(v))
 		for key, child := range v {
 			outKey := key
@@ -52,7 +63,7 @@ func normalizeJSONValue(value any, opts JSONOptions) (any, error) {
 			if _, exists := out[outKey]; exists {
 				return nil, fmt.Errorf("duplicate normalized key %q", outKey)
 			}
-			normalized, err := normalizeJSONValue(child, opts)
+			normalized, err := normalizePlainJSONValue(child, opts)
 			if err != nil {
 				return nil, fmt.Errorf("key %q: %w", key, err)
 			}
@@ -68,7 +79,7 @@ func normalizeJSONValue(value any, opts JSONOptions) (any, error) {
 	case []any:
 		out := make([]any, len(v))
 		for i, child := range v {
-			normalized, err := normalizeJSONValue(child, opts)
+			normalized, err := normalizePlainJSONValue(child, opts)
 			if err != nil {
 				return nil, fmt.Errorf("index %d: %w", i, err)
 			}
@@ -80,6 +91,37 @@ func normalizeJSONValue(value any, opts JSONOptions) (any, error) {
 	default:
 		return value, nil
 	}
+}
+
+func normalizeTypedJSONDocument(value any) (any, error) {
+	root, ok := value.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("typed json root must be an object")
+	}
+	out := make(map[string]any, len(root))
+	for key, child := range root {
+		if _, suffix, ok := splitAnnotatedKey(key); ok {
+			return nil, fmt.Errorf("typed json key %q must not use annotated suffix %q", key, suffix)
+		}
+		normalized, err := decodeTypedJSONNode(child)
+		if err != nil {
+			return nil, fmt.Errorf("key %q: %w", key, err)
+		}
+		out[key] = normalized
+	}
+	return out, nil
+}
+
+func decodeTypedJSONNode(value any) (any, error) {
+	object, ok := value.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("typed json value must be an object")
+	}
+	typ, ok := object["$type"].(string)
+	if !ok || typ == "" {
+		return nil, fmt.Errorf("typed json value requires $type")
+	}
+	return decodeTypedJSONValue(typ, object)
 }
 
 func normalizeJSONNumber(n json.Number) (any, error) {
@@ -97,7 +139,7 @@ func normalizeJSONNumber(n json.Number) (any, error) {
 }
 
 func splitAnnotatedKey(key string) (string, string, bool) {
-	for _, suffix := range []string{".$bytes_base64", ".$bytes_hex", ".$float64", ".$uint64", ".$int64", ".$cidr", ".$mac", ".$ip"} {
+	for _, suffix := range []string{".$bytes_base64", ".$bytes_hex", ".$base64", ".$hex", ".$float64", ".$uint64", ".$int64", ".$bool", ".$string", ".$cidr", ".$mac", ".$ip"} {
 		if strings.HasSuffix(key, suffix) {
 			return strings.TrimSuffix(key, suffix), strings.TrimPrefix(suffix, "."), true
 		}
@@ -114,8 +156,46 @@ func decodeTypedJSONValue(typ string, object map[string]any) (any, error) {
 	if !ok {
 		return nil, fmt.Errorf("typed json value requires value")
 	}
+	if typ == "object" {
+		return decodeTypedJSONObject(value)
+	}
+	if typ == "array" {
+		return decodeTypedJSONArray(value)
+	}
 	encoding, _ := object["encoding"].(string)
 	return decodeScalarValue(typ, value, encoding)
+}
+
+func decodeTypedJSONObject(value any) (any, error) {
+	object, ok := value.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("expected object, got %T", value)
+	}
+	out := make(map[string]any, len(object))
+	for key, child := range object {
+		normalized, err := decodeTypedJSONNode(child)
+		if err != nil {
+			return nil, fmt.Errorf("key %q: %w", key, err)
+		}
+		out[key] = normalized
+	}
+	return out, nil
+}
+
+func decodeTypedJSONArray(value any) (any, error) {
+	array, ok := value.([]any)
+	if !ok {
+		return nil, fmt.Errorf("expected array, got %T", value)
+	}
+	out := make([]any, len(array))
+	for i, child := range array {
+		normalized, err := decodeTypedJSONNode(child)
+		if err != nil {
+			return nil, fmt.Errorf("index %d: %w", i, err)
+		}
+		out[i] = normalized
+	}
+	return out, nil
 }
 
 func decodeScalarValue(typ string, value any, encoding string) (any, error) {
@@ -145,10 +225,23 @@ func decodeScalarValue(typ string, value any, encoding string) (any, error) {
 		return net.ParseMAC(s)
 	case "bytes":
 		return decodeBytes(value, encoding)
+	case "hex":
+		return decodeBytes(value, "hex")
+	case "base64":
+		return decodeBytes(value, "base64")
 	case "bytes_hex":
 		return decodeBytes(value, "hex")
 	case "bytes_base64":
 		return decodeBytes(value, "base64")
+	case "string":
+		return stringScalar(value)
+	case "bool":
+		return boolScalar(value)
+	case "null":
+		if value != nil {
+			return nil, fmt.Errorf("expected null, got %T", value)
+		}
+		return nil, nil
 	case "int64":
 		return int64Scalar(value)
 	case "uint64":
@@ -158,6 +251,14 @@ func decodeScalarValue(typ string, value any, encoding string) (any, error) {
 	default:
 		return nil, fmt.Errorf("unknown type %q", typ)
 	}
+}
+
+func boolScalar(value any) (bool, error) {
+	v, ok := value.(bool)
+	if !ok {
+		return false, fmt.Errorf("expected bool, got %T", value)
+	}
+	return v, nil
 }
 
 func decodeBytes(value any, encoding string) ([]byte, error) {
