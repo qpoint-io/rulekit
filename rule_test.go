@@ -250,6 +250,23 @@ func BenchmarkEval(b *testing.B) {
 	})
 }
 
+func BenchmarkCompilePlan(b *testing.B) {
+	ast, err := ParseAST(`tags eq 'db-svc' OR domain matches /example\.com$/ OR (process.uid != 0 AND tags contains 'internal-svc')`)
+	require.NoError(b, err)
+	for range b.N {
+		_, _ = CompilePlan(ast)
+	}
+}
+
+func BenchmarkPlanEval(b *testing.B) {
+	plan, err := ParsePlan(`tags eq 'db-svc' OR domain matches /example\.com$/ OR (process.uid != 0 AND tags contains 'internal-svc') OR (destination.port <= 1023 AND destination.ip != 192.168.0.0/16)`)
+	require.NoError(b, err)
+	ctx := &Ctx{KV: KV{"tags": []string{"db-svc", "internal-vlan", "unprivileged-user"}, "domain": "example.com", "process": KV{"uid": 1000}, "port": 8080, "destination": KV{"ip": net.ParseIP("192.168.2.37"), "port": 8080}}}
+	for range b.N {
+		_ = plan.Eval(ctx)
+	}
+}
+
 func TestFilterParseUint(t *testing.T) {
 	_, err := Parse("f_uint==4294967295 && f_uint64==18446744073709551615")
 	if err != nil {
