@@ -29,8 +29,8 @@ func Test_mapPath(t *testing.T) {
 		val any
 		ok  bool
 	}{
-		"part.of.the.key":        {"period", true},
-		"nested.part.of.the.key": {"period", true},
+		"part.of.the.key":        {nil, false},
+		"nested.part.of.the.key": {nil, false},
 		"src.process": {
 			val: map[string]any{
 				"name": "qpoint",

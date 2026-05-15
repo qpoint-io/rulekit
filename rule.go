@@ -267,6 +267,7 @@ func (e *ParseError) Error() string {
 			"token_ARRAY", `"array"`,
 			"token_LBRACKET", `"["`,
 			"token_RBRACKET", `"]"`,
+			"token_DOT", `"."`,
 			"token_LPAREN", `"("`,
 			"token_RPAREN", `")"`,
 			"token_FUNCTION", `"function or field identifier"`,
