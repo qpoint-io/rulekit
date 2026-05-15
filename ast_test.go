@@ -99,3 +99,17 @@ and request.headers["user-agent"] == "curl"`, multiline)
 	require.NoError(t, err)
 	require.Equal(t, compact, roundTrip.String())
 }
+
+func TestASTTokensIncludeTrivia(t *testing.T) {
+	ast, err := ParseAST("field == 1 -- explain\n and other == 2")
+	require.NoError(t, err)
+
+	tokens := ast.Tokens()
+	require.Len(t, tokens, 8)
+	require.Equal(t, "field", tokens[0].Raw)
+	require.Equal(t, " ", tokens[0].TrailingTrivia)
+	require.Equal(t, " ", tokens[1].LeadingTrivia)
+	require.Equal(t, " -- explain\n ", tokens[2].TrailingTrivia)
+	require.Equal(t, " -- explain\n ", tokens[3].LeadingTrivia)
+	require.Equal(t, Span{Start: 0, End: 5}, ast.Root().Children()[0].Children()[0].Span())
+}

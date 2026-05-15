@@ -225,9 +225,11 @@ func (e ValueParseError) Error() string {
 }
 
 type token struct {
-	kind       int
-	raw        string
-	start, end int
+	kind           int
+	raw            string
+	start, end     int
+	leadingTrivia  string
+	trailingTrivia string
 }
 
 type lexer struct {
@@ -242,20 +244,31 @@ func lex(input string) ([]token, error) {
 		tok := l.next()
 		tokens = append(tokens, tok)
 		if tok.kind == token_EOF {
+			attachTrailingTrivia(tokens)
 			return tokens, nil
 		}
 		if tok.kind == token_ERROR {
+			attachTrailingTrivia(tokens)
 			return tokens, fmt.Errorf("%s", tok.raw)
 		}
 	}
 }
 
+func attachTrailingTrivia(tokens []token) {
+	for i := range tokens {
+		if i+1 < len(tokens) {
+			tokens[i].trailingTrivia = tokens[i+1].leadingTrivia
+		}
+	}
+}
+
 func (l *lexer) next() token {
-	if err := l.skipIgnored(); err != nil {
-		return token{kind: token_ERROR, raw: err.Error(), start: l.pos, end: l.pos}
+	leading, err := l.skipIgnored()
+	if err != nil {
+		return token{kind: token_ERROR, raw: err.Error(), start: l.pos, end: l.pos, leadingTrivia: leading}
 	}
 	if l.pos >= len(l.input) {
-		return token{kind: token_EOF, start: l.pos, end: l.pos}
+		return token{kind: token_EOF, start: l.pos, end: l.pos, leadingTrivia: leading}
 	}
 
 	start := l.pos
@@ -263,56 +276,56 @@ func (l *lexer) next() token {
 	switch ch {
 	case '(':
 		l.pos++
-		return token{kind: token_LPAREN, raw: "(", start: start, end: l.pos}
+		return token{kind: token_LPAREN, raw: "(", start: start, end: l.pos, leadingTrivia: leading}
 	case ')':
 		l.pos++
-		return token{kind: token_RPAREN, raw: ")", start: start, end: l.pos}
+		return token{kind: token_RPAREN, raw: ")", start: start, end: l.pos, leadingTrivia: leading}
 	case '[':
 		l.pos++
-		return token{kind: token_LBRACKET, raw: "[", start: start, end: l.pos}
+		return token{kind: token_LBRACKET, raw: "[", start: start, end: l.pos, leadingTrivia: leading}
 	case ']':
 		l.pos++
-		return token{kind: token_RBRACKET, raw: "]", start: start, end: l.pos}
+		return token{kind: token_RBRACKET, raw: "]", start: start, end: l.pos, leadingTrivia: leading}
 	case ',':
 		l.pos++
-		return token{kind: token_COMMA, raw: ",", start: start, end: l.pos}
+		return token{kind: token_COMMA, raw: ",", start: start, end: l.pos, leadingTrivia: leading}
 	case '.':
 		l.pos++
-		return token{kind: token_DOT, raw: ".", start: start, end: l.pos}
+		return token{kind: token_DOT, raw: ".", start: start, end: l.pos, leadingTrivia: leading}
 	case '!':
 		if l.match("!=") {
-			return token{kind: op_NE, raw: "!=", start: start, end: l.pos}
+			return token{kind: op_NE, raw: "!=", start: start, end: l.pos, leadingTrivia: leading}
 		}
 		l.pos++
-		return token{kind: op_NOT, raw: "!", start: start, end: l.pos}
+		return token{kind: op_NOT, raw: "!", start: start, end: l.pos, leadingTrivia: leading}
 	case '&':
 		if l.match("&&") {
-			return token{kind: op_AND, raw: "&&", start: start, end: l.pos}
+			return token{kind: op_AND, raw: "&&", start: start, end: l.pos, leadingTrivia: leading}
 		}
 	case '|':
 		if l.match("||") {
-			return token{kind: op_OR, raw: "||", start: start, end: l.pos}
+			return token{kind: op_OR, raw: "||", start: start, end: l.pos, leadingTrivia: leading}
 		}
-		return l.scanDelimited('|', token_REGEX)
+		return l.scanDelimited('|', token_REGEX, leading)
 	case '=':
 		if l.match("==") {
-			return token{kind: op_EQ, raw: "==", start: start, end: l.pos}
+			return token{kind: op_EQ, raw: "==", start: start, end: l.pos, leadingTrivia: leading}
 		}
 		if l.match("=~") {
-			return token{kind: op_MATCHES, raw: "=~", start: start, end: l.pos}
+			return token{kind: op_MATCHES, raw: "=~", start: start, end: l.pos, leadingTrivia: leading}
 		}
 	case '<':
 		if l.match("<=") {
-			return token{kind: op_LE, raw: "<=", start: start, end: l.pos}
+			return token{kind: op_LE, raw: "<=", start: start, end: l.pos, leadingTrivia: leading}
 		}
 		l.pos++
-		return token{kind: op_LT, raw: "<", start: start, end: l.pos}
+		return token{kind: op_LT, raw: "<", start: start, end: l.pos, leadingTrivia: leading}
 	case '>':
 		if l.match(">=") {
-			return token{kind: op_GE, raw: ">=", start: start, end: l.pos}
+			return token{kind: op_GE, raw: ">=", start: start, end: l.pos, leadingTrivia: leading}
 		}
 		l.pos++
-		return token{kind: op_GT, raw: ">", start: start, end: l.pos}
+		return token{kind: op_GT, raw: ">", start: start, end: l.pos, leadingTrivia: leading}
 	case '/', '\'', '"':
 		if ch == '/' && l.hasPrefix("/*") {
 			break
@@ -321,18 +334,19 @@ func (l *lexer) next() token {
 		if ch == '\'' || ch == '"' {
 			kind = token_STRING
 		}
-		return l.scanDelimited(ch, kind)
+		return l.scanDelimited(ch, kind, leading)
 	}
 
 	if ch == '+' || ch == '-' || ch == ':' || isAtomStart(rune(ch)) || unicode.IsDigit(rune(ch)) {
-		return l.scanAtom()
+		return l.scanAtom(leading)
 	}
 
 	l.pos++
-	return token{kind: token_ERROR, raw: fmt.Sprintf("unexpected character: %q", l.input[start:l.pos]), start: start, end: l.pos}
+	return token{kind: token_ERROR, raw: fmt.Sprintf("unexpected character: %q", l.input[start:l.pos]), start: start, end: l.pos, leadingTrivia: leading}
 }
 
-func (l *lexer) skipIgnored() error {
+func (l *lexer) skipIgnored() (string, error) {
+	start := l.pos
 	for l.pos < len(l.input) {
 		r, size := utf8.DecodeRuneInString(l.input[l.pos:])
 		if unicode.IsSpace(r) {
@@ -349,17 +363,17 @@ func (l *lexer) skipIgnored() error {
 		if l.hasPrefix("/*") {
 			end := strings.Index(l.input[l.pos+2:], "*/")
 			if end < 0 {
-				return fmt.Errorf("unterminated block comment")
+				return l.input[start:l.pos], fmt.Errorf("unterminated block comment")
 			}
 			l.pos += end + 4
 			continue
 		}
 		break
 	}
-	return nil
+	return l.input[start:l.pos], nil
 }
 
-func (l *lexer) scanDelimited(delim byte, kind int) token {
+func (l *lexer) scanDelimited(delim byte, kind int, leading string) token {
 	start := l.pos
 	l.pos++
 	escaped := false
@@ -375,13 +389,13 @@ func (l *lexer) scanDelimited(delim byte, kind int) token {
 			continue
 		}
 		if ch == delim {
-			return token{kind: kind, raw: l.input[start:l.pos], start: start, end: l.pos}
+			return token{kind: kind, raw: l.input[start:l.pos], start: start, end: l.pos, leadingTrivia: leading}
 		}
 	}
-	return token{kind: token_ERROR, raw: "unterminated literal", start: start, end: l.pos}
+	return token{kind: token_ERROR, raw: "unterminated literal", start: start, end: l.pos, leadingTrivia: leading}
 }
 
-func (l *lexer) scanAtom() token {
+func (l *lexer) scanAtom(leading string) token {
 	start := l.pos
 	for l.pos < len(l.input) {
 		ch := l.input[l.pos]
@@ -394,52 +408,52 @@ func (l *lexer) scanAtom() token {
 	lower := strings.ToLower(raw)
 	switch lower {
 	case "not":
-		return token{kind: op_NOT, raw: raw, start: start, end: l.pos}
+		return token{kind: op_NOT, raw: raw, start: start, end: l.pos, leadingTrivia: leading}
 	case "and":
-		return token{kind: op_AND, raw: raw, start: start, end: l.pos}
+		return token{kind: op_AND, raw: raw, start: start, end: l.pos, leadingTrivia: leading}
 	case "or":
-		return token{kind: op_OR, raw: raw, start: start, end: l.pos}
+		return token{kind: op_OR, raw: raw, start: start, end: l.pos, leadingTrivia: leading}
 	case "eq":
-		return token{kind: op_EQ, raw: raw, start: start, end: l.pos}
+		return token{kind: op_EQ, raw: raw, start: start, end: l.pos, leadingTrivia: leading}
 	case "ne":
-		return token{kind: op_NE, raw: raw, start: start, end: l.pos}
+		return token{kind: op_NE, raw: raw, start: start, end: l.pos, leadingTrivia: leading}
 	case "gt":
-		return token{kind: op_GT, raw: raw, start: start, end: l.pos}
+		return token{kind: op_GT, raw: raw, start: start, end: l.pos, leadingTrivia: leading}
 	case "ge":
-		return token{kind: op_GE, raw: raw, start: start, end: l.pos}
+		return token{kind: op_GE, raw: raw, start: start, end: l.pos, leadingTrivia: leading}
 	case "lt":
-		return token{kind: op_LT, raw: raw, start: start, end: l.pos}
+		return token{kind: op_LT, raw: raw, start: start, end: l.pos, leadingTrivia: leading}
 	case "le":
-		return token{kind: op_LE, raw: raw, start: start, end: l.pos}
+		return token{kind: op_LE, raw: raw, start: start, end: l.pos, leadingTrivia: leading}
 	case "contains":
-		return token{kind: op_CONTAINS, raw: raw, start: start, end: l.pos}
+		return token{kind: op_CONTAINS, raw: raw, start: start, end: l.pos, leadingTrivia: leading}
 	case "matches":
-		return token{kind: op_MATCHES, raw: raw, start: start, end: l.pos}
+		return token{kind: op_MATCHES, raw: raw, start: start, end: l.pos, leadingTrivia: leading}
 	case "in":
-		return token{kind: op_IN, raw: raw, start: start, end: l.pos}
+		return token{kind: op_IN, raw: raw, start: start, end: l.pos, leadingTrivia: leading}
 	case "true", "false":
-		return token{kind: token_BOOL, raw: raw, start: start, end: l.pos}
+		return token{kind: token_BOOL, raw: raw, start: start, end: l.pos, leadingTrivia: leading}
 	}
 
 	if _, _, err := net.ParseCIDR(raw); err == nil {
-		return token{kind: token_IP_CIDR, raw: raw, start: start, end: l.pos}
+		return token{kind: token_IP_CIDR, raw: raw, start: start, end: l.pos, leadingTrivia: leading}
 	}
 	if net.ParseIP(raw) != nil {
-		return token{kind: token_IP, raw: raw, start: start, end: l.pos}
+		return token{kind: token_IP, raw: raw, start: start, end: l.pos, leadingTrivia: leading}
 	}
 	if isInteger(raw) {
-		return token{kind: token_INT, raw: raw, start: start, end: l.pos}
+		return token{kind: token_INT, raw: raw, start: start, end: l.pos, leadingTrivia: leading}
 	}
 	if isFloat(raw) {
-		return token{kind: token_FLOAT, raw: raw, start: start, end: l.pos}
+		return token{kind: token_FLOAT, raw: raw, start: start, end: l.pos, leadingTrivia: leading}
 	}
 	if isHexString(raw) {
-		return token{kind: token_HEX_STRING, raw: raw, start: start, end: l.pos}
+		return token{kind: token_HEX_STRING, raw: raw, start: start, end: l.pos, leadingTrivia: leading}
 	}
 	if isField(raw) {
-		return token{kind: token_FIELD, raw: raw, start: start, end: l.pos}
+		return token{kind: token_FIELD, raw: raw, start: start, end: l.pos, leadingTrivia: leading}
 	}
-	return token{kind: token_ERROR, raw: fmt.Sprintf("unexpected token: %q", raw), start: start, end: l.pos}
+	return token{kind: token_ERROR, raw: fmt.Sprintf("unexpected token: %q", raw), start: start, end: l.pos, leadingTrivia: leading}
 }
 
 func (l *lexer) match(s string) bool {
@@ -536,19 +550,24 @@ func parseRule(input string) (Rule, error) {
 }
 
 func parseAST(input string) (astNode, error) {
+	expr, _, err := parseASTWithTokens(input)
+	return expr, err
+}
+
+func parseASTWithTokens(input string) (astNode, []token, error) {
 	tokens, err := lex(input)
 	if err != nil {
-		return nil, newParseError(input, tokens[len(tokens)-1], err.Error())
+		return nil, tokens, newParseError(input, tokens[len(tokens)-1], err.Error())
 	}
 	p := &parser{input: input, tokens: tokens}
 	expr, err := p.parseExpr(0)
 	if err != nil {
-		return nil, err
+		return nil, tokens, err
 	}
 	if tok := p.peek(); tok.kind != token_EOF {
-		return nil, p.errorf(tok, "unexpected token %q", tok.raw)
+		return nil, tokens, p.errorf(tok, "unexpected token %q", tok.raw)
 	}
-	return expr, nil
+	return expr, tokens, nil
 }
 
 func (p *parser) parseExpr(minPrec int) (astNode, error) {
