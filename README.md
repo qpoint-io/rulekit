@@ -179,6 +179,13 @@ Use `Rewrite` to preserve unchanged source while replacing selected AST nodes:
 updated, err := rulekit.Rewrite(ast, []rulekit.Edit{{Target: node, Replacement: replacementAST}}, rulekit.FormatOptions{Mode: rulekit.FormatCompact})
 ```
 
+For repeated evaluation, `ParsePlan` and `CompilePlan` create an optional runtime plan over the lowered evaluator representation:
+
+```go
+plan, err := rulekit.ParsePlan(`ip in 192.168.0.0/16`)
+result := plan.Eval(ctx)
+```
+
 ## Macros
 
 Macros can be used for complex or commonly-used rules. They are defined in the evaluation context:

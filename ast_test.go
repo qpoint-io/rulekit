@@ -1,6 +1,7 @@
 package rulekit
 
 import (
+	"net"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -131,4 +132,19 @@ func TestRewritePreservesUnchangedSource(t *testing.T) {
 	roundTrip, err := ParseAST(rewritten)
 	require.NoError(t, err)
 	require.Equal(t, `field == 3 and other == 2`, roundTrip.String())
+}
+
+func TestCompilePlan(t *testing.T) {
+	plan, err := ParsePlan(`ip in 192.168.0.0/16 and request.headers["user-agent"] == "curl"`)
+	require.NoError(t, err)
+	require.Equal(t, `ip == 192.168.0.0/16 and request.headers["user-agent"] == "curl"`, plan.String())
+
+	result := plan.Eval(&Ctx{KV: KV{
+		"ip": net.ParseIP("192.168.1.1"),
+		"request": KV{
+			"headers": KV{"user-agent": "curl"},
+		},
+	}})
+	require.NoError(t, result.Error)
+	require.True(t, result.Pass())
 }
