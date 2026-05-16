@@ -151,3 +151,24 @@ func TestCompilePlan(t *testing.T) {
 	require.NoError(t, result.Error)
 	require.True(t, result.Pass())
 }
+
+func TestEvalTraceShortCircuit(t *testing.T) {
+	rule := MustParse(`a == 1 or b == 2`)
+
+	withoutTrace := rule.Eval(&Ctx{KV: KV{"a": int64(1)}})
+	require.Nil(t, withoutTrace.Trace)
+
+	result := rule.Eval(&Ctx{KV: KV{"a": int64(1)}, Trace: true})
+	require.NoError(t, result.Error)
+	require.True(t, result.Pass())
+	require.NotNil(t, result.Trace)
+	require.Equal(t, ASTBinary, result.Trace.Node.Kind())
+	require.Equal(t, `a == 1 or b == 2`, result.Trace.Expr)
+	require.Len(t, result.Trace.Children, 2)
+	require.True(t, result.Trace.Children[0].Active)
+	require.False(t, result.Trace.Children[0].Pruned)
+	require.Equal(t, true, result.Trace.Children[0].Value)
+	require.False(t, result.Trace.Children[1].Active)
+	require.True(t, result.Trace.Children[1].Pruned)
+	require.Equal(t, `b == 2`, result.Trace.Children[1].Expr)
+}

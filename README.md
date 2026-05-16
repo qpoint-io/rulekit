@@ -203,6 +203,13 @@ plan, err := rulekit.ParsePlan(`ip in 192.168.0.0/16`)
 result := plan.Eval(ctx)
 ```
 
+Enable evaluation traces when a caller needs short-circuit visibility for debugging or UI explanation:
+
+```go
+result := rule.Eval(&rulekit.Ctx{KV: kv, Trace: true})
+trace := result.Trace
+```
+
 ## Macros
 
 Macros can be used for complex or commonly-used rules. They are defined in the evaluation context:

@@ -881,14 +881,14 @@ func TestFunctionParsing(t *testing.T) {
 		nested_func(true)
 	)`)
 
-	fn := parsed.(*rule).Rule.(*FunctionValue)
+	fn := unwrapTracedRule(parsed.(*rule).Rule).(*FunctionValue)
 	require.Equal(t, "func_name", fn.fn)
 	require.Len(t, fn.args.vals, 4)
-	assert.IsType(t, FieldValue(""), fn.args.vals[0])
-	assert.IsType(t, &LiteralValue[any]{}, fn.args.vals[1])
-	assert.IsType(t, net.IP{}, fn.args.vals[1].(*LiteralValue[any]).value)
-	assert.IsType(t, &ArrayValue{}, fn.args.vals[2])
-	assert.IsType(t, &FunctionValue{}, fn.args.vals[3])
+	assert.IsType(t, FieldValue(""), unwrapTracedRule(fn.args.vals[0]))
+	assert.IsType(t, &LiteralValue[any]{}, unwrapTracedRule(fn.args.vals[1]))
+	assert.IsType(t, net.IP{}, unwrapTracedRule(fn.args.vals[1]).(*LiteralValue[any]).value)
+	assert.IsType(t, &ArrayValue{}, unwrapTracedRule(fn.args.vals[2]))
+	assert.IsType(t, &FunctionValue{}, unwrapTracedRule(fn.args.vals[3]))
 }
 
 func TestMacros(t *testing.T) {
