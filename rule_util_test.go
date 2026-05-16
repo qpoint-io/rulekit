@@ -1,6 +1,7 @@
 package rulekit
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"reflect"
@@ -27,17 +28,23 @@ func assertRulep(t *testing.T, rule string, input Ctxer) *ruleAssertion {
 }
 
 func assertRule(t *testing.T, rule Rule, input Ctxer) *ruleAssertion {
-	ctx := &Ctx{}
-	if input != nil {
-		ctx = input.Ctx()
-	}
-	res := rule.Eval(ctx)
+	res := evalRule(rule, input)
 	return &ruleAssertion{
 		t:      t,
 		rule:   rule,
 		result: res,
 		input:  input,
 	}
+}
+
+func evalRule(rule Rule, input Ctxer) Result {
+	ctx := context.Background()
+	var ruleInput Input
+	opts := Opts{}
+	if input != nil {
+		ctx, ruleInput, opts = input.EvalArgs()
+	}
+	return rule.Eval(ctx, ruleInput, opts)
 }
 
 func (r *ruleAssertion) String() string {
@@ -123,19 +130,37 @@ func parseCIDR(t *testing.T, s string) *net.IPNet {
 }
 
 type Ctxer interface {
-	Ctx() *Ctx
+	EvalArgs() (context.Context, Input, Opts)
 }
 
 type kv map[string]any
 
-func (k kv) Ctx() *Ctx {
-	return &Ctx{KV: k}
+func (k kv) EvalArgs() (context.Context, Input, Opts) {
+	return context.Background(), FromKV(KV(k)), Opts{}
 }
 
-type ctx Ctx
+type ctx struct {
+	Context   context.Context
+	Input     Input
+	KV        KV
+	Macros    MacroSet
+	Functions map[string]*Function
+	Trace     bool
+}
 
-func (c *ctx) Ctx() *Ctx {
-	return (*Ctx)(c)
+func (c *ctx) EvalArgs() (context.Context, Input, Opts) {
+	if c == nil {
+		return context.Background(), nil, Opts{}
+	}
+	ctx := c.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	input := c.Input
+	if input == nil && c.KV != nil {
+		input = FromKV(c.KV)
+	}
+	return ctx, input, Opts{Trace: c.Trace, Macros: c.Macros, Functions: c.Functions}
 }
 
 func assertParseEval(t *testing.T, rule string, input Ctxer, pass bool) {
@@ -148,11 +173,13 @@ func assertParseEval(t *testing.T, rule string, input Ctxer, pass bool) {
 // assertEval is a helper function to assert the result of a rule evaluation.
 // It enforces strict evaluation.
 func assertEval(t *testing.T, r Rule, input Ctxer, value any) {
-	ctx := &Ctx{}
+	ctx := context.Background()
+	var ruleInput Input
+	opts := Opts{}
 	if input != nil {
-		ctx = input.Ctx()
+		ctx, ruleInput, opts = input.EvalArgs()
 	}
-	res := r.Eval(ctx)
+	res := r.Eval(ctx, ruleInput, opts)
 	if !res.Ok() {
 		t.Errorf("rule.Eval(%v) failed: error=%v missing=%v", input, res.Error, res.MissingFields)
 		return

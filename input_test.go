@@ -17,7 +17,7 @@ func TestInputFromKVLazyValue(t *testing.T) {
 		}),
 	})
 
-	result := rule.Eval(&Ctx{Input: input})
+	result := rule.Eval(nil, input, Opts{})
 	require.NoError(t, result.Error)
 	require.True(t, result.Pass())
 	require.Equal(t, 1, calls)
@@ -33,7 +33,7 @@ func TestInputFromKVLazyContextValue(t *testing.T) {
 	})
 	ctx := context.WithValue(context.Background(), contextKey("user"), "root")
 
-	result := rule.Eval(&Ctx{Context: ctx, Input: input})
+	result := rule.Eval(ctx, input, Opts{})
 	require.NoError(t, result.Error)
 	require.True(t, result.Pass())
 }
@@ -46,7 +46,7 @@ func TestInputNestedInputTakesOverSubtree(t *testing.T) {
 	})
 	input := FromKV(KV{"request": requestInput})
 
-	result := rule.Eval(&Ctx{Input: input})
+	result := rule.Eval(nil, input, Opts{})
 	require.NoError(t, result.Error)
 	require.True(t, result.Pass())
 }

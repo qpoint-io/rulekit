@@ -1,6 +1,7 @@
 package rulekit
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 )
@@ -11,10 +12,10 @@ type nodeAnd struct {
 	right Rule
 }
 
-func (n *nodeAnd) Eval(ctx *Ctx) Result {
-	tracing := traceEnabled(ctx)
+func (n *nodeAnd) Eval(ctx context.Context, input Input, opts Opts) Result {
+	tracing := traceEnabled(opts)
 	// if either node fails, return only that node
-	rleft := n.left.Eval(ctx)
+	rleft := n.left.Eval(ctx, input, opts)
 	if rleft.Fail() {
 		if tracing {
 			rleft.Trace = combineTrace(rleft.Trace, prunedTrace(n.right))
@@ -22,7 +23,7 @@ func (n *nodeAnd) Eval(ctx *Ctx) Result {
 		return rleft
 	}
 
-	rright := n.right.Eval(ctx)
+	rright := n.right.Eval(ctx, input, opts)
 	if rright.Fail() {
 		if tracing {
 			rright.Trace = combineTrace(rleft.Trace, rright.Trace)
@@ -66,10 +67,10 @@ type nodeOr struct {
 	right Rule
 }
 
-func (n *nodeOr) Eval(ctx *Ctx) Result {
-	tracing := traceEnabled(ctx)
+func (n *nodeOr) Eval(ctx context.Context, input Input, opts Opts) Result {
+	tracing := traceEnabled(opts)
 	// if either node passes, return only that node
-	rleft := n.left.Eval(ctx)
+	rleft := n.left.Eval(ctx, input, opts)
 	if rleft.Pass() {
 		if tracing {
 			rleft.Trace = combineTrace(rleft.Trace, prunedTrace(n.right))
@@ -77,7 +78,7 @@ func (n *nodeOr) Eval(ctx *Ctx) Result {
 		return rleft
 	}
 
-	rright := n.right.Eval(ctx)
+	rright := n.right.Eval(ctx, input, opts)
 	if rright.Pass() {
 		if tracing {
 			rright.Trace = combineTrace(rleft.Trace, rright.Trace)
@@ -120,23 +121,23 @@ type nodeNot struct {
 	right Rule
 }
 
-func (n *nodeNot) Eval(ctx *Ctx) Result {
+func (n *nodeNot) Eval(ctx context.Context, input Input, opts Opts) Result {
 	if n.right == nil {
 		return Result{}
 	}
 
-	r := n.right.Eval(ctx)
+	r := n.right.Eval(ctx, input, opts)
 	if !r.Ok() {
 		return Result{
 			Error:         r.Error,
 			MissingFields: r.MissingFields,
-			Trace:         traceIfEnabled(traceEnabled(ctx), r.Trace),
+			Trace:         traceIfEnabled(traceEnabled(opts), r.Trace),
 		}
 	}
 
 	return Result{
 		Value: !isZero(r.Value),
-		Trace: traceIfEnabled(traceEnabled(ctx), r.Trace),
+		Trace: traceIfEnabled(traceEnabled(opts), r.Trace),
 	}
 }
 
@@ -174,9 +175,9 @@ type nodeMatch struct {
 	rv Rule
 }
 
-func (n *nodeMatch) Eval(ctx *Ctx) Result {
-	tracing := traceEnabled(ctx)
-	lv := n.lv.Eval(ctx)
+func (n *nodeMatch) Eval(ctx context.Context, input Input, opts Opts) Result {
+	tracing := traceEnabled(opts)
+	lv := n.lv.Eval(ctx, input, opts)
 	if !lv.Ok() {
 		var trace *Trace
 		if tracing {
@@ -188,7 +189,7 @@ func (n *nodeMatch) Eval(ctx *Ctx) Result {
 			Trace:         trace,
 		}
 	}
-	rv := n.rv.Eval(ctx)
+	rv := n.rv.Eval(ctx, input, opts)
 	if !rv.Ok() {
 		return Result{
 			Error:         rv.Error,
@@ -241,9 +242,9 @@ type nodeCompare struct {
 	rv Rule
 }
 
-func (n *nodeCompare) Eval(ctx *Ctx) Result {
-	tracing := traceEnabled(ctx)
-	lv := n.lv.Eval(ctx)
+func (n *nodeCompare) Eval(ctx context.Context, input Input, opts Opts) Result {
+	tracing := traceEnabled(opts)
+	lv := n.lv.Eval(ctx, input, opts)
 	if !lv.Ok() {
 		var trace *Trace
 		if tracing {
@@ -255,7 +256,7 @@ func (n *nodeCompare) Eval(ctx *Ctx) Result {
 			Trace:         trace,
 		}
 	}
-	rv := n.rv.Eval(ctx)
+	rv := n.rv.Eval(ctx, input, opts)
 	if !rv.Ok() {
 		return Result{
 			Error:         rv.Error,
@@ -285,9 +286,9 @@ type nodeIn struct {
 	rv Rule
 }
 
-func (n *nodeIn) Eval(ctx *Ctx) Result {
-	tracing := traceEnabled(ctx)
-	lv := n.lv.Eval(ctx)
+func (n *nodeIn) Eval(ctx context.Context, input Input, opts Opts) Result {
+	tracing := traceEnabled(opts)
+	lv := n.lv.Eval(ctx, input, opts)
 	if !lv.Ok() {
 		var trace *Trace
 		if tracing {
@@ -299,7 +300,7 @@ func (n *nodeIn) Eval(ctx *Ctx) Result {
 			Trace:         trace,
 		}
 	}
-	rv := n.rv.Eval(ctx)
+	rv := n.rv.Eval(ctx, input, opts)
 	if !rv.Ok() {
 		return Result{
 			Error:         rv.Error,

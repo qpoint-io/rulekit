@@ -183,7 +183,7 @@ func TestEval(t *testing.T) {
 		require.NoError(t, err)
 
 		for input, want := range tc.tests {
-			got := toTestResult(p.Eval(&Ctx{KV: *input}))
+			got := toTestResult(evalRule(p, kv(*input)))
 			if !reflect.DeepEqual(got, want) {
 				// print debug info
 				SetDebugWriter(&testWriter{t})
@@ -215,77 +215,77 @@ func BenchmarkEval(b *testing.B) {
 	cases := []struct {
 		name string
 		expr string
-		ctx  *Ctx
+		ctx  Ctxer
 	}{
 		{
 			name: "short_circuit_first_branch_string",
 			expr: `tags == "db-svc" or domain matches /example\.com$/ or destination.ip in 192.168.0.0/16`,
-			ctx:  &Ctx{KV: KV{"tags": "db-svc"}},
+			ctx:  kv{"tags": "db-svc"},
 		},
 		{
 			name: "short_circuit_first_branch_string_slice",
 			expr: `tags == "db-svc" or domain matches /example\.com$/ or destination.ip in 192.168.0.0/16`,
-			ctx:  &Ctx{KV: KV{"tags": []string{"db-svc", "internal-vlan"}}},
+			ctx:  kv{"tags": []string{"db-svc", "internal-vlan"}},
 		},
 		{
 			name: "full_traversal_last_branch_pass",
 			expr: `tags == "db-svc" or domain matches /example\.com$/ or process.uid == 0 or destination.ip in 192.168.0.0/16`,
-			ctx: &Ctx{KV: KV{
+			ctx: kv{
 				"tags":        "other",
 				"domain":      "qpoint.io",
 				"process":     KV{"uid": 1000},
 				"destination": KV{"ip": net.ParseIP("192.168.2.37")},
-			}},
+			},
 		},
 		{
 			name: "full_traversal_no_match",
 			expr: `tags == "db-svc" or domain matches /example\.com$/ or process.uid == 0 or destination.ip in 192.168.0.0/16`,
-			ctx: &Ctx{KV: KV{
+			ctx: kv{
 				"tags":        "other",
 				"domain":      "qpoint.io",
 				"process":     KV{"uid": 1000},
 				"destination": KV{"ip": net.ParseIP("10.0.0.1")},
-			}},
+			},
 		},
 		{
 			name: "nested_path_number",
 			expr: `process.uid != 0 and destination.port <= 1023`,
-			ctx:  &Ctx{KV: KV{"process": KV{"uid": 1000}, "destination": KV{"port": 443}}},
+			ctx:  kv{"process": KV{"uid": 1000}, "destination": KV{"port": 443}},
 		},
 		{
 			name: "bracket_path",
 			expr: `request.headers["user-agent"] == "curl"`,
-			ctx:  &Ctx{KV: KV{"request": KV{"headers": KV{"user-agent": "curl"}}}},
+			ctx:  kv{"request": KV{"headers": KV{"user-agent": "curl"}}},
 		},
 		{
 			name: "array_index_path",
 			expr: `items[0].name == "first"`,
-			ctx:  &Ctx{KV: KV{"items": []any{KV{"name": "first"}, KV{"name": "second"}}}},
+			ctx:  kv{"items": []any{KV{"name": "first"}, KV{"name": "second"}}},
 		},
 		{
 			name: "regex",
 			expr: `domain matches /example\.com$/`,
-			ctx:  &Ctx{KV: KV{"domain": "api.example.com"}},
+			ctx:  kv{"domain": "api.example.com"},
 		},
 		{
 			name: "ip_cidr",
 			expr: `destination.ip in 192.168.0.0/16`,
-			ctx:  &Ctx{KV: KV{"destination": KV{"ip": net.ParseIP("192.168.2.37")}}},
+			ctx:  kv{"destination": KV{"ip": net.ParseIP("192.168.2.37")}},
 		},
 		{
 			name: "missing_fields",
 			expr: `user == "root" or destination.ip in 192.168.0.0/16`,
-			ctx:  &Ctx{KV: KV{}},
+			ctx:  kv{},
 		},
 		{
 			name: "function",
 			expr: `starts_with(path, "/api")`,
-			ctx:  &Ctx{KV: KV{"path": "/api/v1"}},
+			ctx:  kv{"path": "/api/v1"},
 		},
 		{
 			name: "macro",
 			expr: `is_internal() and user != "root"`,
-			ctx: &Ctx{
+			ctx: &ctx{
 				KV:     KV{"ip": net.ParseIP("172.16.0.1"), "user": "api"},
 				Macros: mustMacroSet(b, map[string]string{"is_internal": `ip in 172.16.0.0/16`}),
 			},
@@ -295,10 +295,11 @@ func BenchmarkEval(b *testing.B) {
 	for _, tc := range cases {
 		b.Run(tc.name, func(b *testing.B) {
 			rule := MustParse(tc.expr)
+			ctx, input, opts := tc.ctx.EvalArgs()
 			b.ReportAllocs()
 			b.ResetTimer()
 			for range b.N {
-				benchmarkResult = rule.Eval(tc.ctx)
+				benchmarkResult = rule.Eval(ctx, input, opts)
 			}
 		})
 	}
@@ -307,31 +308,31 @@ func BenchmarkEval(b *testing.B) {
 func BenchmarkEvalLazyInput(b *testing.B) {
 	b.Run("pruned", func(b *testing.B) {
 		rule := MustParse(`allow == true or expensive == "value"`)
-		ctx := &Ctx{Input: FromKV(KV{
+		input := FromKV(KV{
 			"allow": true,
 			"expensive": LazyValue(func() (any, error) {
 				return "value", nil
 			}),
-		})}
+		})
 		b.ReportAllocs()
 		b.ResetTimer()
 		for range b.N {
-			benchmarkResult = rule.Eval(ctx)
+			benchmarkResult = rule.Eval(nil, input, Opts{})
 		}
 	})
 
 	b.Run("resolved_cached", func(b *testing.B) {
 		rule := MustParse(`expensive == "value"`)
-		ctx := &Ctx{Input: FromKV(KV{
+		input := FromKV(KV{
 			"expensive": LazyValue(func() (any, error) {
 				return "value", nil
 			}),
-		})}
-		benchmarkResult = rule.Eval(ctx)
+		})
+		benchmarkResult = rule.Eval(nil, input, Opts{})
 		b.ReportAllocs()
 		b.ResetTimer()
 		for range b.N {
-			benchmarkResult = rule.Eval(ctx)
+			benchmarkResult = rule.Eval(nil, input, Opts{})
 		}
 	})
 
@@ -340,55 +341,29 @@ func BenchmarkEvalLazyInput(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		for range b.N {
-			ctx := &Ctx{Input: FromKV(KV{
+			input := FromKV(KV{
 				"expensive": LazyValue(func() (any, error) {
 					return "value", nil
 				}),
-			})}
-			benchmarkResult = rule.Eval(ctx)
+			})
+			benchmarkResult = rule.Eval(nil, input, Opts{})
 		}
 	})
 }
 
 func BenchmarkEvalTrace(b *testing.B) {
 	rule := MustParse(`tags == "db-svc" or domain matches /example\.com$/ or process.uid == 0 or destination.ip in 192.168.0.0/16`)
-	ctx := &Ctx{
-		Trace: true,
-		KV: KV{
-			"tags":        "other",
-			"domain":      "qpoint.io",
-			"process":     KV{"uid": 1000},
-			"destination": KV{"ip": net.ParseIP("192.168.2.37")},
-		},
-	}
-	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		benchmarkResult = rule.Eval(ctx)
-	}
-}
-
-func BenchmarkCompilePlan(b *testing.B) {
-	ast, err := ParseAST(`tags eq 'db-svc' OR domain matches /example\.com$/ OR (process.uid != 0 AND tags contains 'internal-svc')`)
-	require.NoError(b, err)
-	for range b.N {
-		_, _ = CompilePlan(ast)
-	}
-}
-
-func BenchmarkPlanEval(b *testing.B) {
-	plan, err := ParsePlan(`tags == "db-svc" or domain matches /example\.com$/ or process.uid == 0 or destination.ip in 192.168.0.0/16`)
-	require.NoError(b, err)
-	ctx := &Ctx{KV: KV{
+	input := FromKV(KV{
 		"tags":        "other",
 		"domain":      "qpoint.io",
 		"process":     KV{"uid": 1000},
 		"destination": KV{"ip": net.ParseIP("192.168.2.37")},
-	}}
+	})
+	opts := Opts{Trace: true}
 	b.ReportAllocs()
 	b.ResetTimer()
 	for range b.N {
-		benchmarkResult = plan.Eval(ctx)
+		benchmarkResult = rule.Eval(nil, input, opts)
 	}
 }
 
@@ -495,11 +470,11 @@ func TestFilterMatchIntUint(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !f.Eval(&Ctx{KV: KV{"f_int": 1, "f_uint": uint(13)}}).Pass() {
+	if !evalRule(f, kv{"f_int": 1, "f_uint": uint(13)}).Pass() {
 		t.Error("Packet must pass")
 	}
 
-	if f.Eval(&Ctx{KV: KV{"f_int": 1, "f_uint": uint(14)}}).Pass() {
+	if evalRule(f, kv{"f_int": 1, "f_uint": uint(14)}).Pass() {
 		t.Error("Packet must not pass")
 	}
 
@@ -508,11 +483,11 @@ func TestFilterMatchIntUint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !f2.Eval(&Ctx{KV: KV{"f_int": []int{1, 3, 4}}}).Pass() {
+	if !evalRule(f2, kv{"f_int": []int{1, 3, 4}}).Pass() {
 		t.Error("Packet must pass")
 	}
 
-	if f2.Eval(&Ctx{KV: KV{"f_int": []int{1, 2, 3, 4}}}).Pass() {
+	if evalRule(f2, kv{"f_int": []int{1, 2, 3, 4}}).Pass() {
 		t.Error("Packet must not pass")
 	}
 }
@@ -522,11 +497,11 @@ func TestFilterMatchString(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !f.Eval(&Ctx{KV: KV{"f_string": KV{"1": "1", "2": "GET", "3": "abc123"}}}).Pass() {
+	if !evalRule(f, kv{"f_string": KV{"1": "1", "2": "GET", "3": "abc123"}}).Pass() {
 		t.Error("Packet must pass")
 	}
 
-	if f.Eval(&Ctx{KV: KV{"f_string": KV{"1": "2", "2": "GET", "3": "abc123"}}}).Pass() {
+	if evalRule(f, kv{"f_string": KV{"1": "2", "2": "GET", "3": "abc123"}}).Pass() {
 		t.Error("Packet must not pass")
 	}
 
@@ -534,11 +509,11 @@ func TestFilterMatchString(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !f2.Eval(&Ctx{KV: KV{"f_string": KV{"1": "asdf1asdf", "2": "text - GET ---", "3": "asf fffabc123"}}}).Pass() {
+	if !evalRule(f2, kv{"f_string": KV{"1": "asdf1asdf", "2": "text - GET ---", "3": "asf fffabc123"}}).Pass() {
 		t.Error("Packet must pass")
 	}
 
-	if f2.Eval(&Ctx{KV: KV{"f_string": KV{"1": "test234test", "2": "xxxxETyyy", "3": "abc125"}}}).Pass() {
+	if evalRule(f2, kv{"f_string": KV{"1": "test234test", "2": "xxxxETyyy", "3": "abc125"}}).Pass() {
 		t.Error("Packet must not pass")
 	}
 }
@@ -573,7 +548,7 @@ func TestFilterMatchIP(t *testing.T) {
 	}
 
 	for input, want := range cases {
-		got := toTestResult(f.Eval(&Ctx{KV: *input}))
+		got := toTestResult(evalRule(f, kv(*input)))
 		require.Equalf(t, want, got, "filter: %s, values: %+v", f.String(), input)
 	}
 
@@ -607,7 +582,7 @@ func TestFilterMatchIP(t *testing.T) {
 	}
 
 	for input, want := range cidrCases {
-		got := toTestResult(f4.Eval(&Ctx{KV: *input}))
+		got := toTestResult(evalRule(f4, kv(*input)))
 		require.Equalf(t, want, got, "filter: %s, values: %+v", f4.String(), input)
 	}
 }
@@ -639,7 +614,7 @@ func TestFilterMatchMac(t *testing.T) {
 	}
 
 	for input, want := range cases {
-		got := toTestResult(f.Eval(&Ctx{KV: *input}))
+		got := toTestResult(evalRule(f, kv(*input)))
 		require.Equal(t, want, got)
 	}
 }
@@ -896,7 +871,7 @@ func TestSpecialBooleanFields(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rule := MustParse(tt.rule)
-			result := rule.Eval(&Ctx{KV: tt.input})
+			result := evalRule(rule, kv(tt.input))
 			if result.Value != tt.expected {
 				t.Errorf("Expected %v, got %v for rule: %s", tt.expected, result.Value, tt.rule)
 			}
@@ -1090,15 +1065,15 @@ func TestCustomFunction(t *testing.T) {
 	}).Pass()
 }
 
-func TestCtx_Validate(t *testing.T) {
+func TestOpts_Validate(t *testing.T) {
 	tcs := []struct {
 		name string
-		ctx  *Ctx
+		opts Opts
 		err  string
 	}{
 		{
 			name: "happy path",
-			ctx: &Ctx{
+			opts: Opts{
 				Macros: mustMacroSet(t, map[string]string{"dst_k8s_svc": `true`}),
 				Functions: map[string]*Function{
 					"custom_func": {},
@@ -1107,7 +1082,7 @@ func TestCtx_Validate(t *testing.T) {
 		},
 		{
 			name: "nil func",
-			ctx: &Ctx{
+			opts: Opts{
 				Functions: map[string]*Function{
 					"custom_func": nil,
 				},
@@ -1116,7 +1091,7 @@ func TestCtx_Validate(t *testing.T) {
 		},
 		{
 			name: "nil macro",
-			ctx: &Ctx{
+			opts: Opts{
 				Macros: MacroSet{
 					"custom_macro": nil,
 				},
@@ -1125,7 +1100,7 @@ func TestCtx_Validate(t *testing.T) {
 		},
 		{
 			name: "macro name conflicts with function",
-			ctx: &Ctx{
+			opts: Opts{
 				Macros: mustMacroSet(t, map[string]string{"custom_func": `true`}),
 				Functions: map[string]*Function{
 					"custom_func": {},
@@ -1135,14 +1110,14 @@ func TestCtx_Validate(t *testing.T) {
 		},
 		{
 			name: "macro name conflicts with stdlib function",
-			ctx: &Ctx{
+			opts: Opts{
 				Macros: mustMacroSet(t, map[string]string{"starts_with": `true`}),
 			},
 			err: `macro "starts_with": name conflicts with a stdlib function`,
 		},
 		{
 			name: "custom function name conflicts with stdlib function",
-			ctx: &Ctx{
+			opts: Opts{
 				Functions: map[string]*Function{
 					"starts_with": {},
 				},
@@ -1153,7 +1128,7 @@ func TestCtx_Validate(t *testing.T) {
 
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
-			err := tc.ctx.Validate()
+			err := tc.opts.Validate()
 			if tc.err == "" {
 				require.NoError(t, err)
 			} else {

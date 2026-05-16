@@ -12,6 +12,10 @@ type Input interface {
 	Get(context.Context, []PathSegment) (any, bool, error)
 }
 
+type pathInput interface {
+	GetPath(context.Context, []pathSegment) (any, bool, error)
+}
+
 type LazyValue func() (any, error)
 type LazyContextValue func(context.Context) (any, error)
 
@@ -41,17 +45,28 @@ type kvInput struct {
 }
 
 func (k *kvInput) Get(ctx context.Context, path []PathSegment) (any, bool, error) {
+	segments := make([]pathSegment, 0, len(path))
+	for _, segment := range path {
+		segments = append(segments, pathSegment{key: segment.Key, index: segment.Index, isIndex: segment.IsIndex, bracket: segment.Bracket})
+	}
+	return k.GetPath(ctx, segments)
+}
+
+func (k *kvInput) GetPath(ctx context.Context, path []pathSegment) (any, bool, error) {
 	if k == nil || k.kv == nil || len(path) == 0 {
 		return nil, false, nil
 	}
 	var current any = map[string]any(k.kv)
 	for i, segment := range path {
 		if nested, ok := current.(Input); ok {
-			return nested.Get(ctx, path[i:])
+			if nestedPath, ok := nested.(pathInput); ok {
+				return nestedPath.GetPath(ctx, path[i:])
+			}
+			return nested.Get(ctx, inputPathSegments(path[i:]))
 		}
 
-		if segment.IsIndex {
-			value, ok := indexAny(current, segment.Index)
+		if segment.isIndex {
+			value, ok := indexAny(current, segment.index)
 			if !ok {
 				return nil, false, nil
 			}
@@ -63,7 +78,7 @@ func (k *kvInput) Get(ctx context.Context, path []PathSegment) (any, bool, error
 		if !ok {
 			return nil, false, nil
 		}
-		value, ok := currentMap[segment.Key]
+		value, ok := currentMap[segment.key]
 		if !ok {
 			return nil, false, nil
 		}
@@ -76,7 +91,7 @@ func (k *kvInput) Get(ctx context.Context, path []PathSegment) (any, bool, error
 	return current, true, nil
 }
 
-func (k *kvInput) resolveLazy(ctx context.Context, path []PathSegment, value any) (any, error) {
+func (k *kvInput) resolveLazy(ctx context.Context, path []pathSegment, value any) (any, error) {
 	key := inputPathKey(path)
 	if resolved, ok := k.memo[key]; ok {
 		return resolved, nil
@@ -106,19 +121,19 @@ func (k *kvInput) resolveLazy(ctx context.Context, path []PathSegment, value any
 	return resolved, nil
 }
 
-func inputPathKey(path []PathSegment) string {
+func inputPathKey(path []pathSegment) string {
 	var raw strings.Builder
 	for _, segment := range path {
-		if segment.IsIndex {
+		if segment.isIndex {
 			raw.WriteString("[")
-			raw.WriteString(strconv.Itoa(segment.Index))
+			raw.WriteString(strconv.Itoa(segment.index))
 			raw.WriteString("]")
 			continue
 		}
 		if raw.Len() > 0 {
 			raw.WriteString(".")
 		}
-		raw.WriteString(segment.Key)
+		raw.WriteString(segment.key)
 	}
 	return raw.String()
 }
@@ -131,19 +146,17 @@ func inputPathSegments(segments []pathSegment) []PathSegment {
 	return out
 }
 
-func resolveInputPath(ctx *Ctx, segments []pathSegment) (any, bool, error) {
-	if ctx == nil {
-		return nil, false, nil
-	}
-	input := ctx.valueInput()
+func resolveInputPath(ctx context.Context, input Input, segments []pathSegment) (any, bool, error) {
 	if input == nil {
 		return nil, false, nil
 	}
-	return input.Get(ctx.context(), inputPathSegments(segments))
-}
-
-func usesInput(ctx *Ctx) bool {
-	return ctx != nil && (ctx.Input != nil || ctx.input != nil || ctx.Context != nil)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if pathInput, ok := input.(pathInput); ok {
+		return pathInput.GetPath(ctx, segments)
+	}
+	return input.Get(ctx, inputPathSegments(segments))
 }
 
 func inputError(field string, err error) Result {

@@ -1,6 +1,7 @@
 package rulekit
 
 import (
+	"context"
 	"fmt"
 	"strings"
 )
@@ -10,18 +11,18 @@ type FunctionValue struct {
 	args *ArrayValue
 }
 
-func (f *FunctionValue) Eval(ctx *Ctx) Result {
+func (f *FunctionValue) Eval(ctx context.Context, input Input, opts Opts) Result {
 	if fn, ok := StdlibFuncs[f.fn]; ok {
-		return f.eval(fn, ctx)
-	} else if fn, ok := ctx.Functions[f.fn]; ok {
-		return f.eval(fn, ctx)
-	} else if macro, ok := ctx.Macros[f.fn]; ok {
+		return f.eval(fn, ctx, input, opts)
+	} else if fn, ok := opts.Functions[f.fn]; ok {
+		return f.eval(fn, ctx, input, opts)
+	} else if macro, ok := opts.Macros[f.fn]; ok {
 		if len(f.args.vals) > 0 {
 			return Result{
 				Error: fmt.Errorf("macro %q expects 0 arguments, got %d", f.fn, len(f.args.vals)),
 			}
 		}
-		return macro.Rule.Eval(ctx)
+		return macro.Rule.Eval(ctx, input, opts)
 	}
 
 	return Result{
@@ -29,7 +30,7 @@ func (f *FunctionValue) Eval(ctx *Ctx) Result {
 	}
 }
 
-func (f *FunctionValue) eval(fn *Function, ctx *Ctx) Result {
+func (f *FunctionValue) eval(fn *Function, ctx context.Context, input Input, opts Opts) Result {
 	if len(fn.Args) != len(f.args.vals) {
 		return Result{
 			Error: fmt.Errorf("function %q expects %d arguments, got %d", f.fn, len(fn.Args), len(f.args.vals)),
@@ -38,7 +39,7 @@ func (f *FunctionValue) eval(fn *Function, ctx *Ctx) Result {
 
 	argMap := make(map[string]any, len(f.args.vals))
 	for i, arg := range f.args.vals {
-		res := arg.Eval(ctx)
+		res := arg.Eval(ctx, input, opts)
 		if !res.Ok() {
 			return res
 		}
