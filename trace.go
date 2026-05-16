@@ -2,15 +2,28 @@ package rulekit
 
 import "context"
 
+type TraceStatus string
+
+const (
+	TraceUnknown TraceStatus = "unknown"
+	TracePassed  TraceStatus = "passed"
+	TraceFailed  TraceStatus = "failed"
+	TraceMissing TraceStatus = "missing"
+	TraceError   TraceStatus = "error"
+	TracePruned  TraceStatus = "pruned"
+)
+
 // Trace explains how a rule evaluation reached its result.
 type Trace struct {
-	Node     ASTNode
-	Expr     string
-	Value    any
-	Error    error
-	Active   bool
-	Pruned   bool
-	Children []*Trace
+	Node          ASTNode
+	Expr          string
+	Value         any
+	Error         error
+	MissingFields []string
+	Status        TraceStatus
+	Active        bool
+	Pruned        bool
+	Children      []*Trace
 }
 
 type tracedRule struct {
@@ -31,12 +44,14 @@ func (r *tracedRule) Eval(ctx context.Context, input Input, opts Opts) Result {
 	res := r.rule.Eval(ctx, input, opts)
 	if traceEnabled(opts) {
 		res.Trace = &Trace{
-			Node:     r.node,
-			Expr:     r.expr,
-			Value:    res.Value,
-			Error:    res.Error,
-			Active:   true,
-			Children: traceChildren(res.Trace),
+			Node:          r.node,
+			Expr:          r.expr,
+			Value:         res.Value,
+			Error:         res.Error,
+			MissingFields: res.MissingFields,
+			Status:        traceStatus(res),
+			Active:        true,
+			Children:      traceChildren(res.Trace),
 		}
 	}
 	return res
@@ -76,9 +91,9 @@ func prunedTrace(rule Rule) *Trace {
 		return nil
 	}
 	if traced, ok := rule.(*tracedRule); ok {
-		return &Trace{Node: traced.node, Expr: traced.expr, Pruned: true}
+		return &Trace{Node: traced.node, Expr: traced.expr, Status: TracePruned, Pruned: true}
 	}
-	return &Trace{Expr: rule.String(), Pruned: true}
+	return &Trace{Expr: rule.String(), Status: TracePruned, Pruned: true}
 }
 
 func traceExpr(node ASTNode, rule Rule) string {
@@ -112,4 +127,19 @@ func traceIfEnabled(enabled bool, children ...*Trace) *Trace {
 		return nil
 	}
 	return combineTrace(children...)
+}
+
+func traceStatus(res Result) TraceStatus {
+	switch {
+	case res.Error != nil:
+		return TraceError
+	case len(res.MissingFields) > 0:
+		return TraceMissing
+	case res.Pass():
+		return TracePassed
+	case res.Fail():
+		return TraceFailed
+	default:
+		return TraceUnknown
+	}
 }
