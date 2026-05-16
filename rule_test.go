@@ -3,7 +3,6 @@ package rulekit
 import (
 	"errors"
 	"net"
-	"os"
 	"reflect"
 	"testing"
 
@@ -12,7 +11,6 @@ import (
 )
 
 func init() {
-	// SetDebugLevel(5)
 	// SetErrorVerbose(true)
 }
 
@@ -185,12 +183,6 @@ func TestEval(t *testing.T) {
 		for input, want := range tc.tests {
 			got := toTestResult(evalRule(p, kv(*input)))
 			if !reflect.DeepEqual(got, want) {
-				// print debug info
-				SetDebugWriter(&testWriter{t})
-				defer SetDebugWriter(os.Stderr)
-				SetDebugLevel(1)
-				defer SetDebugLevel(0)
-
 				t.Errorf("Filter: %s\nInput: %+v\nGot:  %+v\nWant: %+v", tc.filter, *input, got, want)
 			}
 		}

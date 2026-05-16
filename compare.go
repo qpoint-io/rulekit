@@ -23,16 +23,10 @@ func compare(left any, op int, right any) (ret bool) {
 	return compareDetailed(left, op, right).pass
 }
 
-func compareDetailed(left any, op int, right any) (ret compareOutcome) {
+func compareDetailed(left any, op int, right any) compareOutcome {
 	// any ? []any
 	//      -> run the comparison for each element in the right array.
 	if rightArr, ok := right.([]any); ok {
-		if ruleDebug >= 1 {
-			defer func() {
-				debugResult(ret.pass, "╰ cmp[]", "", left, op, right)
-			}()
-		}
-
 		if op == op_CONTAINS {
 			// the contains operator does not support arrays on the right side.
 			return invalidShape()
@@ -41,12 +35,6 @@ func compareDetailed(left any, op int, right any) (ret compareOutcome) {
 		return compareSliceDetailed(rightArr, op, func(rv any, op int) compareOutcome {
 			return compareDetailed(left, op, rv)
 		})
-	}
-
-	if ruleDebug >= 1 {
-		defer func() {
-			debugResult(ret.pass, "╰ cmp", "", left, op, right)
-		}()
 	}
 
 	// the left value type determines the comparison logic
@@ -185,18 +173,6 @@ func diagnosticType(value any) string {
 	}
 	return fmt.Sprintf("%T", value)
 }
-
-func debugResult(result bool, prefix string, lname string, lv any, op int, rv any) bool {
-	if ruleDebug >= 1 {
-		lvTxt := fmt.Sprintf("[%T] %v", lv, lv)
-		if lname != "" {
-			lvTxt = fmt.Sprintf("%s(%s)", lname, lvTxt)
-		}
-		fmt.Fprintf(ruleDebugWriter, "%-20s%5t:\t%s %s [%T] %v\n", prefix, result, lvTxt, operatorToString(op), rv, rv)
-	}
-	return result
-}
-
 func compareSlice[T any](slice []T, op int, fn func(el T, op int) bool) bool {
 	return compareSliceDetailed(slice, op, func(el T, op int) compareOutcome {
 		return comparePass(fn(el, op))

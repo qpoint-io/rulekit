@@ -1,11 +1,6 @@
 package rulekit
 
-func compareBool(left bool, op int, right bool) (ret compareOutcome) {
-	if ruleDebug >= 1 {
-		defer func() {
-			debugResult(ret.pass, "│ cmpBool", "", left, op, right)
-		}()
-	}
+func compareBool(left bool, op int, right bool) compareOutcome {
 	switch op {
 	case op_EQ:
 		return comparePass(left == right)

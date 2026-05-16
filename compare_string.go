@@ -6,12 +6,7 @@ import (
 	"strings"
 )
 
-func compareString(left string, op int, right any) (ret compareOutcome) {
-	if ruleDebug >= 1 {
-		defer func() {
-			debugResult(ret.pass, "│ cmpStr", "", left, op, right)
-		}()
-	}
+func compareString(left string, op int, right any) compareOutcome {
 	switch right := right.(type) {
 	case string:
 		// string ? string
@@ -32,12 +27,7 @@ func compareString(left string, op int, right any) (ret compareOutcome) {
 	return incomparable()
 }
 
-func compareStringString(left string, op int, right string) (ret compareOutcome) {
-	if ruleDebug >= 1 {
-		defer func() {
-			debugResult(ret.pass, "│  cmpStrStr", "", left, op, right)
-		}()
-	}
+func compareStringString(left string, op int, right string) compareOutcome {
 	switch op {
 	case op_EQ:
 		return comparePass(left == right)
@@ -49,12 +39,7 @@ func compareStringString(left string, op int, right string) (ret compareOutcome)
 	return unsupportedOperator()
 }
 
-func compareStringRegex(left string, op int, right *regexp.Regexp) (ret compareOutcome) {
-	if ruleDebug >= 1 {
-		defer func() {
-			debugResult(ret.pass, "│ cmpStrRegex", "", left, op, right)
-		}()
-	}
+func compareStringRegex(left string, op int, right *regexp.Regexp) compareOutcome {
 	switch op {
 	case op_EQ, op_CONTAINS:
 		return comparePass(right.MatchString(left))
@@ -64,12 +49,7 @@ func compareStringRegex(left string, op int, right *regexp.Regexp) (ret compareO
 	return unsupportedOperator()
 }
 
-func compareStringSlice(left []string, op int, right any) (ret compareOutcome) {
-	if ruleDebug >= 1 {
-		defer func() {
-			debugResult(ret.pass, "│ cmp[]Str", "", left, op, right)
-		}()
-	}
+func compareStringSlice(left []string, op int, right any) compareOutcome {
 	if op == op_CONTAINS {
 		// possible options:
 		// []string{...} contains string

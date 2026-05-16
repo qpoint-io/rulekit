@@ -6,7 +6,6 @@ import (
 	"net"
 	"reflect"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -206,16 +205,6 @@ func mustMacroSet(t testing.TB, macros map[string]string) MacroSet {
 		require.NoError(t, set.Register(name, expr))
 	}
 	return set
-}
-
-type testWriter struct {
-	t *testing.T
-}
-
-func (w *testWriter) Write(p []byte) (n int, err error) {
-	w.t.Helper()
-	w.t.Log(strings.TrimRight(string(p), "\n"))
-	return len(p), nil
 }
 
 // TestResult mirrors Result for easier testing.
