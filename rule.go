@@ -152,6 +152,8 @@ func (c *Ctx) Validate() error {
 type Rule interface {
 	// Evaluates the rule with the context
 	Eval(*Ctx) Result
+	// Print prints the rule with the requested mode.
+	Print(PrintMode) string
 	// String representation of the rule
 	String() string
 }
@@ -166,8 +168,13 @@ func (f RuleFunc) String() string {
 	return "<fn>"
 }
 
+func (f RuleFunc) Print(PrintMode) string {
+	return f.String()
+}
+
 type rule struct {
 	Rule
+	ast *AST
 }
 
 // Eval overrides the rule's Eval() method to wrap the returned EvalutedRule so we can override the String() method.
@@ -181,11 +188,24 @@ func (r *rule) Eval(ctx *Ctx) Result {
 	return res
 }
 
+func (r *rule) Print(mode PrintMode) string {
+	if r.Rule == nil {
+		return "<empty>"
+	}
+	if r.ast != nil {
+		return Format(r.ast, mode)
+	}
+	return r.String()
+}
+
 // String overrides the rule's String() method to remove the parentheses.
 // This is only used on the root node.
 func (r *rule) String() string {
 	if r.Rule == nil {
 		return "<empty>"
+	}
+	if r.ast != nil {
+		return r.ast.String()
 	}
 	s := r.Rule.String()
 	if len(s) > 0 && s[0] == '(' {

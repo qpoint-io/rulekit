@@ -1,43 +1,56 @@
 package rulekit
 
-import (
-	"fmt"
-	"strings"
-)
+import "strings"
 
-// FormatMode selects canonical output shape.
-type FormatMode int
-
-const (
-	FormatCompact FormatMode = iota
-	FormatMultiline
-)
-
-// FormatOptions configures expression formatting.
-type FormatOptions struct {
-	Mode   FormatMode
-	Indent string
+// PrintMode selects how a rule or AST should be printed.
+type PrintMode interface {
+	printMode()
 }
 
-// Format prints an AST using explicit canonical formatting options.
-func Format(ast *AST, opts FormatOptions) (string, error) {
+type printSource struct{}
+type printCompact struct{}
+type printMultiline struct {
+	indent string
+}
+
+func (printSource) printMode()    {}
+func (printCompact) printMode()   {}
+func (printMultiline) printMode() {}
+
+// Source prints the original expression bytes when they are available.
+func Source() PrintMode { return printSource{} }
+
+// Compact prints compact canonical expression output.
+func Compact() PrintMode { return printCompact{} }
+
+// Multiline prints canonical multiline expression output with the given indent.
+func Multiline(indent string) PrintMode {
+	if indent == "" {
+		indent = "  "
+	}
+	return printMultiline{indent: indent}
+}
+
+// Format prints an AST using an explicit print mode.
+func Format(ast *AST, mode PrintMode) string {
 	if ast == nil || ast.root == nil {
-		return "", fmt.Errorf("AST must not be nil")
+		return ""
 	}
-	if opts.Indent == "" {
-		opts.Indent = "  "
-	}
-	switch opts.Mode {
-	case FormatCompact:
-		return printAST(ast.root), nil
-	case FormatMultiline:
-		return formatMultiline(ast.root, opts, 0), nil
+	switch mode := mode.(type) {
+	case printSource:
+		return ast.Source()
+	case printMultiline:
+		return formatMultiline(ast.root, formatOptions{indent: mode.indent}, 0)
 	default:
-		return "", fmt.Errorf("unknown format mode %d", opts.Mode)
+		return printAST(ast.root)
 	}
 }
 
-func formatMultiline(node astNode, opts FormatOptions, depth int) string {
+type formatOptions struct {
+	indent string
+}
+
+func formatMultiline(node astNode, opts formatOptions, depth int) string {
 	binary, ok := node.(*astBinary)
 	if !ok || (binary.op != astOpAnd && binary.op != astOpOr) {
 		return printAST(node)
@@ -49,7 +62,7 @@ func formatMultiline(node astNode, opts FormatOptions, depth int) string {
 	left := formatMultilineOperand(binary.left, opts, depth, binary.op, false)
 	right := formatMultilineOperand(binary.right, opts, depth, binary.op, true)
 	operator := astOperatorString(binary.op)
-	indent := strings.Repeat(opts.Indent, depth)
+	indent := strings.Repeat(opts.indent, depth)
 
 	if leftBinary, ok := binary.left.(*astBinary); ok && astPrecedence(leftBinary) < astPrecedence(binary) {
 		return left + " " + operator + " " + right
@@ -66,10 +79,10 @@ func hasSameOperatorChild(binary *astBinary) bool {
 	return leftOK && left.op == binary.op || rightOK && right.op == binary.op
 }
 
-func formatMultilineChain(binary *astBinary, opts FormatOptions, depth int) string {
+func formatMultilineChain(binary *astBinary, opts formatOptions, depth int) string {
 	operands := flattenOperator(binary, binary.op)
 	operator := astOperatorString(binary.op)
-	indent := strings.Repeat(opts.Indent, depth)
+	indent := strings.Repeat(opts.indent, depth)
 	parts := make([]string, 0, len(operands))
 	for i, operand := range operands {
 		formatted := formatMultilineOperand(operand, opts, depth, binary.op, i > 0)
@@ -90,7 +103,7 @@ func flattenOperator(node astNode, op astOperator) []astNode {
 	return []astNode{node}
 }
 
-func formatMultilineOperand(node astNode, opts FormatOptions, depth int, parentOp astOperator, rightChild bool) string {
+func formatMultilineOperand(node astNode, opts formatOptions, depth int, parentOp astOperator, rightChild bool) string {
 	if binary, ok := node.(*astBinary); ok {
 		if astPrecedence(binary) < infixPrecedence(tokenKindFromASTOperator(parentOp)) {
 			return formatGroupedMultiline(binary, opts, depth)
@@ -102,10 +115,10 @@ func formatMultilineOperand(node astNode, opts FormatOptions, depth int, parentO
 	return printASTWithParent(node, infixPrecedence(tokenKindFromASTOperator(parentOp)), rightChild)
 }
 
-func formatGroupedMultiline(node astNode, opts FormatOptions, depth int) string {
+func formatGroupedMultiline(node astNode, opts formatOptions, depth int) string {
 	inner := formatMultiline(node, opts, 0)
-	innerIndent := strings.Repeat(opts.Indent, depth+1)
-	closingIndent := strings.Repeat(opts.Indent, depth)
+	innerIndent := strings.Repeat(opts.indent, depth+1)
+	closingIndent := strings.Repeat(opts.indent, depth)
 	return "(\n" + indentLines(inner, innerIndent) + "\n" + closingIndent + ")"
 }
 
