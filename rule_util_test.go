@@ -1,7 +1,6 @@
 package rulekit
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"reflect"
@@ -9,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hashicorp/go-multierror"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -89,15 +87,10 @@ func (r *ruleAssertion) NotOk() *ruleAssertion {
 
 func (r *ruleAssertion) MissingFields(fields ...string) *ruleAssertion {
 	r.t.Helper()
-	var mf *ErrMissingFields
-	if errors.As(r.result.Error, &mf) {
-		slices.Sort(fields)
-		missing := mf.Fields.Items()
-		slices.Sort(missing)
-		assert.Equal(r.t, fields, missing, "missing fields should match\n%s", r)
-	} else {
-		assert.Fail(r.t, "unexpected error type", "expected ErrMissingFields but got %T\n%s", r.result.Error, r)
-	}
+	slices.Sort(fields)
+	missing := append([]string(nil), r.result.MissingFields...)
+	slices.Sort(missing)
+	assert.Equal(r.t, fields, missing, "missing fields should match\n%s", r)
 	return r
 }
 
@@ -110,12 +103,6 @@ func (r *ruleAssertion) Error(err error) *ruleAssertion {
 func (r *ruleAssertion) ErrorString(err string) *ruleAssertion {
 	r.t.Helper()
 	assert.EqualError(r.t, r.result.Error, err, "error should match\n%s", r)
-	return r
-}
-
-func (r *ruleAssertion) EvaluatedRule(rule string) *ruleAssertion {
-	r.t.Helper()
-	assert.Equal(r.t, rule, r.result.EvaluatedRule.String(), "evaluated rule should match\n%s", r)
 	return r
 }
 
@@ -167,7 +154,7 @@ func assertEval(t *testing.T, r Rule, input Ctxer, value any) {
 	}
 	res := r.Eval(ctx)
 	if !res.Ok() {
-		t.Errorf("rule.Eval(%v) failed: %v", input, res.Error)
+		t.Errorf("rule.Eval(%v) failed: error=%v missing=%v", input, res.Error, res.MissingFields)
 		return
 	}
 	if !reflect.DeepEqual(res.Value, value) {
@@ -204,43 +191,21 @@ func (w *testWriter) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-// TestResult mirrors Result but with EvaluatedRule as a string for easier testing
+// TestResult mirrors Result for easier testing.
 type TestResult struct {
 	Value         any
 	Error         error
-	EvaluatedRule string // stores the string representation of the rule
-}
-
-type testErrMissingFields struct {
-	fields []string
-}
-
-func (e *testErrMissingFields) Error() string {
-	return fmt.Sprintf("missing fields: %v", e.fields)
-}
-
-func tErrMissingFields(fields ...string) error {
-	return &testErrMissingFields{fields: fields}
+	MissingFields []string
 }
 
 // toTestResult converts a Result to TestResult for easier test assertions
 func toTestResult(r Result) TestResult {
-	err := r.Error
-	if e, ok := err.(*multierror.Error); ok && e.Len() == 1 {
-		err = e.Errors[0]
-	}
-	if e, ok := err.(*ErrMissingFields); ok {
-		mf := e.Fields.Items()
-		slices.Sort(mf)
-		err = &testErrMissingFields{fields: mf}
-	}
+	missing := append([]string(nil), r.MissingFields...)
+	slices.Sort(missing)
 
-	tr := TestResult{
-		Value: r.Value,
-		Error: err,
+	return TestResult{
+		Value:         r.Value,
+		Error:         r.Error,
+		MissingFields: missing,
 	}
-	if r.EvaluatedRule != nil {
-		tr.EvaluatedRule = r.EvaluatedRule.String()
-	}
-	return tr
 }

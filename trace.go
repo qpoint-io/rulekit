@@ -12,7 +12,8 @@ type Trace struct {
 }
 
 type tracedRule struct {
-	node astNode
+	node ASTNode
+	expr string
 	rule Rule
 }
 
@@ -20,16 +21,16 @@ func withTrace(node astNode, rule Rule) Rule {
 	if rule == nil {
 		return nil
 	}
-	return &tracedRule{node: node, rule: rule}
+	public := astToPublic(node)
+	return &tracedRule{node: public, expr: traceExpr(public, rule), rule: rule}
 }
 
 func (r *tracedRule) Eval(ctx *Ctx) Result {
 	res := r.rule.Eval(ctx)
 	if traceEnabled(ctx) {
-		node := astToPublic(r.node)
 		res.Trace = &Trace{
-			Node:     node,
-			Expr:     traceExpr(node, r.rule),
+			Node:     r.node,
+			Expr:     r.expr,
 			Value:    res.Value,
 			Error:    res.Error,
 			Active:   true,
@@ -73,8 +74,7 @@ func prunedTrace(rule Rule) *Trace {
 		return nil
 	}
 	if traced, ok := rule.(*tracedRule); ok {
-		node := astToPublic(traced.node)
-		return &Trace{Node: node, Expr: traceExpr(node, traced.rule), Pruned: true}
+		return &Trace{Node: traced.node, Expr: traced.expr, Pruned: true}
 	}
 	return &Trace{Expr: rule.String(), Pruned: true}
 }
@@ -103,4 +103,11 @@ func combineTrace(children ...*Trace) *Trace {
 		}
 	}
 	return trace
+}
+
+func traceIfEnabled(enabled bool, children ...*Trace) *Trace {
+	if !enabled {
+		return nil
+	}
+	return combineTrace(children...)
 }

@@ -43,7 +43,7 @@ import "github.com/qpoint-io/rulekit"
 
 // ...
 
-r, err := rule.Parse(`domain matches /example\.com$/ and port == 8080`)
+r, err := rulekit.Parse(`domain matches /example\.com$/ and port == 8080`)
 if err != nil { /* ... */ }
 
 // define input data
@@ -53,17 +53,17 @@ input := rulekit.KV{
 }
 
 // evaluate the rule
-result := r.Eval(&rulekit.Ctx{KV: inputData})
+result := r.Eval(&rulekit.Ctx{KV: input})
 
-// check for errors
-if !result.Ok() {
+// check for errors, missing input, then the rule result
+if result.Error != nil {
     fmt.Printf("error evaluating rule: %v\n", result.Error)
+} else if result.Unknown() {
+    fmt.Printf("missing fields: %v\n", result.MissingFields)
+} else if result.Pass() {
+    fmt.Println("PASS!")
 } else {
-    if result.Pass() {
-        fmt.Println("PASS!")
-    } else if result.Fail() {
-        fmt.Println("FAIL :(")
-    }
+    fmt.Println("FAIL :(")
 }
 ```
 
@@ -72,14 +72,16 @@ if !result.Ok() {
 When a rule is evaluated, it returns a `Result` struct containing:
 
 - `Value`: The evaluated value, usually a boolean
-- `Error`: Any evaluation errors such as fields missing from the KV map
-- `EvaluatedRule`: The sub-rule that determined the returned value. Useful for debugging and understanding which part of a complex rule caused the result.
+- `Error`: Any operational evaluation error
+- `MissingFields`: Fields required to complete evaluation but absent from the input
+- `Trace`: Optional evaluation explanation when `Ctx.Trace` is enabled
 
 The Result also provides additional helper methods:
 
-- `Pass()`: Returns true if the rule returns true/a non-zero value with no errors
-- `Fail()`: Returns true if the rule returns false/a zero value with no errors
-- `Ok()`: Returns true if the rule executed with no error
+- `Pass()`: Returns true if the rule completed and returned true/a non-zero value
+- `Fail()`: Returns true if the rule completed and returned false/a zero value
+- `Ok()` / `Complete()`: Returns true if the rule completed with no error or missing fields
+- `Unknown()`: Returns true if the rule needs more input but did not otherwise fail
 
 ## Supported Operators
 
@@ -285,8 +287,8 @@ customFuncs := map[string]*rulekit.Function{
                 return rulekit.Result{Error: err}
             }
 
-            num := rand.IntN(max-min) + min
-            return Result{
+			num := rand.IntN(max-min) + min
+			return rulekit.Result{
                 Value: num,
             }
         },
@@ -297,12 +299,12 @@ customFuncs := map[string]*rulekit.Function{
 rule, err := rulekit.Parse(`randomInt(10, 20) == 15`)
 if err != nil { /* ... */ }
 
-result1, err := rule.Eval(&rulekit.Ctx{
+result := rule.Eval(&rulekit.Ctx{
     Functions: customFuncs,
 })
-if err != nil { /* ... */ }
+if result.Error != nil { /* ... */ }
 
-if rule.Pass() {
+if result.Pass() {
     // the random number is 15!
 }
 ```

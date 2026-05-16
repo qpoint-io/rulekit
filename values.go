@@ -4,8 +4,6 @@ import (
 	"net"
 	"strconv"
 	"strings"
-
-	"github.com/qpoint-io/rulekit/set"
 )
 
 type FieldValue string
@@ -14,33 +12,20 @@ func (f FieldValue) Eval(ctx *Ctx) Result {
 	if !usesInput(ctx) {
 		val, ok := IndexKV(ctx.KV, string(f))
 		if !ok {
-			return Result{
-				Error:         &ErrMissingFields{Fields: set.NewSet(string(f))},
-				EvaluatedRule: f,
-			}
+			return Result{MissingFields: []string{string(f)}}
 		}
-		return Result{
-			Value:         val,
-			EvaluatedRule: f,
-		}
+		return Result{Value: val}
 	}
 
 	val, ok, err := resolveInputPath(ctx, fieldPathSegments(string(f)))
 	if err != nil {
 		res := inputError(string(f), err)
-		res.EvaluatedRule = f
 		return res
 	}
 	if !ok {
-		return Result{
-			Error:         &ErrMissingFields{Fields: set.NewSet(string(f))},
-			EvaluatedRule: f,
-		}
+		return Result{MissingFields: []string{string(f)}}
 	}
-	return Result{
-		Value:         val,
-		EvaluatedRule: f,
-	}
+	return Result{Value: val}
 }
 
 func (f FieldValue) String() string {
@@ -68,33 +53,20 @@ func (p *PathValue) Eval(ctx *Ctx) Result {
 	if !usesInput(ctx) {
 		val, ok := indexPath(ctx.KV, p.segments)
 		if !ok {
-			return Result{
-				Error:         &ErrMissingFields{Fields: set.NewSet(p.String())},
-				EvaluatedRule: p,
-			}
+			return Result{MissingFields: []string{p.String()}}
 		}
-		return Result{
-			Value:         val,
-			EvaluatedRule: p,
-		}
+		return Result{Value: val}
 	}
 
 	val, ok, err := resolveInputPath(ctx, p.segments)
 	if err != nil {
 		res := inputError(p.String(), err)
-		res.EvaluatedRule = p
 		return res
 	}
 	if !ok {
-		return Result{
-			Error:         &ErrMissingFields{Fields: set.NewSet(p.String())},
-			EvaluatedRule: p,
-		}
+		return Result{MissingFields: []string{p.String()}}
 	}
-	return Result{
-		Value:         val,
-		EvaluatedRule: p,
-	}
+	return Result{Value: val}
 }
 
 func (p *PathValue) String() string {
@@ -163,10 +135,7 @@ type LiteralValue[T any] struct {
 }
 
 func (l *LiteralValue[T]) Eval(ctx *Ctx) Result {
-	return Result{
-		Value:         l.value,
-		EvaluatedRule: l,
-	}
+	return Result{Value: l.value}
 }
 
 func (l *LiteralValue[T]) String() string {
@@ -192,8 +161,7 @@ func (a *ArrayValue) Eval(ctx *Ctx) Result {
 		vals[i] = res.Value
 	}
 	return Result{
-		Value:         vals,
-		EvaluatedRule: a,
+		Value: vals,
 	}
 }
 

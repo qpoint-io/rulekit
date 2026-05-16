@@ -18,24 +18,21 @@ func (f *FunctionValue) Eval(ctx *Ctx) Result {
 	} else if macro, ok := ctx.Macros[f.fn]; ok {
 		if len(f.args.vals) > 0 {
 			return Result{
-				Error:         fmt.Errorf("macro %q expects 0 arguments, got %d", f.fn, len(f.args.vals)),
-				EvaluatedRule: f,
+				Error: fmt.Errorf("macro %q expects 0 arguments, got %d", f.fn, len(f.args.vals)),
 			}
 		}
 		return macro.Rule.Eval(ctx)
 	}
 
 	return Result{
-		Error:         fmt.Errorf("unknown function %q", f.fn),
-		EvaluatedRule: f,
+		Error: fmt.Errorf("unknown function %q", f.fn),
 	}
 }
 
 func (f *FunctionValue) eval(fn *Function, ctx *Ctx) Result {
 	if len(fn.Args) != len(f.args.vals) {
 		return Result{
-			Error:         fmt.Errorf("function %q expects %d arguments, got %d", f.fn, len(fn.Args), len(f.args.vals)),
-			EvaluatedRule: f,
+			Error: fmt.Errorf("function %q expects %d arguments, got %d", f.fn, len(fn.Args), len(f.args.vals)),
 		}
 	}
 
@@ -47,9 +44,7 @@ func (f *FunctionValue) eval(fn *Function, ctx *Ctx) Result {
 		}
 		argMap[fn.Args[i].Name] = res.Value
 	}
-	res := fn.Eval(argMap)
-	res.EvaluatedRule = f
-	return res
+	return fn.Eval(argMap)
 }
 
 func (f *FunctionValue) String() string {
@@ -84,7 +79,6 @@ type Function struct {
 	// If set, rulekit will ensure validity of the arguments and pass them as a named map to the Eval function.
 	Args []FunctionArg
 	// Eval is the function that will be called with the arguments.
-	// EvaluatedRule will be set by Rulekit.
 	Eval func(map[string]any) Result
 }
 
