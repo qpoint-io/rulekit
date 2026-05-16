@@ -11,7 +11,26 @@ import (
 type FieldValue string
 
 func (f FieldValue) Eval(ctx *Ctx) Result {
-	val, ok := IndexKV(ctx.KV, string(f))
+	if !usesInput(ctx) {
+		val, ok := IndexKV(ctx.KV, string(f))
+		if !ok {
+			return Result{
+				Error:         &ErrMissingFields{Fields: set.NewSet(string(f))},
+				EvaluatedRule: f,
+			}
+		}
+		return Result{
+			Value:         val,
+			EvaluatedRule: f,
+		}
+	}
+
+	val, ok, err := resolveInputPath(ctx, fieldPathSegments(string(f)))
+	if err != nil {
+		res := inputError(string(f), err)
+		res.EvaluatedRule = f
+		return res
+	}
 	if !ok {
 		return Result{
 			Error:         &ErrMissingFields{Fields: set.NewSet(string(f))},
@@ -46,7 +65,26 @@ type pathSegment struct {
 }
 
 func (p *PathValue) Eval(ctx *Ctx) Result {
-	val, ok := indexPath(ctx.KV, p.segments)
+	if !usesInput(ctx) {
+		val, ok := indexPath(ctx.KV, p.segments)
+		if !ok {
+			return Result{
+				Error:         &ErrMissingFields{Fields: set.NewSet(p.String())},
+				EvaluatedRule: p,
+			}
+		}
+		return Result{
+			Value:         val,
+			EvaluatedRule: p,
+		}
+	}
+
+	val, ok, err := resolveInputPath(ctx, p.segments)
+	if err != nil {
+		res := inputError(p.String(), err)
+		res.EvaluatedRule = p
+		return res
+	}
 	if !ok {
 		return Result{
 			Error:         &ErrMissingFields{Fields: set.NewSet(p.String())},

@@ -92,6 +92,7 @@ package rulekit
 */
 
 import (
+	"context"
 	"fmt"
 	"strings"
 )
@@ -116,10 +117,33 @@ func MustParse(str string) Rule {
 type KV = map[string]any
 
 type Ctx struct {
+	Context   context.Context
+	Input     Input
 	KV        KV
 	Macros    map[string]Rule
 	Functions map[string]*Function
 	Trace     bool
+	input     Input
+}
+
+func (c *Ctx) context() context.Context {
+	if c != nil && c.Context != nil {
+		return c.Context
+	}
+	return context.Background()
+}
+
+func (c *Ctx) valueInput() Input {
+	if c == nil {
+		return nil
+	}
+	if c.Input != nil {
+		return c.Input
+	}
+	if c.input == nil && c.KV != nil {
+		c.input = FromKV(c.KV)
+	}
+	return c.input
 }
 
 func (c *Ctx) Eval(r Rule) Result {
