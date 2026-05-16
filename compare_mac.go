@@ -5,10 +5,10 @@ import (
 	"strings"
 )
 
-func compareMac(left net.HardwareAddr, op int, right any) (ret bool) {
+func compareMac(left net.HardwareAddr, op int, right any) (ret compareOutcome) {
 	if ruleDebug >= 1 {
 		defer func() {
-			debugResult(ret, "│ cmpMac", "", left, op, right)
+			debugResult(ret.pass, "│ cmpMac", "", left, op, right)
 		}()
 	}
 	switch right := right.(type) {
@@ -23,5 +23,5 @@ func compareMac(left net.HardwareAddr, op int, right any) (ret bool) {
 		// mac ? string
 		return compareStringString(strings.ToLower(left.String()), op, strings.ToLower(right))
 	}
-	return false
+	return incomparable()
 }

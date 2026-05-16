@@ -2,10 +2,10 @@ package rulekit
 
 import "net"
 
-func compareIP(left net.IP, op int, right any) (ret bool) {
+func compareIP(left net.IP, op int, right any) (ret compareOutcome) {
 	if ruleDebug >= 1 {
 		defer func() {
-			debugResult(ret, "│ cmpIP", "", left, op, right)
+			debugResult(ret.pass, "│ cmpIP", "", left, op, right)
 		}()
 	}
 	switch right := right.(type) {
@@ -13,26 +13,28 @@ func compareIP(left net.IP, op int, right any) (ret bool) {
 		// ip ? ip
 		switch op {
 		case op_EQ:
-			return left.Equal(right)
+			return comparePass(left.Equal(right))
 		case op_NE:
-			return !left.Equal(right)
+			return comparePass(!left.Equal(right))
 		}
+		return unsupportedOperator()
 	case *net.IPNet:
 		// ip ? ipnet
 		switch op {
 		case op_EQ, op_CONTAINS:
-			return right.Contains(left)
+			return comparePass(right.Contains(left))
 		case op_NE:
-			return !right.Contains(left)
+			return comparePass(!right.Contains(left))
 		}
+		return unsupportedOperator()
 	}
-	return false
+	return incomparable()
 }
 
-func compareIPNet(left *net.IPNet, op int, right any) (ret bool) {
+func compareIPNet(left *net.IPNet, op int, right any) (ret compareOutcome) {
 	if ruleDebug >= 1 {
 		defer func() {
-			debugResult(ret, "│ cmpIPNet", "", left, op, right)
+			debugResult(ret.pass, "│ cmpIPNet", "", left, op, right)
 		}()
 	}
 	switch right := right.(type) {
@@ -40,10 +42,11 @@ func compareIPNet(left *net.IPNet, op int, right any) (ret bool) {
 		// ipnet ? ip
 		switch op {
 		case op_EQ, op_CONTAINS:
-			return left.Contains(right)
+			return comparePass(left.Contains(right))
 		case op_NE:
-			return !left.Contains(right)
+			return comparePass(!left.Contains(right))
 		}
+		return unsupportedOperator()
 	}
-	return false
+	return incomparable()
 }

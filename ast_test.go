@@ -177,6 +177,75 @@ func TestEvalTraceMissingFields(t *testing.T) {
 	require.Equal(t, TraceMissing, result.Trace.Children[1].Status)
 }
 
+func TestEvalTraceComparisonDiagnostics(t *testing.T) {
+	tcs := []struct {
+		name       string
+		rule       string
+		input      KV
+		code       DiagnosticCode
+		leftType   string
+		operator   string
+		rightType  string
+		wantStatus TraceStatus
+	}{
+		{
+			name:       "incomparable types",
+			rule:       `port == "443"`,
+			input:      KV{"port": int64(443)},
+			code:       DiagnosticComparisonIncomparable,
+			leftType:   "int64",
+			operator:   "==",
+			rightType:  "string",
+			wantStatus: TraceFailed,
+		},
+		{
+			name:       "unsupported operator",
+			rule:       `port contains 443`,
+			input:      KV{"port": int64(443)},
+			code:       DiagnosticComparisonUnsupportedOperator,
+			leftType:   "int64",
+			operator:   "contains",
+			rightType:  "int64",
+			wantStatus: TraceFailed,
+		},
+		{
+			name:       "invalid shape",
+			rule:       `port contains [443]`,
+			input:      KV{"port": int64(443)},
+			code:       DiagnosticComparisonInvalidShape,
+			leftType:   "int64",
+			operator:   "contains",
+			rightType:  "[]interface {}",
+			wantStatus: TraceFailed,
+		},
+	}
+
+	for _, tc := range tcs {
+		t.Run(tc.name, func(t *testing.T) {
+			rule := MustParse(tc.rule)
+
+			withoutTrace := rule.Eval(nil, FromKV(tc.input), Opts{})
+			require.NoError(t, withoutTrace.Error)
+			require.True(t, withoutTrace.Fail())
+			require.Nil(t, withoutTrace.Trace)
+
+			result := rule.Eval(nil, FromKV(tc.input), Opts{Trace: true})
+			require.NoError(t, result.Error)
+			require.True(t, result.Fail())
+			require.NotNil(t, result.Trace)
+			require.Equal(t, tc.wantStatus, result.Trace.Status)
+			require.Len(t, result.Trace.Diagnostics, 1)
+
+			diagnostic := result.Trace.Diagnostics[0]
+			require.Equal(t, tc.code, diagnostic.Code)
+			require.Equal(t, tc.leftType, diagnostic.LeftType)
+			require.Equal(t, tc.operator, diagnostic.Operator)
+			require.Equal(t, tc.rightType, diagnostic.RightType)
+			require.NotEmpty(t, diagnostic.Message)
+		})
+	}
+}
+
 func TestEvalTraceMacroExpansion(t *testing.T) {
 	rule := MustParse(`is_internal() and user != "root"`)
 	macros := MacroSet{}
