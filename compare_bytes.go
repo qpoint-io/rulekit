@@ -2,12 +2,7 @@ package rulekit
 
 import "bytes"
 
-func compareBytesBytes(left []byte, op int, right []byte) (ret compareOutcome) {
-	if ruleDebug >= 1 {
-		defer func() {
-			debugResult(ret.pass, "│ cmpBytByt", "", left, op, right)
-		}()
-	}
+func compareBytesBytes(left []byte, op int, right []byte) compareOutcome {
 	switch op {
 	case op_EQ:
 		return comparePass(bytes.Equal(left, right))

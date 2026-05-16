@@ -2,13 +2,7 @@ package rulekit
 
 import "cmp"
 
-func compareNumber(left any, op int, right any) (ret compareOutcome) {
-	if ruleDebug >= 1 {
-		defer func() {
-			debugResult(ret.pass, "│ cmpNum", "", left, op, right)
-		}()
-	}
-
+func compareNumber(left any, op int, right any) compareOutcome {
 	return compareWithOp(cmpNumber(left, right), op)
 }
 

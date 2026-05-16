@@ -5,12 +5,7 @@ import (
 	"strings"
 )
 
-func compareMac(left net.HardwareAddr, op int, right any) (ret compareOutcome) {
-	if ruleDebug >= 1 {
-		defer func() {
-			debugResult(ret.pass, "│ cmpMac", "", left, op, right)
-		}()
-	}
+func compareMac(left net.HardwareAddr, op int, right any) compareOutcome {
 	switch right := right.(type) {
 	case net.HardwareAddr:
 		// mac ? mac

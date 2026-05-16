@@ -2,12 +2,7 @@ package rulekit
 
 import "net"
 
-func compareIP(left net.IP, op int, right any) (ret compareOutcome) {
-	if ruleDebug >= 1 {
-		defer func() {
-			debugResult(ret.pass, "│ cmpIP", "", left, op, right)
-		}()
-	}
+func compareIP(left net.IP, op int, right any) compareOutcome {
 	switch right := right.(type) {
 	case net.IP:
 		// ip ? ip
@@ -31,12 +26,7 @@ func compareIP(left net.IP, op int, right any) (ret compareOutcome) {
 	return incomparable()
 }
 
-func compareIPNet(left *net.IPNet, op int, right any) (ret compareOutcome) {
-	if ruleDebug >= 1 {
-		defer func() {
-			debugResult(ret.pass, "│ cmpIPNet", "", left, op, right)
-		}()
-	}
+func compareIPNet(left *net.IPNet, op int, right any) compareOutcome {
 	switch right := right.(type) {
 	case net.IP:
 		// ipnet ? ip

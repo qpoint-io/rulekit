@@ -2,9 +2,7 @@ package rulekit
 
 import (
 	"fmt"
-	"io"
 	"net"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -45,22 +43,8 @@ const (
 	op_IN
 )
 
-var (
-	ruleDebug       int
-	ruleDebugWriter io.Writer = os.Stderr
-)
-
 func init() {
 	SetErrorVerbose(true)
-}
-
-// SetDebugLevel sets the debug verbosity level.
-func SetDebugLevel(level int) {
-	ruleDebug = level
-}
-
-func SetDebugWriter(w io.Writer) {
-	ruleDebugWriter = w
 }
 
 // SetErrorVerbose is retained for API compatibility. The hand-written parser
