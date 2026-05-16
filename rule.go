@@ -202,15 +202,16 @@ type rule struct {
 	ast *AST
 }
 
-// Eval overrides the rule's Eval() method to wrap the returned EvalutedRule so we can override the String() method.
+// Eval evaluates the compiled rule. A nil context is treated as an empty context.
 func (r *rule) Eval(ctx *Ctx) Result {
+	if ctx == nil {
+		ctx = &Ctx{}
+	}
 	if err := ctx.Validate(); err != nil {
 		return Result{Error: err}
 	}
 
-	res := r.Rule.Eval(ctx)
-	res.EvaluatedRule = &rule{Rule: res.EvaluatedRule}
-	return res
+	return r.Rule.Eval(ctx)
 }
 
 func (r *rule) Print(mode PrintMode) string {
@@ -241,24 +242,38 @@ func (r *rule) String() string {
 
 type Result struct {
 	Value         any
-	EvaluatedRule Rule
 	Error         error
+	MissingFields []string
 	Trace         *Trace
 }
 
-// Ok returns true if the rule was able to evaluate without error.
+// Ok returns true if the rule evaluated completely without errors or missing fields.
 func (r Result) Ok() bool {
-	return r.Error == nil
+	return r.Complete()
+}
+
+// Complete returns true if the rule evaluated without errors or missing fields.
+func (r Result) Complete() bool {
+	return r.Error == nil && len(r.MissingFields) == 0
+}
+
+// Unknown returns true if evaluation needs more input but did not otherwise fail.
+func (r Result) Unknown() bool {
+	return r.Error == nil && len(r.MissingFields) > 0
 }
 
 // Pass returns true if the result is ok with a non-zero value. This is usually used for boolean rules.
 func (r Result) Pass() bool {
-	return r.Ok() && !isZero(r.Value)
+	return r.Complete() && !isZero(r.Value)
 }
 
 // Fail returns true if the rule is ok and returns a zero value. This is usually used for boolean rules.
 func (r Result) Fail() bool {
-	return r.Ok() && isZero(r.Value)
+	return r.Complete() && isZero(r.Value)
+}
+
+func (r Result) incomplete() bool {
+	return r.Error != nil || len(r.MissingFields) > 0
 }
 
 type ParseError struct {

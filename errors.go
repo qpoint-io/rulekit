@@ -5,20 +5,26 @@ import (
 	"fmt"
 
 	"github.com/hashicorp/go-multierror"
-	"github.com/qpoint-io/rulekit/set"
 )
 
-type ErrMissingFields struct {
-	Fields set.Set[string]
-}
-
-func (e ErrMissingFields) Error() string {
-	return fmt.Sprintf("missing fields: %v", e.Fields.Items())
-}
-
 func coalesceErrs(errs ...error) error {
-	var (
-		multi = &multierror.Error{
+	var out []error
+
+	for _, err := range errs {
+		if err == nil {
+			continue
+		}
+		out = append(out, err)
+	}
+
+	switch len(out) {
+	case 0:
+		return nil
+	case 1:
+		return out[0]
+	default:
+		multi := &multierror.Error{
+			Errors: out,
 			ErrorFormat: func(errs []error) string {
 				switch len(errs) {
 				case 0:
@@ -30,31 +36,12 @@ func coalesceErrs(errs ...error) error {
 				}
 			},
 		}
-		// combine all ErrMissingFields errors
-		mf = set.NewSet[string]()
-	)
-
-	for _, err := range errs {
-		if e, ok := err.(*ErrMissingFields); ok {
-			mf.Merge(e.Fields)
-			continue
-		}
-
-		multi = multierror.Append(multi, err)
-	}
-
-	if mf.Len() > 0 {
-		multi = multierror.Append(multi, &ErrMissingFields{Fields: mf})
-	}
-
-	switch len(multi.Errors) {
-	case 0:
-		return nil
-	case 1:
-		return multi.Errors[0]
-	default:
 		return multi
 	}
+}
+
+func coalesceMissingFields(left, right []string) []string {
+	return unionUnique(left, right)
 }
 
 var ErrInvalidOperation = errors.New("invalid operation")

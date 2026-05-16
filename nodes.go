@@ -12,10 +12,11 @@ type nodeAnd struct {
 }
 
 func (n *nodeAnd) Eval(ctx *Ctx) Result {
+	tracing := traceEnabled(ctx)
 	// if either node fails, return only that node
 	rleft := n.left.Eval(ctx)
 	if rleft.Fail() {
-		if traceEnabled(ctx) {
+		if tracing {
 			rleft.Trace = combineTrace(rleft.Trace, prunedTrace(n.right))
 		}
 		return rleft
@@ -23,7 +24,7 @@ func (n *nodeAnd) Eval(ctx *Ctx) Result {
 
 	rright := n.right.Eval(ctx)
 	if rright.Fail() {
-		if traceEnabled(ctx) {
+		if tracing {
 			rright.Trace = combineTrace(rleft.Trace, rright.Trace)
 		}
 		return rright
@@ -44,13 +45,10 @@ func (n *nodeAnd) Eval(ctx *Ctx) Result {
 	}
 
 	return Result{
-		Value: value,
-		EvaluatedRule: &nodeAnd{
-			left:  rleft.EvaluatedRule,
-			right: rright.EvaluatedRule,
-		},
-		Error: coalesceErrs(rleft.Error, rright.Error),
-		Trace: combineTrace(rleft.Trace, rright.Trace),
+		Value:         value,
+		Error:         coalesceErrs(rleft.Error, rright.Error),
+		MissingFields: coalesceMissingFields(rleft.MissingFields, rright.MissingFields),
+		Trace:         traceIfEnabled(tracing, rleft.Trace, rright.Trace),
 	}
 }
 
@@ -69,10 +67,11 @@ type nodeOr struct {
 }
 
 func (n *nodeOr) Eval(ctx *Ctx) Result {
+	tracing := traceEnabled(ctx)
 	// if either node passes, return only that node
 	rleft := n.left.Eval(ctx)
 	if rleft.Pass() {
-		if traceEnabled(ctx) {
+		if tracing {
 			rleft.Trace = combineTrace(rleft.Trace, prunedTrace(n.right))
 		}
 		return rleft
@@ -80,7 +79,7 @@ func (n *nodeOr) Eval(ctx *Ctx) Result {
 
 	rright := n.right.Eval(ctx)
 	if rright.Pass() {
-		if traceEnabled(ctx) {
+		if tracing {
 			rright.Trace = combineTrace(rleft.Trace, rright.Trace)
 		}
 		return rright
@@ -101,13 +100,10 @@ func (n *nodeOr) Eval(ctx *Ctx) Result {
 	}
 
 	return Result{
-		Value: value,
-		EvaluatedRule: &nodeOr{
-			left:  rleft.EvaluatedRule,
-			right: rright.EvaluatedRule,
-		},
-		Error: coalesceErrs(rleft.Error, rright.Error),
-		Trace: combineTrace(rleft.Trace, rright.Trace),
+		Value:         value,
+		Error:         coalesceErrs(rleft.Error, rright.Error),
+		MissingFields: coalesceMissingFields(rleft.MissingFields, rright.MissingFields),
+		Trace:         traceIfEnabled(tracing, rleft.Trace, rright.Trace),
 	}
 }
 
@@ -126,22 +122,21 @@ type nodeNot struct {
 
 func (n *nodeNot) Eval(ctx *Ctx) Result {
 	if n.right == nil {
-		return Result{EvaluatedRule: n}
+		return Result{}
 	}
 
 	r := n.right.Eval(ctx)
 	if !r.Ok() {
 		return Result{
 			Error:         r.Error,
-			EvaluatedRule: n,
-			Trace:         combineTrace(r.Trace),
+			MissingFields: r.MissingFields,
+			Trace:         traceIfEnabled(traceEnabled(ctx), r.Trace),
 		}
 	}
 
 	return Result{
-		Value:         !isZero(r.Value),
-		EvaluatedRule: n,
-		Trace:         combineTrace(r.Trace),
+		Value: !isZero(r.Value),
+		Trace: traceIfEnabled(traceEnabled(ctx), r.Trace),
 	}
 }
 
@@ -180,27 +175,31 @@ type nodeMatch struct {
 }
 
 func (n *nodeMatch) Eval(ctx *Ctx) Result {
+	tracing := traceEnabled(ctx)
 	lv := n.lv.Eval(ctx)
 	if !lv.Ok() {
+		var trace *Trace
+		if tracing {
+			trace = combineTrace(lv.Trace, prunedTrace(n.rv))
+		}
 		return Result{
 			Error:         lv.Error,
-			EvaluatedRule: n,
-			Trace:         combineTrace(lv.Trace, prunedTrace(n.rv)),
+			MissingFields: lv.MissingFields,
+			Trace:         trace,
 		}
 	}
 	rv := n.rv.Eval(ctx)
 	if !rv.Ok() {
 		return Result{
 			Error:         rv.Error,
-			EvaluatedRule: n,
-			Trace:         combineTrace(lv.Trace, rv.Trace),
+			MissingFields: rv.MissingFields,
+			Trace:         traceIfEnabled(tracing, lv.Trace, rv.Trace),
 		}
 	}
 
 	return Result{
-		Value:         n.apply(lv.Value, rv.Value),
-		EvaluatedRule: n,
-		Trace:         combineTrace(lv.Trace, rv.Trace),
+		Value: n.apply(lv.Value, rv.Value),
+		Trace: traceIfEnabled(tracing, lv.Trace, rv.Trace),
 	}
 }
 
@@ -243,28 +242,32 @@ type nodeCompare struct {
 }
 
 func (n *nodeCompare) Eval(ctx *Ctx) Result {
+	tracing := traceEnabled(ctx)
 	lv := n.lv.Eval(ctx)
 	if !lv.Ok() {
+		var trace *Trace
+		if tracing {
+			trace = combineTrace(lv.Trace, prunedTrace(n.rv))
+		}
 		return Result{
 			Error:         lv.Error,
-			EvaluatedRule: n,
-			Trace:         combineTrace(lv.Trace, prunedTrace(n.rv)),
+			MissingFields: lv.MissingFields,
+			Trace:         trace,
 		}
 	}
 	rv := n.rv.Eval(ctx)
 	if !rv.Ok() {
 		return Result{
 			Error:         rv.Error,
-			EvaluatedRule: n,
-			Trace:         combineTrace(lv.Trace, rv.Trace),
+			MissingFields: rv.MissingFields,
+			Trace:         traceIfEnabled(tracing, lv.Trace, rv.Trace),
 		}
 	}
 
 	pass := compare(lv.Value, n.op, rv.Value)
 	return Result{
-		Value:         pass,
-		EvaluatedRule: n,
-		Trace:         combineTrace(lv.Trace, rv.Trace),
+		Value: pass,
+		Trace: traceIfEnabled(tracing, lv.Trace, rv.Trace),
 	}
 }
 
@@ -283,20 +286,25 @@ type nodeIn struct {
 }
 
 func (n *nodeIn) Eval(ctx *Ctx) Result {
+	tracing := traceEnabled(ctx)
 	lv := n.lv.Eval(ctx)
 	if !lv.Ok() {
+		var trace *Trace
+		if tracing {
+			trace = combineTrace(lv.Trace, prunedTrace(n.rv))
+		}
 		return Result{
 			Error:         lv.Error,
-			EvaluatedRule: n,
-			Trace:         combineTrace(lv.Trace, prunedTrace(n.rv)),
+			MissingFields: lv.MissingFields,
+			Trace:         trace,
 		}
 	}
 	rv := n.rv.Eval(ctx)
 	if !rv.Ok() {
 		return Result{
 			Error:         rv.Error,
-			EvaluatedRule: n,
-			Trace:         combineTrace(lv.Trace, rv.Trace),
+			MissingFields: rv.MissingFields,
+			Trace:         traceIfEnabled(tracing, lv.Trace, rv.Trace),
 		}
 	}
 
@@ -304,17 +312,15 @@ func (n *nodeIn) Eval(ctx *Ctx) Result {
 	if !ok {
 		// the right value must be an array
 		return Result{
-			EvaluatedRule: n,
-			Trace:         combineTrace(lv.Trace, rv.Trace),
+			Trace: traceIfEnabled(tracing, lv.Trace, rv.Trace),
 		}
 	}
 
 	// `FIELD in ARR` == `ARR contains FIELD`
 	pass := compare(rvArr, op_CONTAINS, lv.Value)
 	return Result{
-		Value:         pass,
-		EvaluatedRule: n,
-		Trace:         combineTrace(lv.Trace, rv.Trace),
+		Value: pass,
+		Trace: traceIfEnabled(tracing, lv.Trace, rv.Trace),
 	}
 }
 
