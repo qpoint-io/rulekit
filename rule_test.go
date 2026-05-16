@@ -893,9 +893,12 @@ func TestFunctionParsing(t *testing.T) {
 
 func TestMacros(t *testing.T) {
 	r := MustParse(`dst_k8s_svc() && user != "root"`)
-	macros := map[string]Rule{
-		"dst_k8s_svc": MustParse(`ip in 172.16.0.0/16 or host matches /svc.cluster.local$/`),
+	macros := MacroSet{
+		"dst_k8s_svc": MustMacro("dst_k8s_svc", `ip in 172.16.0.0/16 or host matches /svc.cluster.local$/`),
 	}
+	require.Equal(t, "dst_k8s_svc", macros["dst_k8s_svc"].Name)
+	require.Equal(t, `ip in 172.16.0.0/16 or host matches /svc.cluster.local$/`, macros["dst_k8s_svc"].Source)
+	require.NotNil(t, macros["dst_k8s_svc"].AST)
 
 	assertRule(t, r, &ctx{
 		Macros: macros,
@@ -961,8 +964,8 @@ func TestCustomFunction(t *testing.T) {
 	// mix & match functions, macros, stdlib functions
 	assertRulep(t, `starts_with(macro(), "Got msg")`, &ctx{
 		Functions: fns,
-		Macros: map[string]Rule{
-			"macro": MustParse(`custom_func("test")`),
+		Macros: MacroSet{
+			"macro": MustMacro("macro", `custom_func("test")`),
 		},
 	}).Pass()
 }
@@ -976,8 +979,8 @@ func TestCtx_Validate(t *testing.T) {
 		{
 			name: "happy path",
 			ctx: &Ctx{
-				Macros: map[string]Rule{
-					"dst_k8s_svc": MustParse(`true`),
+				Macros: MacroSet{
+					"dst_k8s_svc": MustMacro("dst_k8s_svc", `true`),
 				},
 				Functions: map[string]*Function{
 					"custom_func": {},
@@ -996,7 +999,7 @@ func TestCtx_Validate(t *testing.T) {
 		{
 			name: "nil macro",
 			ctx: &Ctx{
-				Macros: map[string]Rule{
+				Macros: MacroSet{
 					"custom_macro": nil,
 				},
 			},
@@ -1005,8 +1008,8 @@ func TestCtx_Validate(t *testing.T) {
 		{
 			name: "macro name conflicts with function",
 			ctx: &Ctx{
-				Macros: map[string]Rule{
-					"custom_func": MustParse(`true`),
+				Macros: MacroSet{
+					"custom_func": MustMacro("custom_func", `true`),
 				},
 				Functions: map[string]*Function{
 					"custom_func": {},
@@ -1017,8 +1020,8 @@ func TestCtx_Validate(t *testing.T) {
 		{
 			name: "macro name conflicts with stdlib function",
 			ctx: &Ctx{
-				Macros: map[string]Rule{
-					"starts_with": MustParse(`true`),
+				Macros: MacroSet{
+					"starts_with": MustMacro("starts_with", `true`),
 				},
 			},
 			err: `macro "starts_with": name conflicts with a stdlib function`,
