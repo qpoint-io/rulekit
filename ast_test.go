@@ -104,6 +104,21 @@ and request.headers["user-agent"] == "curl"`, multiline)
 	require.Equal(t, compact, roundTrip.String())
 }
 
+func TestFormatPreservesComments(t *testing.T) {
+	ast, err := ParseAST("-- top\na==1 -- explain\n and b matches /x/")
+	require.NoError(t, err)
+
+	compact := Format(ast, Compact())
+	require.Equal(t, "-- top\na == 1 -- explain\nand b =~ /x/", compact)
+
+	multiline := Format(ast, Multiline("  "))
+	require.Equal(t, "-- top\na == 1 -- explain\nand b =~ /x/", multiline)
+
+	roundTrip, err := ParseAST(compact)
+	require.NoError(t, err)
+	require.Equal(t, `a == 1 and b =~ /x/`, roundTrip.String())
+}
+
 func TestASTTokensIncludeTrivia(t *testing.T) {
 	ast, err := ParseAST("field == 1 -- explain\n and other == 2")
 	require.NoError(t, err)
