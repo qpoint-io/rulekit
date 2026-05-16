@@ -116,42 +116,14 @@ func MustParse(str string) Rule {
 
 type KV = map[string]any
 
-type Ctx struct {
-	Context   context.Context
-	Input     Input
-	KV        KV
+type Opts struct {
+	Trace     bool
 	Macros    MacroSet
 	Functions map[string]*Function
-	Trace     bool
-	input     Input
 }
 
-func (c *Ctx) context() context.Context {
-	if c != nil && c.Context != nil {
-		return c.Context
-	}
-	return context.Background()
-}
-
-func (c *Ctx) valueInput() Input {
-	if c == nil {
-		return nil
-	}
-	if c.Input != nil {
-		return c.Input
-	}
-	if c.input == nil && c.KV != nil {
-		c.input = FromKV(c.KV)
-	}
-	return c.input
-}
-
-func (c *Ctx) Eval(r Rule) Result {
-	return r.Eval(c)
-}
-
-func (c *Ctx) Validate() error {
-	for name, fn := range c.Functions {
+func (o Opts) Validate() error {
+	for name, fn := range o.Functions {
 		if _, ok := StdlibFuncs[name]; ok {
 			return fmt.Errorf("function %q: name conflicts with a stdlib function", name)
 		}
@@ -159,11 +131,11 @@ func (c *Ctx) Validate() error {
 			return fmt.Errorf("function %q: must not be nil", name)
 		}
 	}
-	for name, macro := range c.Macros {
+	for name, macro := range o.Macros {
 		if _, ok := StdlibFuncs[name]; ok {
 			return fmt.Errorf("macro %q: name conflicts with a stdlib function", name)
 		}
-		if _, ok := c.Functions[name]; ok {
+		if _, ok := o.Functions[name]; ok {
 			return fmt.Errorf("macro %q: name conflicts with a custom function", name)
 		}
 		if macro == nil || macro.Rule == nil {
@@ -175,18 +147,18 @@ func (c *Ctx) Validate() error {
 }
 
 type Rule interface {
-	// Evaluates the rule with the context
-	Eval(*Ctx) Result
+	// Evaluates the rule with the context and input.
+	Eval(context.Context, Input, Opts) Result
 	// Print prints the rule with the requested mode.
 	Print(PrintMode) string
 	// String representation of the rule
 	String() string
 }
 
-type RuleFunc func(*Ctx) Result
+type RuleFunc func(context.Context, Input, Opts) Result
 
-func (f RuleFunc) Eval(ctx *Ctx) Result {
-	return f(ctx)
+func (f RuleFunc) Eval(ctx context.Context, input Input, opts Opts) Result {
+	return f(ctx, input, opts)
 }
 
 func (f RuleFunc) String() string {
@@ -202,16 +174,16 @@ type rule struct {
 	ast *AST
 }
 
-// Eval evaluates the compiled rule. A nil context is treated as an empty context.
-func (r *rule) Eval(ctx *Ctx) Result {
+// Eval evaluates the compiled rule. A nil context is treated as context.Background().
+func (r *rule) Eval(ctx context.Context, input Input, opts Opts) Result {
 	if ctx == nil {
-		ctx = &Ctx{}
+		ctx = context.Background()
 	}
-	if err := ctx.Validate(); err != nil {
+	if err := opts.Validate(); err != nil {
 		return Result{Error: err}
 	}
 
-	return r.Rule.Eval(ctx)
+	return r.Rule.Eval(ctx, input, opts)
 }
 
 func (r *rule) Print(mode PrintMode) string {

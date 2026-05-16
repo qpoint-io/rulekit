@@ -53,7 +53,7 @@ input := rulekit.KV{
 }
 
 // evaluate the rule
-result := r.Eval(&rulekit.Ctx{KV: input})
+result := r.Eval(context.Background(), rulekit.FromKV(input), rulekit.Opts{})
 
 // check for errors, missing input, then the rule result
 if result.Error != nil {
@@ -74,7 +74,7 @@ When a rule is evaluated, it returns a `Result` struct containing:
 - `Value`: The evaluated value, usually a boolean
 - `Error`: Any operational evaluation error
 - `MissingFields`: Fields required to complete evaluation but absent from the input
-- `Trace`: Optional evaluation explanation when `Ctx.Trace` is enabled
+- `Trace`: Optional evaluation explanation when `Opts.Trace` is enabled
 
 The Result also provides additional helper methods:
 
@@ -198,17 +198,10 @@ Use `Rewrite` to preserve unchanged source while replacing selected AST nodes:
 updated, err := rulekit.Rewrite(ast, []rulekit.Edit{{Target: node, Replacement: replacementAST}}, rulekit.Compact())
 ```
 
-For repeated evaluation, `ParsePlan` and `CompilePlan` create an optional runtime plan over the lowered evaluator representation:
-
-```go
-plan, err := rulekit.ParsePlan(`ip in 192.168.0.0/16`)
-result := plan.Eval(ctx)
-```
-
 Enable evaluation traces when a caller needs short-circuit visibility for debugging or UI explanation:
 
 ```go
-result := rule.Eval(&rulekit.Ctx{KV: kv, Trace: true})
+result := rule.Eval(context.Background(), rulekit.FromKV(kv), rulekit.Opts{Trace: true})
 trace := result.Trace
 ```
 
@@ -221,7 +214,7 @@ input := rulekit.FromKV(rulekit.KV{
     }),
 })
 
-result := rule.Eval(&rulekit.Ctx{Context: ctx, Input: input})
+result := rule.Eval(ctx, input, rulekit.Opts{})
 ```
 
 Nested `Input` values inside a `KV` can take over resolution for an entire subtree.
@@ -240,14 +233,12 @@ if err != nil { /* ... */ }
 rule, err := rulekit.Parse(`isInternalAPI() && user != "root"`)
 if err != nil { /* ... */ }
 
-// evaluate the rule, making sure to pass the macro in the eval context
-result := rule.Eval(&rulekit.Ctx{
-    Macros: macros,
-    KV: rulekit.KV{
-        "user": user,
-        // ...
-    },
+// evaluate the rule, making sure to pass the macro in eval opts
+input := rulekit.FromKV(rulekit.KV{
+		"user": user,
+		// ...
 })
+result := rule.Eval(context.Background(), input, rulekit.Opts{Macros: macros})
 ```
 
 ## Functions
@@ -299,9 +290,7 @@ customFuncs := map[string]*rulekit.Function{
 rule, err := rulekit.Parse(`randomInt(10, 20) == 15`)
 if err != nil { /* ... */ }
 
-result := rule.Eval(&rulekit.Ctx{
-    Functions: customFuncs,
-})
+result := rule.Eval(context.Background(), nil, rulekit.Opts{Functions: customFuncs})
 if result.Error != nil { /* ... */ }
 
 if result.Pass() {

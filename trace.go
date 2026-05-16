@@ -1,5 +1,7 @@
 package rulekit
 
+import "context"
+
 // Trace explains how a rule evaluation reached its result.
 type Trace struct {
 	Node     ASTNode
@@ -25,9 +27,9 @@ func withTrace(node astNode, rule Rule) Rule {
 	return &tracedRule{node: public, expr: traceExpr(public, rule), rule: rule}
 }
 
-func (r *tracedRule) Eval(ctx *Ctx) Result {
-	res := r.rule.Eval(ctx)
-	if traceEnabled(ctx) {
+func (r *tracedRule) Eval(ctx context.Context, input Input, opts Opts) Result {
+	res := r.rule.Eval(ctx, input, opts)
+	if traceEnabled(opts) {
 		res.Trace = &Trace{
 			Node:     r.node,
 			Expr:     r.expr,
@@ -58,8 +60,8 @@ func unwrapTracedRule(rule Rule) Rule {
 	}
 }
 
-func traceEnabled(ctx *Ctx) bool {
-	return ctx != nil && ctx.Trace
+func traceEnabled(opts Opts) bool {
+	return opts.Trace
 }
 
 func traceChildren(trace *Trace) []*Trace {

@@ -1,6 +1,7 @@
 package rulekit
 
 import (
+	"context"
 	"net"
 	"strconv"
 	"strings"
@@ -8,16 +9,9 @@ import (
 
 type FieldValue string
 
-func (f FieldValue) Eval(ctx *Ctx) Result {
-	if !usesInput(ctx) {
-		val, ok := IndexKV(ctx.KV, string(f))
-		if !ok {
-			return Result{MissingFields: []string{string(f)}}
-		}
-		return Result{Value: val}
-	}
-
-	val, ok, err := resolveInputPath(ctx, fieldPathSegments(string(f)))
+func (f FieldValue) Eval(ctx context.Context, input Input, opts Opts) Result {
+	segments := [1]pathSegment{{key: string(f)}}
+	val, ok, err := resolveInputPath(ctx, input, segments[:])
 	if err != nil {
 		res := inputError(string(f), err)
 		return res
@@ -49,16 +43,8 @@ type pathSegment struct {
 	bracket bool
 }
 
-func (p *PathValue) Eval(ctx *Ctx) Result {
-	if !usesInput(ctx) {
-		val, ok := indexPath(ctx.KV, p.segments)
-		if !ok {
-			return Result{MissingFields: []string{p.String()}}
-		}
-		return Result{Value: val}
-	}
-
-	val, ok, err := resolveInputPath(ctx, p.segments)
+func (p *PathValue) Eval(ctx context.Context, input Input, opts Opts) Result {
+	val, ok, err := resolveInputPath(ctx, input, p.segments)
 	if err != nil {
 		res := inputError(p.String(), err)
 		return res
@@ -134,7 +120,7 @@ type LiteralValue[T any] struct {
 	value T
 }
 
-func (l *LiteralValue[T]) Eval(ctx *Ctx) Result {
+func (l *LiteralValue[T]) Eval(ctx context.Context, input Input, opts Opts) Result {
 	return Result{Value: l.value}
 }
 
@@ -151,10 +137,10 @@ type ArrayValue struct {
 	vals []Rule
 }
 
-func (a *ArrayValue) Eval(ctx *Ctx) Result {
+func (a *ArrayValue) Eval(ctx context.Context, input Input, opts Opts) Result {
 	vals := make([]any, len(a.vals))
 	for i, val := range a.vals {
-		res := val.Eval(ctx)
+		res := val.Eval(ctx, input, opts)
 		if !res.Ok() {
 			return res
 		}
