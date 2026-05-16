@@ -120,7 +120,7 @@ type Ctx struct {
 	Context   context.Context
 	Input     Input
 	KV        KV
-	Macros    map[string]Rule
+	Macros    MacroSet
 	Functions map[string]*Function
 	Trace     bool
 	input     Input
@@ -166,7 +166,7 @@ func (c *Ctx) Validate() error {
 		if _, ok := c.Functions[name]; ok {
 			return fmt.Errorf("macro %q: name conflicts with a custom function", name)
 		}
-		if macro == nil {
+		if macro == nil || macro.Rule == nil {
 			return fmt.Errorf("macro %q: must not be nil", name)
 		}
 	}

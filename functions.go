@@ -22,7 +22,7 @@ func (f *FunctionValue) Eval(ctx *Ctx) Result {
 				EvaluatedRule: f,
 			}
 		}
-		return macro.Eval(ctx)
+		return macro.Rule.Eval(ctx)
 	}
 
 	return Result{

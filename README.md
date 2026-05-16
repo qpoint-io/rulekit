@@ -230,7 +230,7 @@ Macros can be used for complex or commonly-used rules. They are defined in the e
 
 ```go
 // create a macro
-isInternalAPI, err := rulekit.Parse(`domain matches /\.internal\.example\.com$/ or ip in 10.0.0.0/8`)
+isInternalAPI, err := rulekit.NewMacro("isInternalAPI", `domain matches /\.internal\.example\.com$/ or ip in 10.0.0.0/8`)
 if err != nil { /* ... */ }
 
 // create a rule that uses the macro
@@ -239,7 +239,7 @@ if err != nil { /* ... */ }
 
 // evaluate the rule, making sure to pass the macro in the eval context
 result := rule.Eval(&rulekit.Ctx{
-    Macros: map[string]rulekit.Rule{
+    Macros: rulekit.MacroSet{
         "isInternalAPI": isInternalAPI,
     },
     KV: rulekit.KV{
