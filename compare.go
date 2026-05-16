@@ -9,9 +9,11 @@ func compare(left any, op int, right any) (ret bool) {
 	// any ? []any
 	//      -> run the comparison for each element in the right array.
 	if rightArr, ok := right.([]any); ok {
-		defer func() {
-			debugResult(ret, "╰ cmp[]", "", left, op, right)
-		}()
+		if ruleDebug >= 1 {
+			defer func() {
+				debugResult(ret, "╰ cmp[]", "", left, op, right)
+			}()
+		}
 
 		if op == op_CONTAINS {
 			// the contains operator does not support arrays on the right side.
@@ -24,9 +26,11 @@ func compare(left any, op int, right any) (ret bool) {
 		})
 	}
 
-	defer func() {
-		debugResult(ret, "╰ cmp", "", left, op, right)
-	}()
+	if ruleDebug >= 1 {
+		defer func() {
+			debugResult(ret, "╰ cmp", "", left, op, right)
+		}()
+	}
 
 	// the left value type determines the comparison logic
 	switch lv := left.(type) {

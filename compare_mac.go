@@ -6,9 +6,11 @@ import (
 )
 
 func compareMac(left net.HardwareAddr, op int, right any) (ret bool) {
-	defer func() {
-		debugResult(ret, "│ cmpMac", "", left, op, right)
-	}()
+	if ruleDebug >= 1 {
+		defer func() {
+			debugResult(ret, "│ cmpMac", "", left, op, right)
+		}()
+	}
 	switch right := right.(type) {
 	case net.HardwareAddr:
 		// mac ? mac
