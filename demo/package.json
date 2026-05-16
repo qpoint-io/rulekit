@@ -1,0 +1,20 @@
+{
+  "name": "rulekit-demo",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "wasm": "bash wasm/build.sh",
+    "dev": "npm run wasm && vite --host 0.0.0.0",
+    "build": "npm run wasm && vue-tsc -b && vite build",
+    "preview": "vite preview --host 0.0.0.0"
+  },
+  "dependencies": {
+    "@vitejs/plugin-vue": "latest",
+    "typescript": "latest",
+    "vite": "latest",
+    "vue": "latest",
+    "vue-tsc": "latest"
+  },
+  "devDependencies": {}
+}
