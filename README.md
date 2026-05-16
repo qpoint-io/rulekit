@@ -210,6 +210,20 @@ result := rule.Eval(&rulekit.Ctx{KV: kv, Trace: true})
 trace := result.Trace
 ```
 
+Use `Input` adapters for lazy values or custom path resolution:
+
+```go
+input := rulekit.FromKV(rulekit.KV{
+    "user": rulekit.LazyContextValue(func(ctx context.Context) (any, error) {
+        return ctx.Value("user"), nil
+    }),
+})
+
+result := rule.Eval(&rulekit.Ctx{Context: ctx, Input: input})
+```
+
+Nested `Input` values inside a `KV` can take over resolution for an entire subtree.
+
 ## Macros
 
 Macros can be used for complex or commonly-used rules. They are defined in the evaluation context:
