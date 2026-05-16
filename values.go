@@ -2,7 +2,6 @@ package rulekit
 
 import (
 	"net"
-	"reflect"
 	"strconv"
 	"strings"
 
@@ -207,6 +206,13 @@ func isZero(val any) bool {
 
 // IndexKV gets a value from a map by interpreting periods as explicit path traversal.
 func IndexKV(m KV, key string) (any, bool) {
+	if m == nil {
+		return nil, false
+	}
+	if !strings.Contains(key, ".") {
+		val, ok := m[key]
+		return val, ok
+	}
 	return indexPath(m, fieldPathSegments(key))
 }
 
@@ -243,14 +249,55 @@ func indexAny(value any, index int) (any, bool) {
 	if index < 0 || value == nil {
 		return nil, false
 	}
-	rv := reflect.ValueOf(value)
-	if rv.Kind() != reflect.Slice && rv.Kind() != reflect.Array {
+	switch v := value.(type) {
+	case []any:
+		return indexSlice(v, index)
+	case []KV:
+		return indexSlice(v, index)
+	case []string:
+		return indexSlice(v, index)
+	case []bool:
+		return indexSlice(v, index)
+	case []int:
+		return indexSlice(v, index)
+	case []int8:
+		return indexSlice(v, index)
+	case []int16:
+		return indexSlice(v, index)
+	case []int32:
+		return indexSlice(v, index)
+	case []int64:
+		return indexSlice(v, index)
+	case []uint:
+		return indexSlice(v, index)
+	case []uint8:
+		return indexSlice(v, index)
+	case []uint16:
+		return indexSlice(v, index)
+	case []uint32:
+		return indexSlice(v, index)
+	case []uint64:
+		return indexSlice(v, index)
+	case []float32:
+		return indexSlice(v, index)
+	case []float64:
+		return indexSlice(v, index)
+	case []net.IP:
+		return indexSlice(v, index)
+	case []net.HardwareAddr:
+		return indexSlice(v, index)
+	case []*net.IPNet:
+		return indexSlice(v, index)
+	default:
 		return nil, false
 	}
-	if index >= rv.Len() {
+}
+
+func indexSlice[T any](values []T, index int) (any, bool) {
+	if index >= len(values) {
 		return nil, false
 	}
-	return rv.Index(index).Interface(), true
+	return values[index], true
 }
 
 func isIdentifierSegment(s string) bool {

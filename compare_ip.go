@@ -3,9 +3,11 @@ package rulekit
 import "net"
 
 func compareIP(left net.IP, op int, right any) (ret bool) {
-	defer func() {
-		debugResult(ret, "│ cmpIP", "", left, op, right)
-	}()
+	if ruleDebug >= 1 {
+		defer func() {
+			debugResult(ret, "│ cmpIP", "", left, op, right)
+		}()
+	}
 	switch right := right.(type) {
 	case net.IP:
 		// ip ? ip
@@ -28,9 +30,11 @@ func compareIP(left net.IP, op int, right any) (ret bool) {
 }
 
 func compareIPNet(left *net.IPNet, op int, right any) (ret bool) {
-	defer func() {
-		debugResult(ret, "│ cmpIPNet", "", left, op, right)
-	}()
+	if ruleDebug >= 1 {
+		defer func() {
+			debugResult(ret, "│ cmpIPNet", "", left, op, right)
+		}()
+	}
 	switch right := right.(type) {
 	case net.IP:
 		// ipnet ? ip

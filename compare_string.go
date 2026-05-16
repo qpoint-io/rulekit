@@ -7,9 +7,11 @@ import (
 )
 
 func compareString(left string, op int, right any) (ret bool) {
-	defer func() {
-		debugResult(ret, "│ cmpStr", "", left, op, right)
-	}()
+	if ruleDebug >= 1 {
+		defer func() {
+			debugResult(ret, "│ cmpStr", "", left, op, right)
+		}()
+	}
 	switch right := right.(type) {
 	case string:
 		// string ? string
@@ -31,9 +33,11 @@ func compareString(left string, op int, right any) (ret bool) {
 }
 
 func compareStringString(left string, op int, right string) (ret bool) {
-	defer func() {
-		debugResult(ret, "│  cmpStrStr", "", left, op, right)
-	}()
+	if ruleDebug >= 1 {
+		defer func() {
+			debugResult(ret, "│  cmpStrStr", "", left, op, right)
+		}()
+	}
 	switch op {
 	case op_EQ:
 		return left == right
@@ -46,9 +50,11 @@ func compareStringString(left string, op int, right string) (ret bool) {
 }
 
 func compareStringRegex(left string, op int, right *regexp.Regexp) (ret bool) {
-	defer func() {
-		debugResult(ret, "│ cmpStrRegex", "", left, op, right)
-	}()
+	if ruleDebug >= 1 {
+		defer func() {
+			debugResult(ret, "│ cmpStrRegex", "", left, op, right)
+		}()
+	}
 	switch op {
 	case op_EQ, op_CONTAINS:
 		return right.MatchString(left)
@@ -59,9 +65,11 @@ func compareStringRegex(left string, op int, right *regexp.Regexp) (ret bool) {
 }
 
 func compareStringSlice(left []string, op int, right any) (ret bool) {
-	defer func() {
-		debugResult(ret, "│ cmp[]Str", "", left, op, right)
-	}()
+	if ruleDebug >= 1 {
+		defer func() {
+			debugResult(ret, "│ cmp[]Str", "", left, op, right)
+		}()
+	}
 	if op == op_CONTAINS {
 		// possible options:
 		// []string{...} contains string
