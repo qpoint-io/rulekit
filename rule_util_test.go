@@ -185,6 +185,15 @@ func assertParseErrorValue(t *testing.T, rule string, expected string) {
 	assert.EqualError(t, err, expected)
 }
 
+func mustMacroSet(t testing.TB, macros map[string]string) MacroSet {
+	t.Helper()
+	set := MacroSet{}
+	for name, expr := range macros {
+		require.NoError(t, set.Register(name, expr))
+	}
+	return set
+}
+
 type testWriter struct {
 	t *testing.T
 }

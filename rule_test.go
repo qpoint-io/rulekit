@@ -893,10 +893,8 @@ func TestFunctionParsing(t *testing.T) {
 
 func TestMacros(t *testing.T) {
 	r := MustParse(`dst_k8s_svc() && user != "root"`)
-	macros := MacroSet{
-		"dst_k8s_svc": MustMacro("dst_k8s_svc", `ip in 172.16.0.0/16 or host matches /svc.cluster.local$/`),
-	}
-	require.Equal(t, "dst_k8s_svc", macros["dst_k8s_svc"].Name)
+	macros := MacroSet{}
+	require.NoError(t, macros.Register("dst_k8s_svc", `ip in 172.16.0.0/16 or host matches /svc.cluster.local$/`))
 	require.Equal(t, `ip in 172.16.0.0/16 or host matches /svc.cluster.local$/`, macros["dst_k8s_svc"].Source)
 	require.NotNil(t, macros["dst_k8s_svc"].AST)
 
@@ -964,9 +962,7 @@ func TestCustomFunction(t *testing.T) {
 	// mix & match functions, macros, stdlib functions
 	assertRulep(t, `starts_with(macro(), "Got msg")`, &ctx{
 		Functions: fns,
-		Macros: MacroSet{
-			"macro": MustMacro("macro", `custom_func("test")`),
-		},
+		Macros:    mustMacroSet(t, map[string]string{"macro": `custom_func("test")`}),
 	}).Pass()
 }
 
@@ -979,9 +975,7 @@ func TestCtx_Validate(t *testing.T) {
 		{
 			name: "happy path",
 			ctx: &Ctx{
-				Macros: MacroSet{
-					"dst_k8s_svc": MustMacro("dst_k8s_svc", `true`),
-				},
+				Macros: mustMacroSet(t, map[string]string{"dst_k8s_svc": `true`}),
 				Functions: map[string]*Function{
 					"custom_func": {},
 				},
@@ -1008,9 +1002,7 @@ func TestCtx_Validate(t *testing.T) {
 		{
 			name: "macro name conflicts with function",
 			ctx: &Ctx{
-				Macros: MacroSet{
-					"custom_func": MustMacro("custom_func", `true`),
-				},
+				Macros: mustMacroSet(t, map[string]string{"custom_func": `true`}),
 				Functions: map[string]*Function{
 					"custom_func": {},
 				},
@@ -1020,9 +1012,7 @@ func TestCtx_Validate(t *testing.T) {
 		{
 			name: "macro name conflicts with stdlib function",
 			ctx: &Ctx{
-				Macros: MacroSet{
-					"starts_with": MustMacro("starts_with", `true`),
-				},
+				Macros: mustMacroSet(t, map[string]string{"starts_with": `true`}),
 			},
 			err: `macro "starts_with": name conflicts with a stdlib function`,
 		},
