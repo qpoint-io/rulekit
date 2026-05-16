@@ -119,6 +119,7 @@ type Ctx struct {
 	KV        KV
 	Macros    map[string]Rule
 	Functions map[string]*Function
+	Trace     bool
 }
 
 func (c *Ctx) Eval(r Rule) Result {
@@ -218,6 +219,7 @@ type Result struct {
 	Value         any
 	EvaluatedRule Rule
 	Error         error
+	Trace         *Trace
 }
 
 // Ok returns true if the rule was able to evaluate without error.

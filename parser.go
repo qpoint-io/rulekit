@@ -862,6 +862,7 @@ func isInequality(op int) bool {
 }
 
 func literalIs[T any](r Rule) bool {
+	r = unwrapTracedRule(r)
 	lit, ok := r.(*LiteralValue[any])
 	if !ok {
 		return false

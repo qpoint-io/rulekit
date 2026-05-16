@@ -15,11 +15,17 @@ func (n *nodeAnd) Eval(ctx *Ctx) Result {
 	// if either node fails, return only that node
 	rleft := n.left.Eval(ctx)
 	if rleft.Fail() {
+		if traceEnabled(ctx) {
+			rleft.Trace = combineTrace(rleft.Trace, prunedTrace(n.right))
+		}
 		return rleft
 	}
 
 	rright := n.right.Eval(ctx)
 	if rright.Fail() {
+		if traceEnabled(ctx) {
+			rright.Trace = combineTrace(rleft.Trace, rright.Trace)
+		}
 		return rright
 	}
 
@@ -44,6 +50,7 @@ func (n *nodeAnd) Eval(ctx *Ctx) Result {
 			right: rright.EvaluatedRule,
 		},
 		Error: coalesceErrs(rleft.Error, rright.Error),
+		Trace: combineTrace(rleft.Trace, rright.Trace),
 	}
 }
 
@@ -65,11 +72,17 @@ func (n *nodeOr) Eval(ctx *Ctx) Result {
 	// if either node passes, return only that node
 	rleft := n.left.Eval(ctx)
 	if rleft.Pass() {
+		if traceEnabled(ctx) {
+			rleft.Trace = combineTrace(rleft.Trace, prunedTrace(n.right))
+		}
 		return rleft
 	}
 
 	rright := n.right.Eval(ctx)
 	if rright.Pass() {
+		if traceEnabled(ctx) {
+			rright.Trace = combineTrace(rleft.Trace, rright.Trace)
+		}
 		return rright
 	}
 
@@ -94,6 +107,7 @@ func (n *nodeOr) Eval(ctx *Ctx) Result {
 			right: rright.EvaluatedRule,
 		},
 		Error: coalesceErrs(rleft.Error, rright.Error),
+		Trace: combineTrace(rleft.Trace, rright.Trace),
 	}
 }
 
@@ -120,17 +134,20 @@ func (n *nodeNot) Eval(ctx *Ctx) Result {
 		return Result{
 			Error:         r.Error,
 			EvaluatedRule: n,
+			Trace:         combineTrace(r.Trace),
 		}
 	}
 
 	return Result{
 		Value:         !isZero(r.Value),
 		EvaluatedRule: n,
+		Trace:         combineTrace(r.Trace),
 	}
 }
 
 func (n *nodeNot) String() string {
-	if nn, ok := n.right.(*nodeCompare); ok {
+	right := unwrapTracedRule(n.right)
+	if nn, ok := right.(*nodeCompare); ok {
 		if nn.op == op_EQ {
 			// special formatting for !=
 			return nn.lv.String() + " != " + nn.rv.String()
@@ -138,18 +155,18 @@ func (n *nodeNot) String() string {
 			// special formatting for field not contains "item"
 			return nn.lv.String() + " not contains " + nn.rv.String()
 		}
-	} else if nn, ok := n.right.(FieldValue); ok {
+	} else if nn, ok := right.(FieldValue); ok {
 		// special formatting for !FIELD (no space between ! and field)
 		return "!" + nn.String()
-	} else if nn, ok := n.right.(*nodeMatch); ok {
+	} else if nn, ok := right.(*nodeMatch); ok {
 		// special formatting for field not =~ /pattern/
 		return nn.lv.String() + " not =~ " + nn.rv.String()
-	} else if nn, ok := n.right.(*nodeIn); ok {
+	} else if nn, ok := right.(*nodeIn); ok {
 		// special formatting for field not in [1, "str", 3]
 		return nn.lv.String() + " not in " + nn.rv.String()
 	}
 
-	return "not (" + n.right.String() + ")"
+	return "not (" + right.String() + ")"
 }
 
 func (n *nodeNot) Print(PrintMode) string {
@@ -168,6 +185,7 @@ func (n *nodeMatch) Eval(ctx *Ctx) Result {
 		return Result{
 			Error:         lv.Error,
 			EvaluatedRule: n,
+			Trace:         combineTrace(lv.Trace, prunedTrace(n.rv)),
 		}
 	}
 	rv := n.rv.Eval(ctx)
@@ -175,12 +193,14 @@ func (n *nodeMatch) Eval(ctx *Ctx) Result {
 		return Result{
 			Error:         rv.Error,
 			EvaluatedRule: n,
+			Trace:         combineTrace(lv.Trace, rv.Trace),
 		}
 	}
 
 	return Result{
 		Value:         n.apply(lv.Value, rv.Value),
 		EvaluatedRule: n,
+		Trace:         combineTrace(lv.Trace, rv.Trace),
 	}
 }
 
@@ -228,6 +248,7 @@ func (n *nodeCompare) Eval(ctx *Ctx) Result {
 		return Result{
 			Error:         lv.Error,
 			EvaluatedRule: n,
+			Trace:         combineTrace(lv.Trace, prunedTrace(n.rv)),
 		}
 	}
 	rv := n.rv.Eval(ctx)
@@ -235,6 +256,7 @@ func (n *nodeCompare) Eval(ctx *Ctx) Result {
 		return Result{
 			Error:         rv.Error,
 			EvaluatedRule: n,
+			Trace:         combineTrace(lv.Trace, rv.Trace),
 		}
 	}
 
@@ -242,6 +264,7 @@ func (n *nodeCompare) Eval(ctx *Ctx) Result {
 	return Result{
 		Value:         pass,
 		EvaluatedRule: n,
+		Trace:         combineTrace(lv.Trace, rv.Trace),
 	}
 }
 
@@ -265,6 +288,7 @@ func (n *nodeIn) Eval(ctx *Ctx) Result {
 		return Result{
 			Error:         lv.Error,
 			EvaluatedRule: n,
+			Trace:         combineTrace(lv.Trace, prunedTrace(n.rv)),
 		}
 	}
 	rv := n.rv.Eval(ctx)
@@ -272,6 +296,7 @@ func (n *nodeIn) Eval(ctx *Ctx) Result {
 		return Result{
 			Error:         rv.Error,
 			EvaluatedRule: n,
+			Trace:         combineTrace(lv.Trace, rv.Trace),
 		}
 	}
 
@@ -280,6 +305,7 @@ func (n *nodeIn) Eval(ctx *Ctx) Result {
 		// the right value must be an array
 		return Result{
 			EvaluatedRule: n,
+			Trace:         combineTrace(lv.Trace, rv.Trace),
 		}
 	}
 
@@ -288,6 +314,7 @@ func (n *nodeIn) Eval(ctx *Ctx) Result {
 	return Result{
 		Value:         pass,
 		EvaluatedRule: n,
+		Trace:         combineTrace(lv.Trace, rv.Trace),
 	}
 }
 

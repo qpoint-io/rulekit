@@ -207,13 +207,13 @@ func lowerAST(node astNode) (Rule, error) {
 		if err != nil {
 			return nil, &astLowerError{span: n.span, msg: err.Error()}
 		}
-		return r, nil
+		return withTrace(n, r), nil
 	case *astPath:
 		if len(n.segments) == 1 && !n.segments[0].bracket && !n.segments[0].isIndex {
-			return FieldValue(n.segments[0].key), nil
+			return withTrace(n, FieldValue(n.segments[0].key)), nil
 		}
 		segments := append([]pathSegment(nil), n.segments...)
-		return &PathValue{segments: segments}, nil
+		return withTrace(n, &PathValue{segments: segments}), nil
 	case *astArray:
 		vals := make([]Rule, 0, len(n.vals))
 		for _, val := range n.vals {
@@ -223,7 +223,7 @@ func lowerAST(node astNode) (Rule, error) {
 			}
 			vals = append(vals, r)
 		}
-		return newArrayValue(vals), nil
+		return withTrace(n, newArrayValue(vals)), nil
 	case *astCall:
 		args := make([]Rule, 0, len(n.args))
 		for _, arg := range n.args {
@@ -233,14 +233,14 @@ func lowerAST(node astNode) (Rule, error) {
 			}
 			args = append(args, r)
 		}
-		return newFunctionValue(n.name, args), nil
+		return withTrace(n, newFunctionValue(n.name, args)), nil
 	case *astUnary:
 		right, err := lowerAST(n.right)
 		if err != nil {
 			return nil, err
 		}
 		if n.op == astOpNot {
-			return &nodeNot{right: right}, nil
+			return withTrace(n, &nodeNot{right: right}), nil
 		}
 	case *astBinary:
 		left, err := lowerAST(n.left)
@@ -253,18 +253,18 @@ func lowerAST(node astNode) (Rule, error) {
 		}
 		switch n.op {
 		case astOpAnd:
-			return &nodeAnd{left: left, right: right}, nil
+			return withTrace(n, &nodeAnd{left: left, right: right}), nil
 		case astOpOr:
-			return &nodeOr{left: left, right: right}, nil
+			return withTrace(n, &nodeOr{left: left, right: right}), nil
 		case astOpEQ, astOpNE, astOpContains, astOpGT, astOpGE, astOpLT, astOpLE:
-			return &nodeCompare{lv: left, op: tokenKindFromASTOperator(n.op), rv: right}, nil
+			return withTrace(n, &nodeCompare{lv: left, op: tokenKindFromASTOperator(n.op), rv: right}), nil
 		case astOpMatches:
-			return &nodeMatch{lv: left, rv: right}, nil
+			return withTrace(n, &nodeMatch{lv: left, rv: right}), nil
 		case astOpIn:
 			if literalIs[*net.IPNet](right) {
-				return &nodeCompare{lv: left, op: op_EQ, rv: right}, nil
+				return withTrace(n, &nodeCompare{lv: left, op: op_EQ, rv: right}), nil
 			}
-			return &nodeIn{lv: left, rv: right}, nil
+			return withTrace(n, &nodeIn{lv: left, rv: right}), nil
 		}
 	}
 	return nil, &astLowerError{span: node.astSpan(), msg: "unsupported AST node"}
