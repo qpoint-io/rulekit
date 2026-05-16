@@ -1,0 +1,77 @@
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap');
+
+@font-face {
+  font-family: 'Departure Mono';
+  src: url('/fonts/DepartureMono-Regular.woff2') format('woff2'),
+       url('/fonts/DepartureMono-Regular.ttf') format('truetype');
+  font-display: swap;
+  font-weight: 400;
+}
+
+:root {
+  --bg: #000810;
+  --bg-panel: #000b15;
+  --bg-code: #161616;
+  --bg-code-line: #0c1a15;
+  --bg-chip: #1a1a1a;
+  --bg-elev: #0d1a16;
+  --fg: #c3c38b;
+  --fg-dim: #7c7d76;
+  --fg-mute: #5a5a5a;
+  --fg-bright: #e6e6c0;
+  --blue: #83b1dd;
+  --blue-dim: #3f495e;
+  --blue-bright: #a8c8eb;
+  --cream: #c3c38b;
+  --cream-bright: #e8e8b0;
+  --magenta: #d181c0;
+  --magenta-dim: #b26ea3;
+  --success: #8ad14f;
+  --success-dim: #75b142;
+  --success-bg: #0e1c18;
+  --success-glow: #8ad14f33;
+  --danger: #e15f55;
+  --danger-dim: #b14b42;
+  --danger-bg: #1c100e;
+  --danger-glow: #e15f5533;
+  --comment: #5a6e58;
+  --border: #2a2f3a;
+  --border-strong: #3f495e;
+  --space-0: 0px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+  --radius-0: 0;
+  --radius-1: 2px;
+  --radius-2: 4px;
+  --bw-1: 1px;
+  --bw-2: 2px;
+  --shadow-pixel: 2px 2px 0 #000;
+  --shadow-glow-ok: 0 0 0 1px var(--success-dim), 0 0 24px var(--success-glow);
+  --shadow-glow-no: 0 0 0 1px var(--danger-dim), 0 0 24px var(--danger-glow);
+  --fs-display: 36px;
+  --fs-h1: 24px;
+  --fs-h2: 18px;
+  --fs-body: 18px;
+  --fs-code: 18px;
+  --fs-small: 14px;
+  --lh-tight: 1.05;
+  --lh-normal: 1.35;
+  --lh-loose: 1.6;
+  --font-display: 'Press Start 2P', 'VT323', ui-monospace, monospace;
+  --font-mono: 'Departure Mono', 'VT323', ui-monospace, 'Courier New', monospace;
+  --font-body: var(--font-mono);
+}
+
+html,
+body {
+  -webkit-font-smoothing: none;
+  font-smooth: never;
+  image-rendering: pixelated;
+  text-rendering: geometricPrecision;
+}
