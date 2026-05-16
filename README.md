@@ -205,6 +205,8 @@ result := rule.Eval(context.Background(), rulekit.FromKV(kv), rulekit.Opts{Trace
 trace := result.Trace
 ```
 
+Each trace node includes the expression, value, error, missing fields, and a `Status` of `passed`, `failed`, `missing`, `error`, `pruned`, or `unknown`. Short-circuited branches are marked as pruned.
+
 Use `Input` adapters for lazy values or custom path resolution:
 
 ```go
@@ -240,6 +242,8 @@ input := rulekit.FromKV(rulekit.KV{
 })
 result := rule.Eval(context.Background(), input, rulekit.Opts{Macros: macros})
 ```
+
+When tracing is enabled, a macro call appears as its own trace node with the expanded macro expression as a child.
 
 ## Functions
 

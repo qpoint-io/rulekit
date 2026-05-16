@@ -1,6 +1,7 @@
 package rulekit
 
 import (
+	"net"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -150,10 +151,51 @@ func TestEvalTraceShortCircuit(t *testing.T) {
 	require.Equal(t, ASTBinary, result.Trace.Node.Kind())
 	require.Equal(t, `a == 1 or b == 2`, result.Trace.Expr)
 	require.Len(t, result.Trace.Children, 2)
+	require.Equal(t, TracePassed, result.Trace.Status)
+	require.Equal(t, TracePassed, result.Trace.Children[0].Status)
+	require.Equal(t, TracePruned, result.Trace.Children[1].Status)
 	require.True(t, result.Trace.Children[0].Active)
 	require.False(t, result.Trace.Children[0].Pruned)
 	require.Equal(t, true, result.Trace.Children[0].Value)
 	require.False(t, result.Trace.Children[1].Active)
 	require.True(t, result.Trace.Children[1].Pruned)
 	require.Equal(t, `b == 2`, result.Trace.Children[1].Expr)
+}
+
+func TestEvalTraceMissingFields(t *testing.T) {
+	rule := MustParse(`a == 1 or b == 2`)
+
+	result := rule.Eval(nil, FromKV(KV{}), Opts{Trace: true})
+	require.NoError(t, result.Error)
+	require.True(t, result.Unknown())
+	require.ElementsMatch(t, []string{"a", "b"}, result.MissingFields)
+	require.NotNil(t, result.Trace)
+	require.Equal(t, TraceMissing, result.Trace.Status)
+	require.ElementsMatch(t, []string{"a", "b"}, result.Trace.MissingFields)
+	require.Len(t, result.Trace.Children, 2)
+	require.Equal(t, TraceMissing, result.Trace.Children[0].Status)
+	require.Equal(t, TraceMissing, result.Trace.Children[1].Status)
+}
+
+func TestEvalTraceMacroExpansion(t *testing.T) {
+	rule := MustParse(`is_internal() and user != "root"`)
+	macros := MacroSet{}
+	require.NoError(t, macros.Register("is_internal", `ip in 172.16.0.0/16 or host matches /svc\.cluster\.local$/`))
+
+	result := rule.Eval(nil, FromKV(KV{
+		"ip":   net.ParseIP("172.16.0.1"),
+		"user": "api",
+	}), Opts{Trace: true, Macros: macros})
+	require.NoError(t, result.Error)
+	require.True(t, result.Pass())
+	require.NotNil(t, result.Trace)
+	require.Equal(t, TracePassed, result.Trace.Status)
+	require.Len(t, result.Trace.Children, 2)
+
+	macroCall := result.Trace.Children[0]
+	require.Equal(t, `is_internal()`, macroCall.Expr)
+	require.Equal(t, TracePassed, macroCall.Status)
+	require.Len(t, macroCall.Children, 1)
+	require.Equal(t, `ip in 172.16.0.0/16 or host =~ /svc\.cluster\.local$/`, macroCall.Children[0].Expr)
+	require.Equal(t, TracePassed, macroCall.Children[0].Status)
 }

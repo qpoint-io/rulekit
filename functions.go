@@ -22,7 +22,19 @@ func (f *FunctionValue) Eval(ctx context.Context, input Input, opts Opts) Result
 				Error: fmt.Errorf("macro %q expects 0 arguments, got %d", f.fn, len(f.args.vals)),
 			}
 		}
-		return macro.Rule.Eval(ctx, input, opts)
+		res := macro.Rule.Eval(ctx, input, opts)
+		if traceEnabled(opts) && res.Trace != nil {
+			res.Trace = &Trace{
+				Expr:          macro.Source,
+				Value:         res.Value,
+				Error:         res.Error,
+				MissingFields: res.MissingFields,
+				Status:        traceStatus(res),
+				Active:        true,
+				Children:      []*Trace{res.Trace},
+			}
+		}
+		return res
 	}
 
 	return Result{
