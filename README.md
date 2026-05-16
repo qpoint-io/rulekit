@@ -229,8 +229,9 @@ Nested `Input` values inside a `KV` can take over resolution for an entire subtr
 Macros can be used for complex or commonly-used rules. They are defined in the evaluation context:
 
 ```go
-// create a macro
-isInternalAPI, err := rulekit.NewMacro("isInternalAPI", `domain matches /\.internal\.example\.com$/ or ip in 10.0.0.0/8`)
+// create macros
+macros := rulekit.MacroSet{}
+err := macros.Register("isInternalAPI", `domain matches /\.internal\.example\.com$/ or ip in 10.0.0.0/8`)
 if err != nil { /* ... */ }
 
 // create a rule that uses the macro
@@ -239,9 +240,7 @@ if err != nil { /* ... */ }
 
 // evaluate the rule, making sure to pass the macro in the eval context
 result := rule.Eval(&rulekit.Ctx{
-    Macros: rulekit.MacroSet{
-        "isInternalAPI": isInternalAPI,
-    },
+    Macros: macros,
     KV: rulekit.KV{
         "user": user,
         // ...
