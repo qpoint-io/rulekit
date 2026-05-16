@@ -2,6 +2,23 @@ package rulekit
 
 import "context"
 
+type DiagnosticCode string
+
+const (
+	DiagnosticComparisonIncomparable        DiagnosticCode = "comparison_incomparable"
+	DiagnosticComparisonInvalidShape        DiagnosticCode = "comparison_invalid_shape"
+	DiagnosticComparisonUnsupportedOperator DiagnosticCode = "comparison_unsupported_operator"
+)
+
+// Diagnostic provides optional evaluation details for trace consumers.
+type Diagnostic struct {
+	Code      DiagnosticCode
+	Message   string
+	LeftType  string
+	Operator  string
+	RightType string
+}
+
 type TraceStatus string
 
 const (
@@ -20,6 +37,7 @@ type Trace struct {
 	Value         any
 	Error         error
 	MissingFields []string
+	Diagnostics   []Diagnostic
 	Status        TraceStatus
 	Active        bool
 	Pruned        bool
@@ -49,6 +67,7 @@ func (r *tracedRule) Eval(ctx context.Context, input Input, opts Opts) Result {
 			Value:         res.Value,
 			Error:         res.Error,
 			MissingFields: res.MissingFields,
+			Diagnostics:   traceDiagnostics(res.Trace),
 			Status:        traceStatus(res),
 			Active:        true,
 			Children:      traceChildren(res.Trace),
@@ -84,6 +103,21 @@ func traceChildren(trace *Trace) []*Trace {
 		return nil
 	}
 	return trace.Children
+}
+
+func traceDiagnostics(trace *Trace) []Diagnostic {
+	if trace == nil {
+		return nil
+	}
+	return trace.Diagnostics
+}
+
+func addTraceDiagnostic(trace *Trace, diagnostic Diagnostic) *Trace {
+	if trace == nil {
+		trace = &Trace{}
+	}
+	trace.Diagnostics = append(trace.Diagnostics, diagnostic)
+	return trace
 }
 
 func prunedTrace(rule Rule) *Trace {

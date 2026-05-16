@@ -6,10 +6,10 @@ import (
 	"strings"
 )
 
-func compareString(left string, op int, right any) (ret bool) {
+func compareString(left string, op int, right any) (ret compareOutcome) {
 	if ruleDebug >= 1 {
 		defer func() {
-			debugResult(ret, "│ cmpStr", "", left, op, right)
+			debugResult(ret.pass, "│ cmpStr", "", left, op, right)
 		}()
 	}
 	switch right := right.(type) {
@@ -29,45 +29,45 @@ func compareString(left string, op int, right any) (ret bool) {
 		// string ? hex
 		return compareBytesBytes([]byte(left), op, right.Bytes)
 	}
-	return false
+	return incomparable()
 }
 
-func compareStringString(left string, op int, right string) (ret bool) {
+func compareStringString(left string, op int, right string) (ret compareOutcome) {
 	if ruleDebug >= 1 {
 		defer func() {
-			debugResult(ret, "│  cmpStrStr", "", left, op, right)
+			debugResult(ret.pass, "│  cmpStrStr", "", left, op, right)
 		}()
 	}
 	switch op {
 	case op_EQ:
-		return left == right
+		return comparePass(left == right)
 	case op_NE:
-		return left != right
+		return comparePass(left != right)
 	case op_CONTAINS:
-		return strings.Contains(left, right)
+		return comparePass(strings.Contains(left, right))
 	}
-	return false
+	return unsupportedOperator()
 }
 
-func compareStringRegex(left string, op int, right *regexp.Regexp) (ret bool) {
+func compareStringRegex(left string, op int, right *regexp.Regexp) (ret compareOutcome) {
 	if ruleDebug >= 1 {
 		defer func() {
-			debugResult(ret, "│ cmpStrRegex", "", left, op, right)
+			debugResult(ret.pass, "│ cmpStrRegex", "", left, op, right)
 		}()
 	}
 	switch op {
 	case op_EQ, op_CONTAINS:
-		return right.MatchString(left)
+		return comparePass(right.MatchString(left))
 	case op_NE:
-		return !right.MatchString(left)
+		return comparePass(!right.MatchString(left))
 	}
-	return false
+	return unsupportedOperator()
 }
 
-func compareStringSlice(left []string, op int, right any) (ret bool) {
+func compareStringSlice(left []string, op int, right any) (ret compareOutcome) {
 	if ruleDebug >= 1 {
 		defer func() {
-			debugResult(ret, "│ cmp[]Str", "", left, op, right)
+			debugResult(ret.pass, "│ cmp[]Str", "", left, op, right)
 		}()
 	}
 	if op == op_CONTAINS {
@@ -82,20 +82,14 @@ func compareStringSlice(left []string, op int, right any) (ret bool) {
 	switch right := right.(type) {
 	case string:
 		// []string{...} ? string
-		for _, fv := range left {
-			if compareString(fv, op, right) {
-				return true
-			}
-		}
-		return false
+		return compareSliceDetailed(left, op, func(fv string, op int) compareOutcome {
+			return compareString(fv, op, right)
+		})
 	case *regexp.Regexp:
 		// []string{...} ? regexp
-		for _, fv := range left {
-			if compareStringRegex(fv, op, right) {
-				return true
-			}
-		}
-		return false
+		return compareSliceDetailed(left, op, func(fv string, op int) compareOutcome {
+			return compareStringRegex(fv, op, right)
+		})
 	}
-	return false
+	return incomparable()
 }

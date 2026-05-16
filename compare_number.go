@@ -2,10 +2,10 @@ package rulekit
 
 import "cmp"
 
-func compareNumber(left any, op int, right any) (ret bool) {
+func compareNumber(left any, op int, right any) (ret compareOutcome) {
 	if ruleDebug >= 1 {
 		defer func() {
-			debugResult(ret, "│ cmpNum", "", left, op, right)
+			debugResult(ret.pass, "│ cmpNum", "", left, op, right)
 		}()
 	}
 
@@ -97,24 +97,24 @@ const (
 )
 
 // Helper function to convert comparison result to boolean based on operator
-func compareWithOp(cmpResult int, op int) bool {
+func compareWithOp(cmpResult int, op int) compareOutcome {
 	if cmpResult == cmpResultNotComparable {
-		return false
+		return incomparable()
 	}
 
 	switch op {
 	case op_EQ:
-		return cmpResult == cmpResultEqual
+		return comparePass(cmpResult == cmpResultEqual)
 	case op_NE:
-		return cmpResult != cmpResultEqual
+		return comparePass(cmpResult != cmpResultEqual)
 	case op_GT:
-		return cmpResult == cmpResultGreater
+		return comparePass(cmpResult == cmpResultGreater)
 	case op_GE:
-		return cmpResult == cmpResultGreater || cmpResult == cmpResultEqual
+		return comparePass(cmpResult == cmpResultGreater || cmpResult == cmpResultEqual)
 	case op_LT:
-		return cmpResult == cmpResultLess
+		return comparePass(cmpResult == cmpResultLess)
 	case op_LE:
-		return cmpResult == cmpResultLess || cmpResult == cmpResultEqual
+		return comparePass(cmpResult == cmpResultLess || cmpResult == cmpResultEqual)
 	}
-	return false
+	return unsupportedOperator()
 }

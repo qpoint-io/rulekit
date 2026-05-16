@@ -265,10 +265,14 @@ func (n *nodeCompare) Eval(ctx context.Context, input Input, opts Opts) Result {
 		}
 	}
 
-	pass := compare(lv.Value, n.op, rv.Value)
+	outcome := compareDetailed(lv.Value, n.op, rv.Value)
+	trace := traceIfEnabled(tracing, lv.Trace, rv.Trace)
+	if tracing && outcome.diagnostic != compareDiagnosticNone {
+		trace = addTraceDiagnostic(trace, newComparisonDiagnostic(outcome.diagnostic, lv.Value, n.op, rv.Value))
+	}
 	return Result{
-		Value: pass,
-		Trace: traceIfEnabled(tracing, lv.Trace, rv.Trace),
+		Value: outcome.pass,
+		Trace: trace,
 	}
 }
 
@@ -312,16 +316,24 @@ func (n *nodeIn) Eval(ctx context.Context, input Input, opts Opts) Result {
 	rvArr, ok := rv.Value.([]any)
 	if !ok {
 		// the right value must be an array
+		trace := traceIfEnabled(tracing, lv.Trace, rv.Trace)
+		if tracing {
+			trace = addTraceDiagnostic(trace, newComparisonDiagnostic(compareDiagnosticInvalidShape, lv.Value, op_IN, rv.Value))
+		}
 		return Result{
-			Trace: traceIfEnabled(tracing, lv.Trace, rv.Trace),
+			Trace: trace,
 		}
 	}
 
 	// `FIELD in ARR` == `ARR contains FIELD`
-	pass := compare(rvArr, op_CONTAINS, lv.Value)
+	outcome := compareDetailed(rvArr, op_CONTAINS, lv.Value)
+	trace := traceIfEnabled(tracing, lv.Trace, rv.Trace)
+	if tracing && outcome.diagnostic != compareDiagnosticNone {
+		trace = addTraceDiagnostic(trace, newComparisonDiagnostic(outcome.diagnostic, rvArr, op_CONTAINS, lv.Value))
+	}
 	return Result{
-		Value: pass,
-		Trace: traceIfEnabled(tracing, lv.Trace, rv.Trace),
+		Value: outcome.pass,
+		Trace: trace,
 	}
 }
 
