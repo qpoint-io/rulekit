@@ -215,39 +215,160 @@ func BenchmarkParse(b *testing.B) {
 }
 
 func BenchmarkEval(b *testing.B) {
-	simpleFilter, err := Parse("tags eq 'db-svc'")
-	require.NoError(b, err)
-	largeFilter, err := Parse(`tags eq 'db-svc' OR domain matches /example\.com$/ OR (process.uid != 0 AND tags contains 'internal-svc') OR (destination.port <= 1023 AND destination.ip != 192.168.0.0/16)`)
-	require.NoError(b, err)
+	cases := []struct {
+		name string
+		expr string
+		ctx  *Ctx
+	}{
+		{
+			name: "short_circuit_first_branch_string",
+			expr: `tags == "db-svc" or domain matches /example\.com$/ or destination.ip in 192.168.0.0/16`,
+			ctx:  &Ctx{KV: KV{"tags": "db-svc"}},
+		},
+		{
+			name: "short_circuit_first_branch_string_slice",
+			expr: `tags == "db-svc" or domain matches /example\.com$/ or destination.ip in 192.168.0.0/16`,
+			ctx:  &Ctx{KV: KV{"tags": []string{"db-svc", "internal-vlan"}}},
+		},
+		{
+			name: "full_traversal_last_branch_pass",
+			expr: `tags == "db-svc" or domain matches /example\.com$/ or process.uid == 0 or destination.ip in 192.168.0.0/16`,
+			ctx: &Ctx{KV: KV{
+				"tags":        "other",
+				"domain":      "qpoint.io",
+				"process":     KV{"uid": 1000},
+				"destination": KV{"ip": net.ParseIP("192.168.2.37")},
+			}},
+		},
+		{
+			name: "full_traversal_no_match",
+			expr: `tags == "db-svc" or domain matches /example\.com$/ or process.uid == 0 or destination.ip in 192.168.0.0/16`,
+			ctx: &Ctx{KV: KV{
+				"tags":        "other",
+				"domain":      "qpoint.io",
+				"process":     KV{"uid": 1000},
+				"destination": KV{"ip": net.ParseIP("10.0.0.1")},
+			}},
+		},
+		{
+			name: "nested_path_number",
+			expr: `process.uid != 0 and destination.port <= 1023`,
+			ctx:  &Ctx{KV: KV{"process": KV{"uid": 1000}, "destination": KV{"port": 443}}},
+		},
+		{
+			name: "bracket_path",
+			expr: `request.headers["user-agent"] == "curl"`,
+			ctx:  &Ctx{KV: KV{"request": KV{"headers": KV{"user-agent": "curl"}}}},
+		},
+		{
+			name: "array_index_path",
+			expr: `items[0].name == "first"`,
+			ctx:  &Ctx{KV: KV{"items": []any{KV{"name": "first"}, KV{"name": "second"}}}},
+		},
+		{
+			name: "regex",
+			expr: `domain matches /example\.com$/`,
+			ctx:  &Ctx{KV: KV{"domain": "api.example.com"}},
+		},
+		{
+			name: "ip_cidr",
+			expr: `destination.ip in 192.168.0.0/16`,
+			ctx:  &Ctx{KV: KV{"destination": KV{"ip": net.ParseIP("192.168.2.37")}}},
+		},
+		{
+			name: "missing_fields",
+			expr: `user == "root" or destination.ip in 192.168.0.0/16`,
+			ctx:  &Ctx{KV: KV{}},
+		},
+		{
+			name: "function",
+			expr: `starts_with(path, "/api")`,
+			ctx:  &Ctx{KV: KV{"path": "/api/v1"}},
+		},
+		{
+			name: "macro",
+			expr: `is_internal() and user != "root"`,
+			ctx: &Ctx{
+				KV:     KV{"ip": net.ParseIP("172.16.0.1"), "user": "api"},
+				Macros: mustMacroSet(b, map[string]string{"is_internal": `ip in 172.16.0.0/16`}),
+			},
+		},
+	}
 
-	smallInput := &Ctx{KV: KV{"tags": "db-svc"}}
-	largeInput := &Ctx{KV: KV{"tags": []string{"db-svc", "internal-vlan", "unprivileged-user"}, "domain": "example.com", "process": KV{"uid": 1000}, "port": 8080, "destination": KV{"ip": net.ParseIP("192.168.2.37"), "port": 8080}}}
-
-	b.Run("simple", func(b *testing.B) {
-		b.Run("small input", func(b *testing.B) {
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			rule := MustParse(tc.expr)
+			b.ReportAllocs()
+			b.ResetTimer()
 			for range b.N {
-				simpleFilter.Eval(smallInput)
+				benchmarkResult = rule.Eval(tc.ctx)
 			}
 		})
-		b.Run("large input", func(b *testing.B) {
-			for range b.N {
-				simpleFilter.Eval(largeInput)
-			}
-		})
+	}
+}
+
+func BenchmarkEvalLazyInput(b *testing.B) {
+	b.Run("pruned", func(b *testing.B) {
+		rule := MustParse(`allow == true or expensive == "value"`)
+		ctx := &Ctx{Input: FromKV(KV{
+			"allow": true,
+			"expensive": LazyValue(func() (any, error) {
+				return "value", nil
+			}),
+		})}
+		b.ReportAllocs()
+		b.ResetTimer()
+		for range b.N {
+			benchmarkResult = rule.Eval(ctx)
+		}
 	})
 
-	b.Run("complex", func(b *testing.B) {
-		b.Run("small input", func(b *testing.B) {
-			for range b.N {
-				largeFilter.Eval(smallInput)
-			}
-		})
-		b.Run("large input", func(b *testing.B) {
-			for range b.N {
-				largeFilter.Eval(largeInput)
-			}
-		})
+	b.Run("resolved_cached", func(b *testing.B) {
+		rule := MustParse(`expensive == "value"`)
+		ctx := &Ctx{Input: FromKV(KV{
+			"expensive": LazyValue(func() (any, error) {
+				return "value", nil
+			}),
+		})}
+		benchmarkResult = rule.Eval(ctx)
+		b.ReportAllocs()
+		b.ResetTimer()
+		for range b.N {
+			benchmarkResult = rule.Eval(ctx)
+		}
 	})
+
+	b.Run("resolved_per_eval", func(b *testing.B) {
+		rule := MustParse(`expensive == "value"`)
+		b.ReportAllocs()
+		b.ResetTimer()
+		for range b.N {
+			ctx := &Ctx{Input: FromKV(KV{
+				"expensive": LazyValue(func() (any, error) {
+					return "value", nil
+				}),
+			})}
+			benchmarkResult = rule.Eval(ctx)
+		}
+	})
+}
+
+func BenchmarkEvalTrace(b *testing.B) {
+	rule := MustParse(`tags == "db-svc" or domain matches /example\.com$/ or process.uid == 0 or destination.ip in 192.168.0.0/16`)
+	ctx := &Ctx{
+		Trace: true,
+		KV: KV{
+			"tags":        "other",
+			"domain":      "qpoint.io",
+			"process":     KV{"uid": 1000},
+			"destination": KV{"ip": net.ParseIP("192.168.2.37")},
+		},
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		benchmarkResult = rule.Eval(ctx)
+	}
 }
 
 func BenchmarkCompilePlan(b *testing.B) {
@@ -259,13 +380,22 @@ func BenchmarkCompilePlan(b *testing.B) {
 }
 
 func BenchmarkPlanEval(b *testing.B) {
-	plan, err := ParsePlan(`tags eq 'db-svc' OR domain matches /example\.com$/ OR (process.uid != 0 AND tags contains 'internal-svc') OR (destination.port <= 1023 AND destination.ip != 192.168.0.0/16)`)
+	plan, err := ParsePlan(`tags == "db-svc" or domain matches /example\.com$/ or process.uid == 0 or destination.ip in 192.168.0.0/16`)
 	require.NoError(b, err)
-	ctx := &Ctx{KV: KV{"tags": []string{"db-svc", "internal-vlan", "unprivileged-user"}, "domain": "example.com", "process": KV{"uid": 1000}, "port": 8080, "destination": KV{"ip": net.ParseIP("192.168.2.37"), "port": 8080}}}
+	ctx := &Ctx{KV: KV{
+		"tags":        "other",
+		"domain":      "qpoint.io",
+		"process":     KV{"uid": 1000},
+		"destination": KV{"ip": net.ParseIP("192.168.2.37")},
+	}}
+	b.ReportAllocs()
+	b.ResetTimer()
 	for range b.N {
-		_ = plan.Eval(ctx)
+		benchmarkResult = plan.Eval(ctx)
 	}
 }
+
+var benchmarkResult Result
 
 func TestFilterParseUint(t *testing.T) {
 	_, err := Parse("f_uint==4294967295 && f_uint64==18446744073709551615")
