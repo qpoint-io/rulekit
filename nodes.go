@@ -51,6 +51,10 @@ func (n *nodeAnd) String() string {
 	return fmt.Sprintf("(%s and %s)", n.left.String(), n.right.String())
 }
 
+func (n *nodeAnd) Print(PrintMode) string {
+	return n.String()
+}
+
 // OR
 type nodeOr struct {
 	left  Rule
@@ -95,6 +99,10 @@ func (n *nodeOr) Eval(ctx *Ctx) Result {
 
 func (n *nodeOr) String() string {
 	return fmt.Sprintf("(%s or %s)", n.left.String(), n.right.String())
+}
+
+func (n *nodeOr) Print(PrintMode) string {
+	return n.String()
 }
 
 // NOT
@@ -142,6 +150,10 @@ func (n *nodeNot) String() string {
 	}
 
 	return "not (" + n.right.String() + ")"
+}
+
+func (n *nodeNot) Print(PrintMode) string {
+	return n.String()
 }
 
 // TEST_MATCHES
@@ -199,6 +211,10 @@ func (n *nodeMatch) String() string {
 	return n.lv.String() + " =~ " + n.rv.String()
 }
 
+func (n *nodeMatch) Print(PrintMode) string {
+	return n.String()
+}
+
 // Comparison node
 type nodeCompare struct {
 	lv Rule
@@ -231,6 +247,10 @@ func (n *nodeCompare) Eval(ctx *Ctx) Result {
 
 func (n *nodeCompare) String() string {
 	return n.lv.String() + " " + operatorToString(n.op) + " " + n.rv.String()
+}
+
+func (n *nodeCompare) Print(PrintMode) string {
+	return n.String()
 }
 
 // TEST_IN
@@ -273,4 +293,8 @@ func (n *nodeIn) Eval(ctx *Ctx) Result {
 
 func (n *nodeIn) String() string {
 	return n.lv.String() + " in " + n.rv.String()
+}
+
+func (n *nodeIn) Print(PrintMode) string {
+	return n.String()
 }

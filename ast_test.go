@@ -86,12 +86,12 @@ func TestFormat(t *testing.T) {
 	ast, err := ParseAST(`(a == 1 or b == 2) and c == 3 and request.headers["user-agent"] == "curl"`)
 	require.NoError(t, err)
 
-	compact, err := Format(ast, FormatOptions{Mode: FormatCompact})
-	require.NoError(t, err)
+	compact := Format(ast, Compact())
 	require.Equal(t, `(a == 1 or b == 2) and c == 3 and request.headers["user-agent"] == "curl"`, compact)
+	require.Equal(t, `(a == 1 or b == 2) and c == 3 and request.headers["user-agent"] == "curl"`, MustParse(ast.Source()).Print(Compact()))
+	require.Equal(t, ast.Source(), MustParse(ast.Source()).Print(Source()))
 
-	multiline, err := Format(ast, FormatOptions{Mode: FormatMultiline, Indent: "    "})
-	require.NoError(t, err)
+	multiline := Format(ast, Multiline("    "))
 	require.Equal(t, `(
     a == 1
     or b == 2
@@ -128,7 +128,7 @@ func TestRewritePreservesUnchangedSource(t *testing.T) {
 	rewritten, err := Rewrite(ast, []Edit{{
 		Target:      ast.Root().Children()[0],
 		Replacement: replacement,
-	}}, FormatOptions{Mode: FormatCompact})
+	}}, Compact())
 	require.NoError(t, err)
 	require.Equal(t, "field == 3 -- keep\n and other == 2", rewritten)
 
@@ -140,7 +140,7 @@ func TestRewritePreservesUnchangedSource(t *testing.T) {
 func TestCompilePlan(t *testing.T) {
 	plan, err := ParsePlan(`ip in 192.168.0.0/16 and request.headers["user-agent"] == "curl"`)
 	require.NoError(t, err)
-	require.Equal(t, `ip == 192.168.0.0/16 and request.headers["user-agent"] == "curl"`, plan.String())
+	require.Equal(t, `ip in 192.168.0.0/16 and request.headers["user-agent"] == "curl"`, plan.String())
 
 	result := plan.Eval(&Ctx{KV: KV{
 		"ip": net.ParseIP("192.168.1.1"),

@@ -13,7 +13,7 @@ type Edit struct {
 }
 
 // Rewrite applies AST-node replacements while preserving unchanged source text.
-func Rewrite(ast *AST, edits []Edit, opts FormatOptions) (string, error) {
+func Rewrite(ast *AST, edits []Edit, mode PrintMode) (string, error) {
 	if ast == nil || ast.root == nil {
 		return "", fmt.Errorf("AST must not be nil")
 	}
@@ -37,10 +37,7 @@ func Rewrite(ast *AST, edits []Edit, opts FormatOptions) (string, error) {
 		if span.Start < 0 || span.End < span.Start || span.End > len(ast.source) {
 			return "", fmt.Errorf("edit target span is outside source")
 		}
-		replacement, err := Format(edit.Replacement, opts)
-		if err != nil {
-			return "", err
-		}
+		replacement := Format(edit.Replacement, mode)
 		rewrites = append(rewrites, rewriteEdit{span: span, replacement: replacement})
 	}
 

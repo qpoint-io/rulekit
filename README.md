@@ -180,17 +180,20 @@ The public AST view is read-only. Build edited expressions by parsing replacemen
 
 `AST.Tokens()` returns the token stream with byte spans plus leading and trailing whitespace/comment trivia for source-aware tools.
 
-Use `Format` for explicit canonical output modes:
+Use `Print` and `Format` for explicit output modes:
 
 ```go
-compact, err := rulekit.Format(ast, rulekit.FormatOptions{Mode: rulekit.FormatCompact})
-multiline, err := rulekit.Format(ast, rulekit.FormatOptions{Mode: rulekit.FormatMultiline, Indent: "  "})
+source := rule.Print(rulekit.Source())
+compact := rule.Print(rulekit.Compact())
+multiline := rule.Print(rulekit.Multiline("  "))
+
+formattedAST := rulekit.Format(ast, rulekit.Multiline("  "))
 ```
 
 Use `Rewrite` to preserve unchanged source while replacing selected AST nodes:
 
 ```go
-updated, err := rulekit.Rewrite(ast, []rulekit.Edit{{Target: node, Replacement: replacementAST}}, rulekit.FormatOptions{Mode: rulekit.FormatCompact})
+updated, err := rulekit.Rewrite(ast, []rulekit.Edit{{Target: node, Replacement: replacementAST}}, rulekit.Compact())
 ```
 
 For repeated evaluation, `ParsePlan` and `CompilePlan` create an optional runtime plan over the lowered evaluator representation:

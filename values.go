@@ -28,6 +28,10 @@ func (f FieldValue) String() string {
 	return string(f)
 }
 
+func (f FieldValue) Print(PrintMode) string {
+	return f.String()
+}
+
 // PathValue evaluates an explicit map/slice path, including bracket key and
 // numeric index segments.
 type PathValue struct {
@@ -80,6 +84,10 @@ func (p *PathValue) String() string {
 	return raw.String()
 }
 
+func (p *PathValue) Print(PrintMode) string {
+	return p.String()
+}
+
 func asPathValue(r Rule) (*PathValue, bool) {
 	switch v := r.(type) {
 	case FieldValue:
@@ -127,6 +135,10 @@ func (l *LiteralValue[T]) String() string {
 	return l.raw
 }
 
+func (l *LiteralValue[T]) Print(PrintMode) string {
+	return l.String()
+}
+
 type ArrayValue struct {
 	raw  string
 	vals []Rule
@@ -149,6 +161,10 @@ func (a *ArrayValue) Eval(ctx *Ctx) Result {
 
 func (a *ArrayValue) String() string {
 	return a.raw
+}
+
+func (a *ArrayValue) Print(PrintMode) string {
+	return a.String()
 }
 
 func newArrayValue(vals []Rule) *ArrayValue {

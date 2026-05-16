@@ -86,7 +86,7 @@ func Compile(ast *AST) (Rule, error) {
 		}
 		return nil, err
 	}
-	return &rule{lowered}, nil
+	return &rule{Rule: lowered, ast: ast}, nil
 }
 
 // Root returns the root expression node.

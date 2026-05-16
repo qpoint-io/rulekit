@@ -56,6 +56,10 @@ func (f *FunctionValue) String() string {
 	return f.fn + "(" + f.args.String() + ")"
 }
 
+func (f *FunctionValue) Print(PrintMode) string {
+	return f.String()
+}
+
 func newFunctionValue(fn string, args []Rule) *FunctionValue {
 	argsArr := newArrayValue(args)
 	argsArr.raw = strings.TrimPrefix(argsArr.raw, "[")
