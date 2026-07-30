@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import AstNodeView from './components/AstNode.vue'
+import SelectionBridge from './components/SelectionBridge.vue'
 import TraceNodeView from './components/TraceNode.vue'
 import {
   deleteRuleNode,
@@ -70,8 +71,10 @@ const lastValid = ref<ParseResponse>({ ok: false })
 const evalResult = ref<EvalResponse | null>(null)
 const selectedId = ref('root')
 const hoveredId = ref<string | undefined>()
-const editorMode = ref<'nested' | 'chips'>('nested')
+const editorMode = ref<'nested' | 'chips' | 'graph'>('nested')
 const density = ref<'comfortable' | 'compact' | 'dense'>('compact')
+const selectionSync = ref(true)
+const syncHintOpen = ref(true)
 const wasmError = ref('')
 const rewriteError = ref('')
 const draft = ref('')
@@ -217,6 +220,28 @@ function selectNode(node: AstNode) {
   textarea.value?.setSelectionRange(node.span.start, node.span.end)
 }
 
+function selectTrace(trace: { span?: { start: number; end: number } }) {
+  if (!trace.span) return
+  const match = nodes.value.find((node) => node.span.start === trace.span?.start && node.span.end === trace.span?.end)
+  if (match) selectNode(match)
+}
+
+function hoverTrace(trace?: { span?: { start: number; end: number } }) {
+  if (!trace?.span) {
+    hoveredId.value = undefined
+    return
+  }
+  const match = nodes.value.find((node) => node.span.start === trace.span?.start && node.span.end === trace.span?.end)
+  hoveredId.value = match?.id
+}
+
+function nodeIdForToken(token: Token) {
+  const containing = nodes.value
+    .filter((node) => node.span.start <= token.span.start && node.span.end >= token.span.end)
+    .sort((a, b) => (a.span.end - a.span.start) - (b.span.end - b.span.start))[0]
+  return containing?.id
+}
+
 function selectFromText() {
   const el = textarea.value
   if (!el) return
@@ -230,11 +255,22 @@ function selectFromText() {
 }
 
 function tokenClass(token: Token) {
-  const selected = activeNodeId.value && currentAST.value
-    ? token.span.start >= (selectedNode.value?.span.start ?? -1) && token.span.end <= (selectedNode.value?.span.end ?? -1)
+  const active = nodes.value.find((node) => node.id === activeNodeId.value)
+  const selected = selectionSync.value && active
+    ? token.span.start >= active.span.start && token.span.end <= active.span.end
     : false
   return [`tok-${token.role}`, selected ? 'is-selected' : '']
 }
+
+const tokenLines = computed(() => {
+  const lines: Array<Array<Token & { nodeId?: string }>> = []
+  for (const token of currentTokens.value) {
+    const lineIndex = Math.max(0, token.span.startLine - 1)
+    lines[lineIndex] ||= []
+    lines[lineIndex].push({ ...token, nodeId: nodeIdForToken(token) })
+  }
+  return lines
+})
 
 function statusLabel() {
   if (!evalResult.value) return 'WAIT'
@@ -267,8 +303,19 @@ function valueText(value: unknown) {
           <button class="rk-btn rk-btn--ghost" :class="{ 'rk-btn--active': density === 'compact' }" @click="density = 'compact'">compact</button>
           <button class="rk-btn rk-btn--ghost" :class="{ 'rk-btn--active': density === 'dense' }" @click="density = 'dense'">dense</button>
         </div>
+        <div class="row">
+          sync
+          <button class="rk-btn rk-btn--ghost" :class="{ 'rk-btn--active': selectionSync }" @click="selectionSync = !selectionSync">{{ selectionSync ? 'on' : 'off' }}</button>
+        </div>
       </div>
     </header>
+
+    <div v-if="syncHintOpen" class="rk-selsync-hint">
+      <span class="glyph" :class="{ on: selectionSync }" />
+      <span><b>selection sync {{ selectionSync ? 'on' : 'off' }}</b><span>hover or click a token / chip / trace node</span></span>
+      <button class="rk-btn rk-btn--ghost rk-btn--icon" @click="syncHintOpen = false">x</button>
+    </div>
+    <button v-else class="rk-selsync-pill" @click="syncHintOpen = true"><span class="glyph" :class="{ on: selectionSync }" />sync</button>
 
     <div v-if="wasmError" class="rk-panel rk-panel--error rk-banner">{{ wasmError }}</div>
 
@@ -305,6 +352,23 @@ function valueText(value: unknown) {
               </div>
             </div>
             <pre v-if="parseResult.error" class="rk-error">{{ parseResult.error }}</pre>
+            <div class="rk-source-map" data-screen-label="source-map">
+              <div v-for="(line, lineIndex) in tokenLines" :key="lineIndex" class="rk-source-line">
+                <span class="rk-gutter">{{ lineIndex + 1 }}</span>
+                <span class="rk-source-line-content">
+                  <span
+                    v-for="(token, tokenIndex) in line"
+                    :key="tokenIndex"
+                    class="tok"
+                    :class="tokenClass(token)"
+                    :data-node-id="token.nodeId"
+                    @click="token.nodeId && (selectedId = token.nodeId)"
+                    @mouseenter="hoveredId = token.nodeId"
+                    @mouseleave="hoveredId = undefined"
+                  >{{ token.raw }}</span>
+                </span>
+              </div>
+            </div>
           </div>
 
           <div class="rk-split-col">
@@ -313,13 +377,14 @@ function valueText(value: unknown) {
               <span class="rk-panel-actions">
                 <button class="rk-btn rk-btn--ghost" :class="{ 'rk-btn--active': editorMode === 'nested' }" @click="editorMode = 'nested'">nested</button>
                 <button class="rk-btn rk-btn--ghost" :class="{ 'rk-btn--active': editorMode === 'chips' }" @click="editorMode = 'chips'">chips</button>
+                <button class="rk-btn rk-btn--ghost" :class="{ 'rk-btn--active': editorMode === 'graph' }" @click="editorMode = 'graph'">graph</button>
               </span>
             </div>
-            <div class="rk-visual">
+            <div class="rk-visual" data-screen-label="visual-ast">
               <AstNodeView
                 v-if="currentAST"
                 :node="currentAST"
-                :selected-id="selectedId"
+                :selected-id="selectionSync ? activeNodeId : undefined"
                 :mode="editorMode"
                 @select="selectNode"
                 @hover="hoveredId = $event?.id"
@@ -369,10 +434,18 @@ function valueText(value: unknown) {
             <div v-if="evalResult?.error" class="rk-error">{{ evalResult.error }}</div>
           </div>
           <div class="rk-trace">
-            <TraceNodeView v-if="evalResult?.trace" :trace="evalResult.trace" />
+            <TraceNodeView
+              v-if="evalResult?.trace"
+              :trace="evalResult.trace"
+              :selected-id="selectedNode ? `${selectedNode.span.start}:${selectedNode.span.end}` : undefined"
+              @select="selectTrace"
+              @hover="hoverTrace"
+            />
           </div>
         </div>
       </section>
     </div>
+
+    <SelectionBridge :selected-id="activeNodeId" :enabled="selectionSync" />
   </main>
 </template>
