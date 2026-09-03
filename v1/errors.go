@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/hashicorp/go-multierror"
-	"github.com/qpoint-io/rulekit/set"
+	"github.com/qpoint-io/rulekit/v2/set"
 )
 
 type ErrMissingFields struct {

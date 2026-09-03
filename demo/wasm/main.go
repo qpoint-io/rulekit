@@ -9,7 +9,7 @@ import (
 	"strings"
 	"syscall/js"
 
-	rulekit "github.com/qpoint-io/rulekit"
+	rulekit "github.com/qpoint-io/rulekit/v2"
 )
 
 type spanDTO struct {

@@ -4,7 +4,7 @@ import (
 	"net"
 	"strings"
 
-	"github.com/qpoint-io/rulekit/set"
+	"github.com/qpoint-io/rulekit/v2/set"
 )
 
 type FieldValue string
