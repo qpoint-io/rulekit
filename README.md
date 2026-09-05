@@ -98,7 +98,7 @@ The Result also provides additional helper methods:
 | `<`        | `lt`   | Less than                                                            |
 | `<=`       | `le`   | Less than or equal to                                                |
 | `contains` |        | Check if a value contains another value                              |
-| `in`       |        | Check if a value is contained within an array or an IP within a CIDR |
+| `in`       |        | Check if a value is contained within an array or an IP within a CIDR. If the left side is an array, the check passes when ANY of its elements matches (same as `==` and `contains`) |
 | `matches`  |        | Match against a regular expression                                   |
 
 ## Supported Types

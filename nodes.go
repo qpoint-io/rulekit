@@ -325,8 +325,14 @@ func (n *nodeIn) Eval(ctx context.Context, input Input, opts Opts) Result {
 		}
 	}
 
-	// `FIELD in ARR` == `ARR contains FIELD`
-	outcome := compareDetailed(rvArr, op_CONTAINS, lv.Value)
+	// `FIELD in ARR` == `ARR contains FIELD`; a list-valued FIELD is in ARR
+	// when ANY of its elements is.
+	outcome, ok := compareAnyElem(lv.Value, func(el any) compareOutcome {
+		return compareDetailed(rvArr, op_CONTAINS, el)
+	})
+	if !ok {
+		outcome = compareDetailed(rvArr, op_CONTAINS, lv.Value)
+	}
 	trace := traceIfEnabled(tracing, lv.Trace, rv.Trace)
 	if tracing && outcome.diagnostic != compareDiagnosticNone {
 		trace = addTraceDiagnostic(trace, newComparisonDiagnostic(outcome.diagnostic, rvArr, op_CONTAINS, lv.Value))
