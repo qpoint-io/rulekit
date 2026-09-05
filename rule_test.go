@@ -1169,3 +1169,8 @@ func TestFieldNames(t *testing.T) {
 		require.Error(t, err, r)
 	}
 }
+
+func TestNot(t *testing.T) {
+	assertRulep(t, `not (a == 1)`, kv(map[string]any{"a": 1})).Ok().DoesPass(false)
+	assertRulep(t, `not (a == 1)`, kv(map[string]any{"a": 2})).Ok().DoesPass(true)
+}

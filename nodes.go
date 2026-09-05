@@ -136,7 +136,7 @@ func (n *nodeNot) Eval(ctx context.Context, input Input, opts Opts) Result {
 	}
 
 	return Result{
-		Value: !isZero(r.Value),
+		Value: isZero(r.Value),
 		Trace: traceIfEnabled(traceEnabled(opts), r.Trace),
 	}
 }
