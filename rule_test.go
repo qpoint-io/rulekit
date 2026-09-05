@@ -786,6 +786,113 @@ func TestIn(t *testing.T) {
 	assertParseEval(t, `cidr contains ip`, kv{"cidr": parseCIDR(t, "192.168.0.0/16"), "ip": net.ParseIP("192.168.0.1")}, true)
 }
 
+func TestInListLeft(t *testing.T) {
+	tests := []struct {
+		name  string
+		rule  string
+		input map[string]any
+		pass  bool
+	}{
+		{
+			name:  "[]string in array matches",
+			rule:  `client in ["alice", "bob"]`,
+			input: map[string]any{"client": []string{"nobody", "bob"}},
+			pass:  true,
+		},
+		{
+			name:  "[]string in array no match",
+			rule:  `client in ["alice", "bob"]`,
+			input: map[string]any{"client": []string{"nobody", "somebody"}},
+			pass:  false,
+		},
+		{
+			name:  "empty []string in array",
+			rule:  `client in ["alice"]`,
+			input: map[string]any{"client": []string{}},
+			pass:  false,
+		},
+		{
+			name:  "[]any in array matches",
+			rule:  `client in ["alice", 3]`,
+			input: map[string]any{"client": []any{"nobody", 3}},
+			pass:  true,
+		},
+		{
+			name:  "[]any in array no match",
+			rule:  `client in ["alice", 3]`,
+			input: map[string]any{"client": []any{"nobody", 4}},
+			pass:  false,
+		},
+		{
+			name:  "[]int in array matches",
+			rule:  `ports in [80, 443]`,
+			input: map[string]any{"ports": []int{22, 443}},
+			pass:  true,
+		},
+		{
+			name:  "[]int in array no match",
+			rule:  `ports in [80, 443]`,
+			input: map[string]any{"ports": []int{22, 8080}},
+			pass:  false,
+		},
+		{
+			name:  "[]int64 in array matches",
+			rule:  `ports in [80, 443]`,
+			input: map[string]any{"ports": []int64{22, 80}},
+			pass:  true,
+		},
+		{
+			name:  "[]net.IP in CIDR matches",
+			rule:  `ips in 192.168.0.0/16`,
+			input: map[string]any{"ips": []net.IP{net.ParseIP("1.1.1.1"), net.ParseIP("192.168.0.1")}},
+			pass:  true,
+		},
+		{
+			name:  "[]net.IP in CIDR no match",
+			rule:  `ips in 192.168.0.0/16`,
+			input: map[string]any{"ips": []net.IP{net.ParseIP("1.1.1.1"), net.ParseIP("8.8.8.8")}},
+			pass:  false,
+		},
+		{
+			name:  "[]net.IP in array matches",
+			rule:  `ips in [1.0.0.0/8, 8.8.8.8]`,
+			input: map[string]any{"ips": []net.IP{net.ParseIP("192.168.0.1"), net.ParseIP("8.8.8.8")}},
+			pass:  true,
+		},
+		{
+			name:  "not (list in array) when no element matches",
+			rule:  `not (client in ["alice", "bob"])`,
+			input: map[string]any{"client": []string{"nobody", "somebody"}},
+			pass:  true,
+		},
+		{
+			name:  "not (list in array) when an element matches",
+			rule:  `not (client in ["alice", "bob"])`,
+			input: map[string]any{"client": []string{"nobody", "bob"}},
+			pass:  false,
+		},
+		// scalar left side is unchanged
+		{
+			name:  "scalar in array matches",
+			rule:  `client in ["alice", "bob"]`,
+			input: map[string]any{"client": "bob"},
+			pass:  true,
+		},
+		{
+			name:  "scalar in array no match",
+			rule:  `client in ["alice", "bob"]`,
+			input: map[string]any{"client": "nobody"},
+			pass:  false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assertRulep(t, tc.rule, kv(tc.input)).Ok().DoesPass(tc.pass)
+		})
+	}
+}
+
 func TestOperationValidity(t *testing.T) {
 	assertParseError(t, `f >= "string"`)
 	assertParseError(t, `f < 1.2.3.4`)

@@ -98,6 +98,12 @@ func compareDetailed(left any, op int, right any) compareOutcome {
 		// ip ? any
 		return compareIP(lv, op, right)
 
+	case []net.IP:
+		// []net.IP ? any
+		return compareSliceDetailed(lv, op, func(lv net.IP, op int) compareOutcome {
+			return compareIP(lv, op, right)
+		})
+
 	case *net.IPNet:
 		// ipnet ? any
 		return compareIPNet(lv, op, right)
@@ -114,6 +120,33 @@ func compareDetailed(left any, op int, right any) compareOutcome {
 	}
 
 	return incomparable()
+}
+
+// compareAnyElem runs fn against each element of a list-valued operand and
+// passes if ANY element passes. Reports false if value is not a supported list type.
+func compareAnyElem(value any, fn func(el any) compareOutcome) (compareOutcome, bool) {
+	each := func(el any, _ int) compareOutcome { return fn(el) }
+	switch v := value.(type) {
+	case []any:
+		return compareSliceDetailed(v, op_EQ, each), true
+	case []string:
+		return compareSliceDetailed(v, op_EQ, func(el string, op int) compareOutcome { return fn(el) }), true
+	case []int:
+		return compareSliceDetailed(v, op_EQ, func(el int, op int) compareOutcome { return fn(el) }), true
+	case []int64:
+		return compareSliceDetailed(v, op_EQ, func(el int64, op int) compareOutcome { return fn(el) }), true
+	case []uint:
+		return compareSliceDetailed(v, op_EQ, func(el uint, op int) compareOutcome { return fn(el) }), true
+	case []uint64:
+		return compareSliceDetailed(v, op_EQ, func(el uint64, op int) compareOutcome { return fn(el) }), true
+	case []float32:
+		return compareSliceDetailed(v, op_EQ, func(el float32, op int) compareOutcome { return fn(el) }), true
+	case []float64:
+		return compareSliceDetailed(v, op_EQ, func(el float64, op int) compareOutcome { return fn(el) }), true
+	case []net.IP:
+		return compareSliceDetailed(v, op_EQ, func(el net.IP, op int) compareOutcome { return fn(el) }), true
+	}
+	return compareOutcome{}, false
 }
 
 func comparePass(pass bool) compareOutcome {
