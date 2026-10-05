@@ -265,8 +265,38 @@ func tokenKindString(kind int) string {
 		return "MATCHES"
 	case op_IN:
 		return "IN"
+	case token_FIELD:
+		return "FIELD"
+	case token_STRING:
+		return "STRING"
+	case token_INT:
+		return "INT"
+	case token_FLOAT:
+		return "FLOAT"
+	case token_BOOL:
+		return "BOOL"
+	case token_IP:
+		return "IP"
+	case token_IP_CIDR:
+		return "IP_CIDR"
+	case token_HEX_STRING:
+		return "HEX_STRING"
+	case token_REGEX:
+		return "REGEX"
+	case token_LPAREN:
+		return "LPAREN"
+	case token_RPAREN:
+		return "RPAREN"
+	case token_LBRACKET:
+		return "LBRACKET"
+	case token_RBRACKET:
+		return "RBRACKET"
+	case token_DOT:
+		return "DOT"
+	case token_COMMA:
+		return "COMMA"
 	default:
-		return valueTokenString(kind)
+		return "UNKNOWN"
 	}
 }
 

@@ -109,7 +109,7 @@ func TestFormatPreservesComments(t *testing.T) {
 	require.NoError(t, err)
 
 	compact := Format(ast, Compact())
-	require.Equal(t, "-- top\na == 1 -- explain\nand b =~ /x/", compact)
+	require.Equal(t, "/* top */ a == 1 /* explain */ and b =~ /x/", compact)
 
 	multiline := Format(ast, Multiline("  "))
 	require.Equal(t, "-- top\na == 1 -- explain\nand b =~ /x/", multiline)
@@ -117,6 +117,24 @@ func TestFormatPreservesComments(t *testing.T) {
 	roundTrip, err := ParseAST(compact)
 	require.NoError(t, err)
 	require.Equal(t, `a == 1 and b =~ /x/`, roundTrip.String())
+}
+
+func TestFormatCompactKeepsLineCommentsThatCannotBeBlocks(t *testing.T) {
+	ast, err := ParseAST("a == 1 -- has */ inside\nand /* multi\n   line */ b == 2")
+	require.NoError(t, err)
+	require.Equal(t, "a == 1 -- has */ inside\nand /* multi line */ b == 2", Format(ast, Compact()))
+}
+
+func TestFormatCompactWithCommentsKeepsCanonicalSpacing(t *testing.T) {
+	ast, err := ParseAST("(a == 1) -- x\nand f(x, 1) and items[0].name == 'n'")
+	require.NoError(t, err)
+	require.Equal(t, `(a == 1) /* x */ and f(x, 1) and items[0].name == 'n'`, Format(ast, Compact()))
+}
+
+func TestFormatMultilineWithComments(t *testing.T) {
+	ast, err := ParseAST("(a == 1 or b == 2) -- c\nand f(x, 1) and x in [1, 2]")
+	require.NoError(t, err)
+	require.Equal(t, "(\n  a == 1\n  or b == 2\n) -- c\nand f(x, 1)\nand x in [1, 2]", Format(ast, Multiline("  ")))
 }
 
 func TestASTTokensIncludeTrivia(t *testing.T) {
