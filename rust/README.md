@@ -81,14 +81,14 @@ struct Ctx {
 struct Request<'a> {
     method: &'a str,
     headers: &'a HashMap<String, String>,
-    user: rulekit::LazyVal<'static, Ctx>,
+    user: rulekit::Lazy<Ctx>,
 }
 
 let headers = HashMap::from([("host".into(), "example.com".into())]);
 let input = Request {
     method: "GET",
     headers: &headers,
-    user: lazy(|ctx: &Ctx| Ok(ctx.user.as_str().into())),
+    user: lazy(|ctx: &Ctx| Ok(ctx.user.clone())),
 };
 
 let rule = rulekit::parse(
@@ -103,8 +103,8 @@ assert!(rule.eval(&ctx, &input, Opts::new(&env)).pass());
 omits a field. `#[rulekit(context = Ctx)]` on the struct sets the context
 type when it is not `()`. An unknown field is missing. `None` is missing.
 
-`kv!` is the ad-hoc form. A nested `{ ... }` is another map. [`lazy`] runs
-only if the field is read:
+`kv!` is the ad-hoc form. A nested `{ ... }` is another map. [`lazy`] runs the first time the field is read, then reuses that owned
+value (a borrow of `ctx` is copied into the memo):
 
 ```rust
 use rulekit::{Opts, kv};

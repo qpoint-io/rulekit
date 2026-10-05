@@ -90,7 +90,7 @@ pub use func::{Args, FnError, FromArg, FuncSchema, Function, NoArgs, Param, Rest
 pub use input::{FnInput, Input, Kv, KvEntry, KvInput, Lazy, NoInput};
 pub use input_value::InputValue;
 pub use json_input::{JsonOptions, decode_json};
-pub use kv::{KvEnd, KvList, LazyVal, lazy};
+pub use kv::{KvEnd, KvList, lazy};
 pub use print::{Edit, PrintMode, format, rewrite};
 /// Derive [`Args`](trait@Args) for a struct of function arguments. See the
 /// trait for the rules.

@@ -311,3 +311,32 @@ fn http_uri_field_access_does_not_allocate() {
     // Measured: 3 allocations (Display into a String). Field access above is 0.
     assert_eq!(used, 3, "http::Uri text form allocation count changed");
 }
+
+#[test]
+fn unread_lazy_does_not_allocate_and_second_read_is_free() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let hits = Arc::new(AtomicUsize::new(0));
+    let counter = hits.clone();
+    let input = rulekit::kv! {
+        "host" => "api.acme.com",
+        "user" => rulekit::lazy(move |_: &()| {
+            counter.fetch_add(1, Ordering::SeqCst);
+            Ok::<_, rulekit::BoxError>("ada")
+        }),
+    };
+    let unread = rulekit::parse(r#"host == "api.acme.com""#).unwrap();
+    drop(unread.eval(&(), &input, Opts::default()));
+    let before = allocations();
+    assert!(unread.eval(&(), &input, Opts::default()).pass());
+    assert_eq!(allocations(), before);
+    assert_eq!(hits.load(Ordering::SeqCst), 0);
+
+    let read = rulekit::parse(r#"user == "ada""#).unwrap();
+    assert!(read.eval(&(), &input, Opts::default()).pass());
+    assert_eq!(hits.load(Ordering::SeqCst), 1);
+    let before = allocations();
+    assert!(read.eval(&(), &input, Opts::default()).pass());
+    assert_eq!(allocations(), before, "memoized lazy read allocated");
+    assert_eq!(hits.load(Ordering::SeqCst), 1);
+}

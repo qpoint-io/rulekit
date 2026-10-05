@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::ast::Segment;
 use crate::error::BoxError;
+use crate::input_value::InputValue;
 use crate::value::{Map, ObjectRef, Val, Value, ValueRef, value_field};
 
 /// Resolves rule paths (such as `request.headers["host"]` or `tags[0]`)
@@ -166,6 +167,26 @@ impl<C: ?Sized> Clone for Lazy<C> {
     }
 }
 
+impl<C: ?Sized> InputValue<C> for Lazy<C> {
+    fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+        let resolved = self.resolve(ctx)?;
+        let cursor = match resolved {
+            KvEntry::Value(v) => Cursor::Val(Val::Ref(v.as_ref())),
+            KvEntry::Object(kv) => Cursor::Kv(kv),
+            KvEntry::Input(input) => Cursor::Input(input.as_ref()),
+            // A lazy that yields another lazy is not resolved again.
+            KvEntry::Lazy(_) => Cursor::Val(Val::Ref(ValueRef::Object(ObjectRef::Opaque))),
+        };
+        walk(cursor, ctx, path)
+    }
+}
+
+impl<C: ?Sized> Input<C> for Lazy<C> {
+    fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+        InputValue::get(self, ctx, path)
+    }
+}
+
 impl<C: ?Sized> fmt::Debug for Lazy<C> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Lazy")
@@ -188,6 +209,18 @@ impl<C: ?Sized> Clone for KvEntry<C> {
 impl<C: ?Sized> From<Value> for KvEntry<C> {
     fn from(v: Value) -> Self {
         KvEntry::Value(v)
+    }
+}
+
+impl<C: ?Sized> From<String> for KvEntry<C> {
+    fn from(s: String) -> Self {
+        Value::String(s).into()
+    }
+}
+
+impl<C: ?Sized> From<&str> for KvEntry<C> {
+    fn from(s: &str) -> Self {
+        Value::String(s.to_owned()).into()
     }
 }
 
@@ -272,25 +305,32 @@ impl<C: ?Sized> Input<C> for KvInput<C> {
         if path.is_empty() {
             return Ok(None);
         }
-        let mut cursor = Cursor::Kv(&self.kv);
-        for (i, segment) in path.iter().enumerate() {
-            if let Cursor::Input(input) = cursor {
-                return input.get(ctx, &path[i..]);
-            }
-            let next = match segment {
-                Segment::Index(index) => index_value(cursor, *index),
-                Segment::Key { key, .. } => key_value(cursor, key, ctx)?,
-            };
-            match next {
-                Some(next) => cursor = next,
-                None => return Ok(None),
-            }
-        }
-        Ok(Some(match cursor {
-            Cursor::Kv(_) | Cursor::Input(_) => Val::Ref(ValueRef::Object(ObjectRef::Opaque)),
-            Cursor::Val(v) => v,
-        }))
+        walk(Cursor::Kv(&self.kv), ctx, path)
     }
+}
+
+fn walk<'a, C: ?Sized>(
+    mut cursor: Cursor<'a, C>,
+    ctx: &'a C,
+    path: &[Segment],
+) -> Result<Option<Val<'a>>, BoxError> {
+    for (i, segment) in path.iter().enumerate() {
+        if let Cursor::Input(input) = cursor {
+            return input.get(ctx, &path[i..]);
+        }
+        let next = match segment {
+            Segment::Index(index) => index_value(cursor, *index),
+            Segment::Key { key, .. } => key_value(cursor, key, ctx)?,
+        };
+        match next {
+            Some(next) => cursor = next,
+            None => return Ok(None),
+        }
+    }
+    Ok(Some(match cursor {
+        Cursor::Kv(_) | Cursor::Input(_) => Val::Ref(ValueRef::Object(ObjectRef::Opaque)),
+        Cursor::Val(v) => v,
+    }))
 }
 
 /// The cursor for a map entry, resolving a lazy entry (Go `resolveLazy`).

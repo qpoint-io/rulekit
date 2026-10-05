@@ -2,8 +2,8 @@
 
 use crate::ast::Segment;
 use crate::error::BoxError;
-use crate::input::Input;
-use crate::input_value::{InputValue, project};
+use crate::input::{Input, KvEntry, Lazy};
+use crate::input_value::InputValue;
 use crate::value::{ObjectRef, Val, ValueRef};
 
 /// One entry of a [`kv!`](crate::kv) map, then the remaining entries.
@@ -24,27 +24,17 @@ pub struct KvList<V, R> {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct KvEnd;
 
-type LazyFn<'f, C> = dyn for<'a> Fn(&'a C) -> Result<Val<'a>, BoxError> + Send + Sync + 'f;
-
-/// A value computed from the evaluation context when a rule reads it.
+/// A field computed the first time a rule reads it, then memoized on this
+/// value.
 ///
-/// Not memoized: each read calls the closure. The closure may return data
-/// borrowed from the context. Constructing this boxes the closure; evaluation
-/// does not allocate if the closure does not.
-pub struct LazyVal<'f, C: ?Sized> {
-    f: Box<LazyFn<'f, C>>,
-}
-
-impl<C: ?Sized> LazyVal<'_, C> {
-    fn call<'a>(&self, ctx: &'a C) -> Result<Val<'a>, BoxError> {
-        (self.f)(ctx)
-    }
-}
-
-/// A field computed only if a rule reads it.
+/// Same cell as [`Lazy`]: one resolution per instance, single-flight if
+/// several evaluations share it, and a failed resolution is not stored (the
+/// next read retries). The closure returns an owned value (`String`, `&str`
+/// copied into the memo, [`crate::value::Value`], or [`KvEntry`]). It cannot
+/// hand back a borrow of `ctx`; that borrow would not outlive the call.
 ///
 /// ```rust
-/// use rulekit::{Opts, lazy, kv};
+/// use rulekit::{Opts, kv, lazy};
 ///
 /// struct Ctx {
 ///     user: String,
@@ -52,7 +42,7 @@ impl<C: ?Sized> LazyVal<'_, C> {
 ///
 /// let input = kv! {
 ///     "host" => "api.acme.com",
-///     "user" => lazy(|ctx: &Ctx| Ok(ctx.user.as_str().into())),
+///     "user" => lazy(|ctx: &Ctx| Ok(ctx.user.clone())),
 /// };
 /// let rule = rulekit::parse(r#"host == "api.acme.com""#)?;
 /// let env: rulekit::Env<Ctx> = rulekit::Env::new();
@@ -60,12 +50,13 @@ impl<C: ?Sized> LazyVal<'_, C> {
 /// assert!(rule.eval(&Ctx { user: "ada".into() }, &input, Opts::new(&env)).pass());
 /// # Ok::<(), rulekit::ParseError>(())
 /// ```
-pub fn lazy<'f, C, F>(f: F) -> LazyVal<'f, C>
+pub fn lazy<C, T, F>(f: F) -> Lazy<C>
 where
     C: ?Sized,
-    F: for<'a> Fn(&'a C) -> Result<Val<'a>, BoxError> + Send + Sync + 'f,
+    T: Into<KvEntry<C>>,
+    F: Fn(&C) -> Result<T, BoxError> + Send + Sync + 'static,
 {
-    LazyVal { f: Box::new(f) }
+    Lazy::new(f)
 }
 
 impl<C, V, R> InputValue<C> for KvList<V, R>
@@ -110,12 +101,6 @@ impl<C: ?Sized> InputValue<C> for KvEnd {
 impl<C: ?Sized> Input<C> for KvEnd {
     fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         InputValue::get(self, ctx, path)
-    }
-}
-
-impl<C: ?Sized> InputValue<C> for LazyVal<'_, C> {
-    fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
-        Ok(project(self.call(ctx)?, path))
     }
 }
 
