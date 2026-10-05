@@ -373,16 +373,21 @@ pub struct EvalResult<'a> {
 
 ## 8. Tracing (D7)
 
-```rust
-trait Tracer { type Frag; … }        // NoTrace: Frag = ();  Recording: Frag = Option<Box<Trace>>
-```
+Evaluation is generic over `const TRACE: bool` (simpler than a tracer trait and
+equivalent after monomorphization). `Rule::eval` branches once on `opts.trace` into
+`eval::<false>` or `eval::<true>`; every trace step is behind `if TRACE`, so the untraced
+instantiation has no trace code. Untraced evaluation keeps the stack-buffer path for array
+operands; traced evaluation evaluates them as nodes, as Go does (the trace needs the array
+node).
 
-`Rule::eval` branches once on `opts.trace` into `eval_node::<NoTrace>` or
-`eval_node::<Recording>`; the untraced instantiation has no per-node trace code. The
-`Recording` tracer reproduces Go's trace *shape* exactly — `combineTrace` anonymous nodes,
-`tracedRule` taking `traceChildren`/`traceDiagnostics` of the inner trace, pruned siblings
-from `prunedTrace`, the macro wrapper in `FunctionValue.Eval` — because vectors compare
-exact child lists.
+`Recording` behaviour reproduces Go's trace shape exactly: each compiled node carries
+`Meta { id, kind, expr }` (Go `tracedRule`), except the base operator under `not in`/`not
+contains`/`not matches`, which Go traces as one node; internal grouping traces
+(`combineTrace`) have `node: None`; a traced node adopts the children and diagnostics of the
+trace its evaluation produced, including Go's quirks (an `and`/`or` that returns one side
+as is adopts that side's children). A macro call's node has the expansion's root as its
+only child. Verified with the trace vectors and a 30-expression differential run against
+Go (trees compared on kind, expr, status, active, pruned, missing, error, diagnostics).
 
 ```rust
 pub struct Trace {
@@ -394,7 +399,8 @@ pub struct Trace {
 ```
 
 Traces are owned (values cloned): tracing is the debug path. `node` is an id into the
-rule's (or macro's) AST; `kind` is stored so consumers need not resolve the AST.
+rule's AST, or the macro's AST for nodes inside a macro expansion; `kind` is stored so
+consumers need not resolve it.
 
 ## 9. Functions and macros (D14, D15)
 

@@ -79,8 +79,6 @@ struct PrintExpect {
     multiline_4sp: Option<String>,
 }
 
-// Trace expectations are decoded strictly now and checked once tracing exists.
-#[allow(dead_code)]
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct TraceExpect {
@@ -96,7 +94,6 @@ struct TraceExpect {
     children: Option<Vec<TraceExpect>>,
 }
 
-#[allow(dead_code)]
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct DiagnosticExpect {
@@ -290,17 +287,23 @@ fn run_case(case: &Case, mode: &str, report: &mut Report) -> Result<(), String> 
                 .map_err(|err| format!("macro {name:?}: {err}"))?;
         }
         let env = builder.build().map_err(|err| format!("env: {err}"))?;
-        let opts = Opts::new(&env);
-        let result = match &input {
-            Some(input) => rule.eval(input, &(), opts),
-            None => rule.eval(&NoInput, &(), opts),
+        let eval = |trace: bool| {
+            let opts = Opts::new(&env).with_trace(trace);
+            match &input {
+                Some(input) => rule.eval(input, &(), opts),
+                None => rule.eval(&NoInput, &(), opts),
+            }
         };
-        check_result(&result, want)?;
-        if want.trace.is_some() {
-            *report
-                .skipped
-                .entry("trace expectation unchecked until tracing")
-                .or_default() += 1;
+        let plain = eval(false);
+        if plain.trace().is_some() {
+            return Err("trace must be absent when tracing is off".into());
+        }
+        check_result(&plain, want).map_err(|err| format!("untraced: {err}"))?;
+        let traced = eval(true);
+        check_result(&traced, want).map_err(|err| format!("traced: {err}"))?;
+        if let Some(expect) = &want.trace {
+            let trace = traced.trace().ok_or("traced result has no trace")?;
+            check_trace("trace", trace, expect)?;
         }
     }
     report.passed += 1;
@@ -328,6 +331,86 @@ fn check_result(got: &rulekit::EvalResult<'_>, want: &Expect) -> Result<(), Stri
         let got = canonical(got.value_ref())?;
         if want != got {
             return Err(format!("value: got {got}, want {want}"));
+        }
+    }
+    Ok(())
+}
+
+fn check_trace(path: &str, got: &rulekit::Trace, want: &TraceExpect) -> Result<(), String> {
+    let fail = |what: &str, got: &dyn std::fmt::Debug, want: &dyn std::fmt::Debug| {
+        Err(format!("{path}.{what}: got {got:?}, want {want:?}"))
+    };
+    if let Some(kind) = &want.kind {
+        let got_kind = got.kind.map_or("", |k| k.name());
+        if got_kind != kind {
+            return fail("kind", &got_kind, kind);
+        }
+    }
+    if let Some(expr) = &want.expr
+        && &got.expr != expr
+    {
+        return fail("expr", &got.expr, expr);
+    }
+    if let Some(status) = &want.status
+        && got.status.name() != status
+    {
+        return fail("status", &got.status.name(), status);
+    }
+    if let Some(value) = &want.value {
+        let want_value = canonical(expected_value(value)?.as_ref())?;
+        let got_value = canonical(got.value.as_ref())?;
+        if want_value != got_value {
+            return fail("value", &got_value, &want_value);
+        }
+    }
+    if let Some(active) = want.active
+        && got.active != active
+    {
+        return fail("active", &got.active, &active);
+    }
+    if let Some(pruned) = want.pruned
+        && got.pruned != pruned
+    {
+        return fail("pruned", &got.pruned, &pruned);
+    }
+    if let Some(missing) = &want.missing_fields {
+        let (mut a, mut b) = (got.missing_fields.clone(), missing.clone());
+        a.sort();
+        b.sort();
+        if a != b {
+            return fail("missing_fields", &a, &b);
+        }
+    }
+    if let Some(diagnostics) = &want.diagnostics {
+        let got_diags: Vec<_> = got
+            .diagnostics
+            .iter()
+            .map(|d| (d.code.name(), d.left_type, d.operator, d.right_type))
+            .collect();
+        let want_diags: Vec<_> = diagnostics
+            .iter()
+            .map(|d| {
+                (
+                    d.code.as_str(),
+                    d.left_type.as_str(),
+                    d.operator.as_str(),
+                    d.right_type.as_str(),
+                )
+            })
+            .collect();
+        if got_diags != want_diags {
+            return fail("diagnostics", &got_diags, &want_diags);
+        }
+        if got.diagnostics.iter().any(|d| d.message.is_empty()) {
+            return Err(format!("{path}.diagnostics: empty message"));
+        }
+    }
+    if let Some(children) = &want.children {
+        if got.children.len() != children.len() {
+            return fail("children.len", &got.children.len(), &children.len());
+        }
+        for (i, (g, w)) in got.children.iter().zip(children).enumerate() {
+            check_trace(&format!("{path}.children[{i}]"), g, w)?;
         }
     }
     Ok(())

@@ -5,7 +5,7 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
 use rulekit::value::{Ip, Map, Value};
-use rulekit::{Env, KvInput, Opts};
+use rulekit::{Env, KvEntry, KvInput, Lazy, Opts};
 
 struct Counting;
 
@@ -181,13 +181,39 @@ fn happy_path_eval_does_not_allocate() {
         ),
     ];
 
+    // Go BenchmarkEvalLazyInput: a pruned lazy, and a resolved (cached) lazy.
+    let lazy_input = || {
+        let lazy = KvEntry::Lazy(Lazy::new(|_: &()| Ok(Value::String("value".into()))));
+        KvInput::new(
+            [
+                ("allow".to_owned(), KvEntry::Value(Value::Bool(true))),
+                ("expensive".to_owned(), lazy),
+            ]
+            .into_iter()
+            .collect(),
+        )
+    };
+    let mut cases = cases;
+    cases.push((
+        "lazy_pruned",
+        r#"allow == true or expensive == "value""#,
+        lazy_input(),
+        &no_macros,
+    ));
+    cases.push((
+        "lazy_resolved_cached",
+        r#"expensive == "value""#,
+        lazy_input(),
+        &no_macros,
+    ));
+
     let mut failures = Vec::new();
     for (name, expr, input, env) in &cases {
         let rule = rulekit::parse(expr).expect("parse");
         // Warm up: lazily built statics (e.g. regex caches) may allocate once.
         drop(rule.eval(input, &(), Opts::new(env)));
         let before = allocations();
-        let result = rule.eval(input, &(), Opts::new(env));
+        let result = rule.eval(input, &(), Opts::new(env).with_trace(false));
         let used = allocations() - before;
         assert!(
             result.error_ref().is_none(),
