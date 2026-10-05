@@ -89,7 +89,8 @@ func parseString[T interface{ string | []byte }](data T) (any, error) {
 }
 
 // unquote decodes a single- or double-quoted literal. Both quote styles accept
-// the same backslash escapes, including \' and \".
+// the same backslash escapes, including \' and \". The result must be valid
+// UTF-8; use x"..." for arbitrary bytes.
 func unquote(raw string) (string, error) {
 	inner := raw[1 : len(raw)-1]
 	var b strings.Builder
@@ -111,7 +112,14 @@ func unquote(raw string) (string, error) {
 		}
 	}
 	b.WriteByte('"')
-	return strconv.Unquote(b.String())
+	s, err := strconv.Unquote(b.String())
+	if err != nil {
+		return "", err
+	}
+	if !utf8.ValidString(s) {
+		return "", fmt.Errorf("string is not valid UTF-8; use x\"...\" for bytes")
+	}
+	return s, nil
 }
 
 // parseAbsoluteURL reports whether str is an absolute URL with a scheme and

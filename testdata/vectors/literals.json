@@ -134,6 +134,9 @@
       "expect": {"missing_fields": ["ad"]}
     },
     {"name": "two hex pairs are bytes", "expr": "x == 50:4f", "input": {"x": "PO"}, "expect": {"value": true}},
+    {"name": "string literal must be valid UTF-8", "expr": "s == \"\\xff\"", "expect": {"parse_error": true}},
+    {"name": "octal escape producing invalid UTF-8 is a parse error", "expr": "s == '\\377'", "expect": {"parse_error": true}},
+    {"name": "unicode escape is valid UTF-8", "expr": "s == \"\\u00e9\"", "input": {"s": "é"}, "expect": {"value": true}},
     {"name": "lone hex pair with digit is a parse error", "expr": "x == 0a", "expect": {"parse_error": true}},
     {"name": "x-quoted hex: single byte", "expr": "x == x\"0a\"", "input": {"x": "\n"}, "expect": {"value": true}},
     {"name": "x-quoted hex: no colons", "expr": "x == x\"504f5354\"", "input": {"x": "POST"}, "expect": {"value": true}},
