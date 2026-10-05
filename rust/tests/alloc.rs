@@ -231,3 +231,83 @@ fn happy_path_eval_does_not_allocate() {
     drop(rule.eval(&(), &control, Opts::new(&no_macros)));
     assert!(allocations() > before, "allocation counter is not counting");
 }
+
+#[test]
+fn derived_struct_eval_does_not_allocate() {
+    use std::collections::HashMap;
+
+    #[derive(rulekit::Input)]
+    struct User<'a> {
+        name: &'a str,
+    }
+    #[derive(rulekit::Input)]
+    struct Row<'a> {
+        host: &'a str,
+        user: User<'a>,
+        tags: Vec<String>,
+        headers: HashMap<String, String>,
+    }
+    let row = Row {
+        host: "api.acme.com",
+        user: User { name: "ada" },
+        tags: vec!["db".into(), "api".into()],
+        headers: HashMap::from([("x-env".into(), "prod".into())]),
+    };
+    let rule = rulekit::parse(
+        r#"host == "api.acme.com" and user.name == "ada" and tags contains "db" and headers["x-env"] == "prod""#,
+    )
+    .unwrap();
+    drop(rule.eval(&(), &row, Opts::default()));
+    let before = allocations();
+    assert!(rule.eval(&(), &row, Opts::default()).pass());
+    assert_eq!(allocations(), before);
+}
+
+#[test]
+fn derived_url_field_access_does_not_allocate() {
+    #[derive(rulekit::Input)]
+    struct Row {
+        page: url::Url,
+        host: &'static str,
+    }
+    let row = Row {
+        page: url::Url::parse("https://example.com/a?env=prod").unwrap(),
+        host: "example.com",
+    };
+    let rule = rulekit::parse(
+        r#"host == "example.com" and page.host == "example.com" and page.path == "/a" and page.query.env == "prod""#,
+    )
+    .unwrap();
+    // Warm any one-time init, then count.
+    drop(rule.eval(&(), &row, Opts::default()));
+    let before = allocations();
+    assert!(rule.eval(&(), &row, Opts::default()).pass());
+    assert_eq!(allocations(), before);
+}
+
+#[test]
+fn http_uri_field_access_does_not_allocate() {
+    #[derive(rulekit::Input)]
+    struct Row {
+        page: http::Uri,
+    }
+    let row = Row {
+        page: "http://example.com/a?env=prod".parse().unwrap(),
+    };
+    let fields = rulekit::parse(
+        r#"page.host == "example.com" and page.path == "/a" and page.query.env == "prod""#,
+    )
+    .unwrap();
+    drop(fields.eval(&(), &row, Opts::default()));
+    let before = allocations();
+    assert!(fields.eval(&(), &row, Opts::default()).pass());
+    assert_eq!(allocations(), before, "field access allocated");
+
+    let whole = rulekit::parse(r#"page == "http://example.com/a?env=prod""#).unwrap();
+    drop(whole.eval(&(), &row, Opts::default()));
+    let before = allocations();
+    assert!(whole.eval(&(), &row, Opts::default()).pass());
+    let used = allocations() - before;
+    // Measured: 3 allocations (Display into a String). Field access above is 0.
+    assert_eq!(used, 3, "http::Uri text form allocation count changed");
+}

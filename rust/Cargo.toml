@@ -22,11 +22,17 @@ regex-syntax = "0.8.11"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
 smallvec = { version = "1", features = ["const_generics", "union"] }
+http = { version = "1", optional = true }
+url = { version = "2", optional = true }
 
 [features]
-default = ["derive"]
-# `#[derive(rulekit::Args)]` for typed custom functions.
+default = ["derive", "url", "http"]
+# `#[derive(rulekit::Args)]` and `#[derive(rulekit::Input)]`.
 derive = ["dep:rulekit-macros"]
+# `url::Url` fields: host, path, query, and string comparison of `as_str()`.
+url = ["dep:url"]
+# `http::Uri` fields. The whole-URI text form allocates; field access does not.
+http = ["dep:http"]
 
 [workspace]
 members = ["macros"]

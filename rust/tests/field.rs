@@ -85,3 +85,32 @@ fn borrowed_slice_contains_without_copying() {
     let rule = rulekit::parse(r#"tags contains "api" and tags[1] == "api""#).unwrap();
     assert!(rule.eval(&(), &input, Opts::default()).pass());
 }
+
+#[test]
+fn url_crate_fields_and_comparison() {
+    let page = url::Url::parse("https://ada@example.com:8443/a?env=prod#top").unwrap();
+    let input = std::collections::HashMap::from([("page".to_owned(), page)]);
+    let rule = rulekit::parse(
+        r#"page == "https://ada@example.com:8443/a?env=prod#top" and page.host == "example.com" and page.path == "/a" and page.port == 8443 and page.query.env == "prod" and page.user == "ada" and page.scheme == "https""#,
+    )
+    .unwrap();
+    assert!(
+        rule.eval(&(), &input, rulekit::Opts::default()).pass(),
+        "{:?}",
+        rule.eval(&(), &input, rulekit::Opts::default()).error()
+    );
+}
+
+#[test]
+fn http_uri_fields() {
+    let uri = "http://ada@example.com:8080/a?env=prod"
+        .parse::<http::Uri>()
+        .unwrap();
+    let input = std::collections::HashMap::from([("page".to_owned(), uri)]);
+    let rule = rulekit::parse(
+        r#"page.host == "example.com" and page.path == "/a" and page.port == 8080 and page.query.env == "prod" and page.user == "ada" and page.scheme == "http""#,
+    )
+    .unwrap();
+    let result = rule.eval(&(), &input, rulekit::Opts::default());
+    assert!(result.pass(), "{result:?}");
+}

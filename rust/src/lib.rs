@@ -62,6 +62,7 @@ pub mod ast;
 mod env;
 mod error;
 pub(crate) mod eval;
+mod ext_url;
 mod func;
 mod input;
 mod input_value;
