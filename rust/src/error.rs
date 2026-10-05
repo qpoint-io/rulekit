@@ -168,6 +168,8 @@ pub enum Error {
     Env(String),
     /// Invalid JSON input for `decode_json`.
     Json(String),
+    /// Invalid edits for `rewrite`.
+    Rewrite(String),
 }
 
 impl fmt::Display for Error {
@@ -202,7 +204,7 @@ impl fmt::Display for Error {
                 }
                 Ok(())
             }
-            Error::Env(msg) | Error::Json(msg) => f.write_str(msg),
+            Error::Env(msg) | Error::Json(msg) | Error::Rewrite(msg) => f.write_str(msg),
         }
     }
 }

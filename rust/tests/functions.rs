@@ -31,13 +31,13 @@ fn custom_function_reads_args_by_index_and_name() {
     // A typed argument is checked before the function runs.
     let rule = rulekit::parse(r#"add(1, "2") == 3"#).unwrap();
     let result = rule.eval(&NoInput, &(), Opts::new(&env));
-    assert!(matches!(result.error_ref(), Some(Error::InvalidArg { name, .. }) if name == "b"));
+    assert!(matches!(result.error(), Some(Error::InvalidArg { name, .. }) if name == "b"));
 
     // Wrong arity.
     let rule = rulekit::parse("add(1) == 1").unwrap();
     let result = rule.eval(&NoInput, &(), Opts::new(&env));
     assert!(matches!(
-        result.error_ref(),
+        result.error(),
         Some(Error::ArgCount {
             expected: 2,
             got: 1,
@@ -112,8 +112,8 @@ fn macros_expand_and_reject_arguments() {
     );
     let rule = rulekit::parse("internal(1)").unwrap();
     let result = rule.eval(&kv, &(), Opts::new(&env));
-    assert!(matches!(result.error_ref(), Some(Error::MacroArgs { .. })));
+    assert!(matches!(result.error(), Some(Error::MacroArgs { .. })));
     let rule = rulekit::parse("nope()").unwrap();
     let result = rule.eval(&kv, &(), Opts::default());
-    assert!(matches!(result.error_ref(), Some(Error::UnknownFunction(name)) if name == "nope"));
+    assert!(matches!(result.error(), Some(Error::UnknownFunction(name)) if name == "nope"));
 }

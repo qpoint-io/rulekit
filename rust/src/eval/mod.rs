@@ -193,7 +193,7 @@ pub struct EvalResult<'a> {
 }
 
 impl<'a> EvalResult<'a> {
-    fn value(value: Val<'a>) -> Self {
+    fn of(value: Val<'a>) -> Self {
         EvalResult {
             value,
             error: None,
@@ -203,13 +203,13 @@ impl<'a> EvalResult<'a> {
     }
 
     fn bool(b: bool) -> Self {
-        Self::value(Val::Ref(ValueRef::Bool(b)))
+        Self::of(Val::Ref(ValueRef::Bool(b)))
     }
 
-    fn error(error: Error) -> Self {
+    fn failed(error: Error) -> Self {
         EvalResult {
             error: Some(Box::new(error)),
-            ..Self::value(Val::Ref(ValueRef::Null))
+            ..Self::of(Val::Ref(ValueRef::Null))
         }
     }
 
@@ -230,7 +230,7 @@ impl<'a> EvalResult<'a> {
     }
 
     /// The result value; `Null` when the rule did not produce one.
-    pub fn value_ref(&self) -> ValueRef<'_> {
+    pub fn value(&self) -> ValueRef<'_> {
         self.value.as_ref()
     }
 
@@ -238,7 +238,7 @@ impl<'a> EvalResult<'a> {
         self.value
     }
 
-    pub fn error_ref(&self) -> Option<&Error> {
+    pub fn error(&self) -> Option<&Error> {
         self.error.as_deref()
     }
 
@@ -418,24 +418,24 @@ impl Node {
                 };
                 (outcome.pass, diagnostic)
             }),
-            Kind::Literal(v) => EvalResult::value(Val::Ref(v.as_ref())),
+            Kind::Literal(v) => EvalResult::of(Val::Ref(v.as_ref())),
             Kind::ConstArray(values, items) => {
                 if TRACE {
                     return eval_array::<TRACE, C, I>(items, s);
                 }
-                EvalResult::value(Val::Ref(ValueRef::Array(ArrayRef::Values(values))))
+                EvalResult::of(Val::Ref(ValueRef::Array(ArrayRef::Values(values))))
             }
             Kind::Path { segments, text } => match s.input.get(s.ctx, segments) {
-                Ok(Some(v)) => EvalResult::value(v),
+                Ok(Some(v)) => EvalResult::of(v),
                 Ok(None) => {
                     let mut missing = Missing::new();
                     missing.push(&**text);
                     EvalResult {
                         missing,
-                        ..EvalResult::value(Val::Ref(ValueRef::Null))
+                        ..EvalResult::of(Val::Ref(ValueRef::Null))
                     }
                 }
-                Err(source) => EvalResult::error(Error::Input {
+                Err(source) => EvalResult::failed(Error::Input {
                     field: text.to_string(),
                     source,
                 }),
@@ -508,7 +508,7 @@ impl Node {
                 }
                 buf.push(r.value);
             }
-            return (EvalResult::value(Val::Ref(ValueRef::Null)), true);
+            return (EvalResult::of(Val::Ref(ValueRef::Null)), true);
         }
         (self.eval::<TRACE, C, I>(s), false)
     }
@@ -528,7 +528,7 @@ fn call<'a, const TRACE: bool, C: ?Sized, I: Input<C> + ?Sized>(
             };
             let r = match starts_with(&vals) {
                 Ok(b) => EvalResult::bool(b),
-                Err(e) => EvalResult::error(e),
+                Err(e) => EvalResult::failed(e),
             };
             return r.with_trace(trace);
         }
@@ -536,7 +536,7 @@ fn call<'a, const TRACE: bool, C: ?Sized, I: Input<C> + ?Sized>(
     };
     if let Some(function) = s.env.functions.get(&**name) {
         if function.args().len() != args.len() {
-            return EvalResult::error(Error::ArgCount {
+            return EvalResult::failed(Error::ArgCount {
                 function: name.to_string(),
                 expected: function.args().len(),
                 got: args.len(),
@@ -548,14 +548,14 @@ fn call<'a, const TRACE: bool, C: ?Sized, I: Input<C> + ?Sized>(
             Err(r) => return r,
         };
         let r = match function.call(name, s.ctx, &vals) {
-            Ok(v) => EvalResult::value(v),
-            Err(e) => EvalResult::error(e),
+            Ok(v) => EvalResult::of(v),
+            Err(e) => EvalResult::failed(e),
         };
         return r.with_trace(trace);
     }
     if let Some(macro_) = s.env.macros.get(&**name) {
         if !args.is_empty() {
-            return EvalResult::error(Error::MacroArgs {
+            return EvalResult::failed(Error::MacroArgs {
                 name: name.to_string(),
                 got: args.len(),
             });
@@ -571,7 +571,7 @@ fn call<'a, const TRACE: bool, C: ?Sized, I: Input<C> + ?Sized>(
         }
         return r;
     }
-    EvalResult::error(Error::UnknownFunction(name.to_string()))
+    EvalResult::failed(Error::UnknownFunction(name.to_string()))
 }
 
 /// Go `evalItems`: evaluate array items or call arguments in order into
@@ -610,7 +610,7 @@ fn eval_array<'a, const TRACE: bool, C: ?Sized, I: Input<C> + ?Sized>(
     match eval_items::<TRACE, C, I, 8>(items, s, &mut vals) {
         Ok(trace) => {
             let values = vals.into_iter().map(Val::into_owned).collect();
-            EvalResult::value(Val::Owned(Value::Array(values))).with_trace(trace)
+            EvalResult::of(Val::Owned(Value::Array(values))).with_trace(trace)
         }
         Err(r) => r,
     }

@@ -215,11 +215,7 @@ fn happy_path_eval_does_not_allocate() {
         let before = allocations();
         let result = rule.eval(input, &(), Opts::new(env).with_trace(false));
         let used = allocations() - before;
-        assert!(
-            result.error_ref().is_none(),
-            "{name}: {:?}",
-            result.error_ref()
-        );
+        assert!(result.error().is_none(), "{name}: {:?}", result.error());
         drop(result);
         if used != 0 {
             failures.push(format!("{name}: {used} allocations"));

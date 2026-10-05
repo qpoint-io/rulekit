@@ -312,7 +312,7 @@ fn run_case(case: &Case, mode: &str, report: &mut Report) -> Result<(), String> 
 
 fn check_result(got: &rulekit::EvalResult<'_>, want: &Expect) -> Result<(), String> {
     let want_error = want.error.unwrap_or(false);
-    match (want_error, got.error_ref()) {
+    match (want_error, got.error()) {
         (true, None) => return Err("expected eval error".into()),
         (false, Some(err)) => return Err(format!("eval error: {err}")),
         _ => {}
@@ -328,7 +328,7 @@ fn check_result(got: &rulekit::EvalResult<'_>, want: &Expect) -> Result<(), Stri
     }
     if let Some(want) = &want.value {
         let want = canonical(expected_value(want)?.as_ref())?;
-        let got = canonical(got.value_ref())?;
+        let got = canonical(got.value())?;
         if want != got {
             return Err(format!("value: got {got}, want {want}"));
         }

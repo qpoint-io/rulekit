@@ -31,7 +31,7 @@ pub use eval::EvalResult;
 pub use eval::trace::{Diagnostic, DiagnosticCode, Trace, TraceStatus};
 pub use input::{FnInput, Input, Kv, KvEntry, KvInput, Lazy, NoInput};
 pub use json_input::{JsonOptions, decode_json};
-pub use print::{PrintMode, format};
+pub use print::{Edit, PrintMode, format, rewrite};
 
 /// A compiled rule.
 #[derive(Clone, Debug)]

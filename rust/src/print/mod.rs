@@ -2,8 +2,10 @@
 
 mod format;
 mod quote;
+mod rewrite;
 
 pub use format::{PrintMode, format};
+pub use rewrite::{Edit, rewrite};
 
 use crate::ast::{Ast, NodeData, NodeId, Operator, Segment};
 
