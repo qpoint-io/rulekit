@@ -10,6 +10,8 @@
 
 pub mod ast;
 mod error;
+mod input;
+mod json_input;
 mod lex;
 mod literal;
 mod parse;
@@ -21,7 +23,9 @@ use std::fmt;
 use std::sync::Arc;
 
 pub use ast::Ast;
-pub use error::ParseError;
+pub use error::{BoxError, Error, ParseError};
+pub use input::{FnInput, Input, Kv, KvEntry, KvInput, NoInput};
+pub use json_input::{JsonOptions, decode_json};
 pub use print::{PrintMode, format};
 
 use ast::{NodeData, NodeId};

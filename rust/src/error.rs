@@ -132,3 +132,86 @@ impl fmt::Display for ParseError {
 }
 
 impl std::error::Error for ParseError {}
+
+/// A boxed error from a caller-provided input or function.
+pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
+
+/// An evaluation, environment, or input-decoding error.
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum Error {
+    /// A call to a name that is not a function or macro.
+    UnknownFunction(String),
+    /// A function called with the wrong number of arguments.
+    ArgCount {
+        function: String,
+        expected: usize,
+        got: usize,
+    },
+    /// A macro called with arguments.
+    MacroArgs { name: String, got: usize },
+    /// A function asked for an argument name it does not declare.
+    UnknownArg(String),
+    /// A function argument of the wrong type.
+    InvalidArg {
+        name: String,
+        expected: String,
+        got: String,
+    },
+    /// An input failed to resolve a field.
+    Input { field: String, source: BoxError },
+    /// A function returned an error.
+    Function { name: String, source: BoxError },
+    /// Several errors (both sides of `and`/`or` failed).
+    Multiple(Vec<Error>),
+    /// Invalid functions or macros when building an `Env`.
+    Env(String),
+    /// Invalid JSON input for `decode_json`.
+    Json(String),
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::UnknownFunction(name) => write!(f, "unknown function {name:?}"),
+            Error::ArgCount {
+                function,
+                expected,
+                got,
+            } => {
+                write!(
+                    f,
+                    "function {function:?} expects {expected} arguments, got {got}"
+                )
+            }
+            Error::MacroArgs { name, got } => {
+                write!(f, "macro {name:?} expects 0 arguments, got {got}")
+            }
+            Error::UnknownArg(name) => write!(f, "unrecognized argument name {name:?}"),
+            Error::InvalidArg {
+                name,
+                expected,
+                got,
+            } => write!(f, "arg {name}: expected {expected}, got {got}"),
+            Error::Input { field, source } => write!(f, "field {field:?}: {source}"),
+            Error::Function { name, source } => write!(f, "function {name:?}: {source}"),
+            Error::Multiple(errors) => {
+                write!(f, "{} errors occurred:", errors.len())?;
+                for err in errors {
+                    write!(f, "\n\t* {err}")?;
+                }
+                Ok(())
+            }
+            Error::Env(msg) | Error::Json(msg) => f.write_str(msg),
+        }
+    }
+}
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Error::Input { source, .. } | Error::Function { source, .. } => Some(source.as_ref()),
+            _ => None,
+        }
+    }
+}
