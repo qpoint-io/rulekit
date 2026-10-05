@@ -49,7 +49,7 @@ rust/
       kv.rs             # Kv / KvInput / KvEntry, path traversal (input.go, values.go)
       lazy.rs           # Lazy<C>: memoized, single-flight cell
     func/
-      mod.rs            # Function<C>, ArgSpec, Type, Args, FromArg
+      mod.rs            # Function<C>, FuncSchema, Args, Returns, FromArg, Rest
       stdlib.rs         # starts_with
     macros.rs           # Macro, MacroSet
     env.rs              # Env<C> (validated functions + macros), Opts
@@ -384,35 +384,48 @@ consumers need not resolve it.
 
 ## 9. Functions and macros (D14, D15)
 
-```rust
-pub struct Function<C = ()> {
-    args: Box<[ArgSpec]>, ret: Option<Type>, doc: Option<String>,
-    eval: Arc<dyn for<'a> Fn(&'a C, Args<'_, 'a>) -> Result<Val<'a>, Error> + Send + Sync>,
-}
-pub struct ArgSpec { pub name: Cow<'static, str>, pub ty: Option<Type> }
-pub enum Type { Any, Null, Bool, Int64, Uint64, Float64, String, Bytes, Ip, Cidr, Mac, Url, Regex, Array, Object }
+Decision (user-approved): one typed function API, mirroring Go's `rulekit.Func`; the
+earlier dynamic API (`ArgSpec`, an `Args` accessor, `Function::new(specs, closure)`) is
+gone.
 
-pub struct Args<'s, 'a> { spec: &'s [ArgSpec], vals: &'s [Val<'a>] }
-impl<'a> Args<'_, 'a> {
-    pub fn len(&self) -> usize;
-    pub fn get(&self, i: usize) -> ValueRef<'_>;                 // panics past len (count is pre-validated)
-    pub fn named(&self, name: &str) -> Option<ValueRef<'_>>;     // linear scan over specs
-    pub fn index<T: FromArg>(&self, i: usize) -> Result<T, Error>;   // typed, InvalidArg on mismatch
-    pub fn by_name<T: FromArg>(&self, name: &str) -> Result<T, Error>;
+```rust
+#[derive(rulekit::Args)]                 // rulekit-macros, re-exported; `derive` feature (default)
+struct HostArgs<'a> { host: &'a str, #[rulekit(rename = "port")] p: i64, rest: Rest<'a> }
+
+pub trait Args: 'static { type Of<'a>; const PARAMS: &'static [Param];
+                          fn parse<'a>(vals: &'a [Val<'a>]) -> Result<Self::Of<'a>, Error>; }
+pub trait Returns: 'static { type Of<'a>; const TYPE: &'static str; fn into_val(v: Self::Of<'_>) -> Val<'_>; }
+pub struct FuncSchema<A, R> { name: Cow<'static, str>, doc: Cow<'static, str>, .. }
+impl<C> Function<C> {
+    pub fn new<A: Args, R: Returns, F>(schema: FuncSchema<A, R>, f: F) -> Self
+    where F: for<'a, 's> Fn(&'a C, A::Of<'s>) -> Result<R::Of<'a>, FnError> + Send + Sync + 'static;
 }
 ```
 
-- Positional args evaluated into a stack `SmallVec<[Val; 4]>`: no map, no allocation.
-  Arg count checked before evaluating (Go order); declared `ty` checked before calling.
-- `starts_with` is resolved at compile time to `Call::Stdlib(StartsWith)`; parse-time arity
-  error for stdlib functions ports `parseFunction`. Other names resolve at eval: custom
-  function, then macro, else `UnknownFunction` (Go order).
-- `starts_with` uses `TextForm` for both args (strings or text-form types; anything else
-  is `InvalidArg`), so it never allocates.
-- `Macro { source, ast: Arc<Ast>, rule: Rule }` (non-generic). Macro calls with args are
-  an error, as in Go.
-- No reflection-based `Func` builder (Go Phase 13 sketch has one); closures plus `FromArg`
-  cover it.
+- Each field of the derived struct is one positional argument, in order; the name is the
+  field name (`#[rulekit(rename)]`). Field types implement `FromArg` (exact conversions;
+  `TextForm` = string or text form; `ValueRef` = any). An optional last `Rest<'a>` field
+  borrows the remaining arguments (variadic, no allocation). Enums, tuple structs, type
+  parameters, more than one lifetime, and a misplaced `Rest` are compile errors
+  (tests/ui).
+- The schema carries the argument and return types because a closure taking `HostArgs<'s>`
+  and returning `&'a str` (borrowed from the context) needs a higher-ranked signature that
+  Rust cannot infer from the closure alone; with the types in the schema, the closure needs
+  no annotations. Return types give the declared type statically (`"any"` only for
+  `ValueRef`/`Val`/`Value`). Results may borrow the context (`'a`) but not the arguments
+  (`'s`), which live only for the call.
+- Name and doc are `Cow<'static, str>`: literals cost nothing, run-time names are accepted.
+- `EnvBuilder::function(f)` takes the name from the schema; `build()` rejects duplicates,
+  stdlib shadowing, and macro/function collisions.
+- Functions get their arguments and the context only, never the rule's input. Macros take
+  no parameters; parameterized logic is a function.
+- Arity is checked before arguments are evaluated (`Error::ArgCount`, with `variadic` for
+  a minimum); a wrongly typed argument is `Error::InvalidArg`; `FnError::Missing` makes the
+  result unknown; `FnError::Error` becomes `Error::Function`.
+- Arguments are evaluated into a stack `SmallVec<[Val; 4]>`: no map, no allocation.
+- `starts_with` uses the same API (its `Args` impl is written out so the stdlib does not
+  need the `derive` feature); parse-time arity errors for stdlib functions port
+  `parseFunction`.
 
 ## 10. JSON input (`json_input.rs`)
 

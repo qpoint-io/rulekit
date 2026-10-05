@@ -4,7 +4,7 @@
 #![allow(dead_code)]
 
 use rulekit::value::{Ip, Map, Url, Value, ValueRef};
-use rulekit::{Env, KvEntry, KvInput, Lazy, Opts, Rule};
+use rulekit::{Env, FuncSchema, Function, KvEntry, KvInput, Lazy, Opts, Rule};
 
 /// One `BenchmarkEval`-style case: a rule, its input, and its environment.
 pub struct EvalCase {
@@ -85,6 +85,12 @@ pub fn eval_cases() -> Vec<EvalCase> {
         r#"is_internal() and user != "root""#,
         input(vec![("ip", ip("172.16.0.1")), ("user", s("api"))]),
     );
+    let mut custom = case(
+        "function_borrowed_str",
+        r#"has_prefix(path, "/api")"#,
+        input(vec![("path", s("/api/v1"))]),
+    );
+    custom.env = Env::builder().function(has_prefix()).build().unwrap();
     macro_case.env = Env::builder()
         .macro_source("is_internal", "ip in 172.16.0.0/16")
         .unwrap()
@@ -161,6 +167,7 @@ pub fn eval_cases() -> Vec<EvalCase> {
             input(vec![("path", s("/api/v1"))]),
         ),
         macro_case,
+        custom,
         case(
             "url_field",
             r#"u.host == "example.com" and u.port == 8443 and u =~ /^https:/"#,
@@ -228,4 +235,18 @@ pub fn cmp_values() -> [(&'static str, ValueRef<'static>); 4] {
         ("float64", ValueRef::Float(1.0)),
         ("string", ValueRef::Str("1")),
     ]
+}
+
+#[derive(rulekit::Args)]
+struct PrefixArgs<'a> {
+    value: &'a str,
+    prefix: &'a str,
+}
+
+/// A custom function with borrowed `&str` arguments.
+fn has_prefix() -> Function {
+    Function::new(
+        FuncSchema::<PrefixArgs, bool>::new("has_prefix", ""),
+        |_: &(), a| Ok(a.value.starts_with(a.prefix)),
+    )
 }

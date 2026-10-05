@@ -117,20 +117,22 @@ Custom functions and macros live in an `Env`, passed with `Opts::new(&env)`.
 (`starts_with`) and macros named like a function.
 
 ```rust
-use rulekit::value::{Val, Value};
-use rulekit::{ArgSpec, Env, Function, NoInput, Opts, Type};
+use rulekit::{Env, FuncSchema, Function, NoInput, Opts};
+
+// One field per positional argument, in order.
+#[derive(rulekit::Args)]
+struct ClampArgs {
+    n: i64,
+    max: i64,
+}
 
 let clamp = Function::new(
-    [ArgSpec::typed("n", Type::Int64), ArgSpec::typed("max", Type::Int64)],
-    |_: &(), args| {
-        let n: i64 = args.index(0)?;
-        let max: i64 = args.by_name("max")?;
-        Ok(Val::Owned(Value::Int(n.min(max))))
-    },
+    FuncSchema::<ClampArgs, i64>::new("clamp", "The smaller of n and max."),
+    |_: &(), a| Ok(a.n.min(a.max)),
 );
 
 let env = Env::builder()
-    .function("clamp", clamp)
+    .function(clamp)
     .macro_source("is_internal", "ip in 10.0.0.0/8")?
     .build()?;
 
@@ -139,12 +141,22 @@ let result = rule.eval(&(), &NoInput, Opts::new(&env));
 assert_eq!(result.missing_fields().collect::<Vec<_>>(), ["ip"]);
 ```
 
-Typed arguments are checked before the function runs. Functions receive the
-evaluation context as their first argument and may return values borrowed
-from it. A function returns `Err(FnError::missing([...]))` when it needs
-input that is not there (the rule result is then unknown), or any other
-error with `?` or `FnError::msg`. `Function::with_doc` and `Macro::with_doc`
-attach descriptions for tools.
+`#[derive(rulekit::Args)]` (the default `derive` feature) turns a struct into a
+function's arguments: each field is one positional argument named after the
+field (`#[rulekit(rename = "...")]` to change it), of any `FromArg` type
+(`bool`, `i64`, `u64`, `f64`, `&str`, `&[u8]`, `Ip`, `Cidr`, `Mac`, `&Url`,
+`TextForm`, or `ValueRef` for any value). The struct may have one lifetime
+for borrowed arguments, and a last `Rest<'a>` field for the remaining
+arguments. The `FuncSchema` names the argument struct and the return type
+(`bool`, `i64`, `&str`, `String`, `Ip`, ..., or `ValueRef`/`Val` when the
+type is decided at run time), so the closure needs no annotations and may
+return data borrowed from the context.
+
+Wrong argument counts and types are errors. Functions receive the evaluation
+context and their arguments, not the rule's input. A function returns
+`Err(FnError::missing([...]))` when it needs input that is not there (the rule
+result is then unknown), or any other error with `?` or `FnError::msg`. Macros
+take no arguments; use a function for parameterized logic.
 
 ## Tracing
 
@@ -206,8 +218,7 @@ assert_eq!(out, "c == 2   -- first check\nand b");
 | `LazyValue`, `LazyContextValue` | `Lazy` |
 | `DecodeJSON`, `JSONOptions` | `decode_json`, `JsonOptions` |
 | `MacroSet.Register` | `EnvBuilder::macro_source` |
-| `IndexFuncArg` | `Args::by_name` |
-| `Function.Eval` returning `Result` | a closure returning `Result<Val, FnError>` |
+| `rulekit.Func` with an args struct | `Function::new(FuncSchema::<Args, R>::new(..), closure)` with `#[derive(rulekit::Args)]` |
 | `Format`, `Rewrite`, `Edit` | `format`, `rewrite`, `Edit` |
 | `Source()`, `Compact()`, `Multiline(indent)` | `PrintMode::Source`, `Compact`, `Multiline(indent)` |
 
