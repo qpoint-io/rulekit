@@ -49,7 +49,7 @@ fn custom_function_reads_args_by_index_and_name() {
     let rule = rulekit::parse("add(y, 1) == 1").unwrap();
     let result = rule.eval(&(), &NoInput, Opts::new(&env));
     assert!(result.unknown());
-    assert_eq!(result.missing_fields(), ["y"]);
+    assert_eq!(result.missing_fields().collect::<Vec<_>>(), ["y"]);
 }
 
 #[test]
@@ -136,7 +136,6 @@ fn functions_can_report_missing_fields_and_errors() {
             result.pass(),
             result
                 .missing_fields()
-                .iter()
                 .map(|s| s.to_string())
                 .collect::<Vec<_>>(),
             result.error().is_some(),

@@ -464,8 +464,10 @@ side-by-side ns/op + allocs table. Release profile for benches: `lto = "fat"`,
 - `Trace<'a>` borrows its expression, value, and missing fields from the rule and input;
   `into_owned()` detaches it. Traces are built from fragments (`Frag`): an unnamed Go
   `combineTrace` group is a plain `Vec`, not a boxed node.
-- Missing field names are `Cow<str>`: borrowed from compiled paths, owned when a function
-  reports them.
+- Untraced evaluation results have no trace slot at all (the slot type is `()`); a node
+  result is the value, the borrowed missing path names, and one boxed `Problem` holding
+  the rare parts (an error, or missing names a function reported). `missing_fields()` is an
+  iterator: path names, then function-reported names.
 - Custom functions return `Result<Val, FnError>`; `FnError::Missing` makes the result
   unknown (Go `Function.Eval` returning `MissingFields`), `FnError::Error` is an
   `Error::Function`.

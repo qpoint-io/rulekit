@@ -3,7 +3,7 @@
 use super::compare::{CmpOp, Diagnostic as Outcome};
 use std::borrow::Cow;
 
-use super::{EvalResult, Meta, Missing};
+use super::{Meta, Res};
 use crate::ast::{AstKind, NodeId};
 use crate::value::{Val, ValueRef};
 
@@ -115,7 +115,7 @@ impl Diagnostic {
 
 /// How evaluation reached its result, node by node.
 ///
-/// Returned by [`EvalResult::trace`] when [`Opts::trace`](crate::Opts::trace)
+/// Returned by [`EvalResult::trace`](crate::EvalResult::trace) when [`Opts::trace`](crate::Opts::trace)
 /// is set. The root describes the whole rule; [`children`](Self::children)
 /// follow the expression tree. A macro call has the macro's expression as its
 /// child. A trace borrows from the rule and the input like the result does;
@@ -146,7 +146,7 @@ pub struct Trace<'a> {
     pub(crate) expr: Cow<'a, str>,
     pub(crate) value: Val<'a>,
     pub(crate) error: Option<String>,
-    pub(crate) missing: Missing<'a>,
+    pub(crate) missing: Vec<Cow<'a, str>>,
     pub(crate) diagnostics: Vec<Diagnostic>,
     pub(crate) status: TraceStatus,
     pub(crate) active: bool,
@@ -162,7 +162,7 @@ impl Default for Trace<'_> {
             expr: Cow::Borrowed(""),
             value: Val::Ref(ValueRef::Null),
             error: None,
-            missing: Missing::new(),
+            missing: Vec::new(),
             diagnostics: Vec::new(),
             status: TraceStatus::Unknown,
             active: false,
@@ -252,10 +252,10 @@ impl<'a> Trace<'a> {
 }
 
 /// Go `traceStatus`.
-pub(crate) fn status(r: &EvalResult<'_>) -> TraceStatus {
-    if r.error.is_some() {
+pub(crate) fn status<'a, S: super::Slot<'a>>(r: &Res<'a, S>) -> TraceStatus {
+    if r.error().is_some() {
         TraceStatus::Error
-    } else if !r.missing.is_empty() {
+    } else if !r.complete() {
         TraceStatus::Missing
     } else if r.pass() {
         TraceStatus::Passed
@@ -324,7 +324,11 @@ pub(crate) fn add_diagnostic<'a>(
 
 /// Go `tracedRule.Eval`: describe a node, adopting the children and
 /// diagnostics of the trace its evaluation produced.
-pub(crate) fn wrap<'a>(meta: &'a Meta, r: &EvalResult<'a>, inner: Option<Frag<'a>>) -> Frag<'a> {
+pub(crate) fn wrap<'a, S: super::Slot<'a>>(
+    meta: &'a Meta,
+    r: &Res<'a, S>,
+    inner: Option<Frag<'a>>,
+) -> Frag<'a> {
     let (children, diagnostics) = match inner {
         None => (Vec::new(), Vec::new()),
         Some(Frag::Node(trace)) => (trace.children, trace.diagnostics),
@@ -336,8 +340,17 @@ pub(crate) fn wrap<'a>(meta: &'a Meta, r: &EvalResult<'a>, inner: Option<Frag<'a
         kind: Some(meta.kind),
         expr: Cow::Borrowed(&meta.expr),
         value: r.value.clone(),
-        error: r.error.as_ref().map(ToString::to_string),
-        missing: r.missing.clone(),
+        error: r.error().map(ToString::to_string),
+        missing: r
+            .missing
+            .iter()
+            .map(|&name| Cow::Borrowed(name))
+            .chain(
+                r.problem
+                    .iter()
+                    .flat_map(|p| p.missing.iter().map(|name| Cow::Owned(name.clone()))),
+            )
+            .collect(),
         diagnostics,
         status: status(r),
         active: true,

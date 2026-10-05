@@ -319,7 +319,7 @@ fn check_result(got: &rulekit::EvalResult<'_>, want: &Expect) -> Result<(), Stri
     }
     let mut want_missing = want.missing_fields.clone().unwrap_or_default();
     want_missing.sort();
-    let mut got_missing: Vec<String> = got.missing_fields().iter().map(|s| s.to_string()).collect();
+    let mut got_missing: Vec<String> = got.missing_fields().map(|s| s.to_string()).collect();
     got_missing.sort();
     if want_missing != got_missing {
         return Err(format!(

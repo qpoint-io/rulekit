@@ -39,7 +39,7 @@
 //! if let Some(err) = result.error() {
 //!     panic!("evaluation failed: {err}");
 //! } else if result.unknown() {
-//!     println!("missing fields: {:?}", result.missing_fields());
+//!     println!("missing fields: {:?}", result.missing_fields().collect::<Vec<_>>());
 //! } else {
 //!     assert!(result.pass());
 //! }
@@ -224,11 +224,7 @@ impl Rule {
         };
         // `--cfg rulekit_size_probe` leaves the traced instantiation out, so
         // its compiled size can be measured (see bench/size.sh).
-        if opts.trace && !cfg!(rulekit_size_probe) {
-            self.root.eval::<true, C, I>(&scope)
-        } else {
-            self.root.eval::<false, C, I>(&scope)
-        }
+        eval::run(&self.root, &scope, opts.trace && !cfg!(rulekit_size_probe))
     }
 }
 

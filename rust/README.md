@@ -37,7 +37,7 @@ let result = rule.eval(&(), &input, Opts::default());
 if let Some(err) = result.error() {
     eprintln!("error evaluating rule: {err}");
 } else if result.unknown() {
-    eprintln!("missing fields: {:?}", result.missing_fields());
+    eprintln!("missing fields: {:?}", result.missing_fields().collect::<Vec<_>>());
 } else if result.pass() {
     println!("PASS!");
 } else {
@@ -49,7 +49,7 @@ if let Some(err) = result.error() {
 
 - `value()`: the result value, usually a boolean
 - `error()`: an evaluation error (input or function failure, unknown function, bad argument)
-- `missing_fields()`: fields needed to decide that the input lacked
+- `missing_fields()`: an iterator over the fields needed to decide that the input lacked
 - `trace()`: the evaluation trace, when tracing is on
 - `pass()` / `fail()`: completed with a non-zero / zero value
 - `ok()` / `complete()`: no error and no missing fields
@@ -136,7 +136,7 @@ let env = Env::builder()
 
 let rule = rulekit::parse("clamp(150, 100) == 100 and not is_internal()")?;
 let result = rule.eval(&(), &NoInput, Opts::new(&env));
-assert_eq!(result.missing_fields(), ["ip"]);
+assert_eq!(result.missing_fields().collect::<Vec<_>>(), ["ip"]);
 ```
 
 Typed arguments are checked before the function runs. Functions receive the

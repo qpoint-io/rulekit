@@ -73,7 +73,7 @@ impl<C: ?Sized> Input<C> for NoInput {
 /// assert!(rule.eval(&(), &input, Opts::default()).pass());
 ///
 /// let rule = rulekit::parse("host == \"example.com\"")?;
-/// assert_eq!(rule.eval(&(), &input, Opts::default()).missing_fields(), ["host"]);
+/// assert_eq!(rule.eval(&(), &input, Opts::default()).missing_fields().collect::<Vec<_>>(), ["host"]);
 /// # Ok::<(), rulekit::ParseError>(())
 /// ```
 pub struct FnInput<F>(pub F);

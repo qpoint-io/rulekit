@@ -1,15 +1,13 @@
 //! Compiled rules and evaluation (port of `ast.go` `lowerAST`, `nodes.go`,
 //! `values.go`, `functions.go`, and `trace.go`).
 //!
-//! Evaluation is generic over `const TRACE: bool`. `Rule::eval` branches on
+//! Evaluation is generic over a trace slot (`()` or `Option<Frag>`). `Rule::eval` branches on
 //! the trace flag once; the untraced instantiation contains no trace code.
 
 mod compare;
 #[doc(hidden)]
 pub use compare::cmp_number;
 pub(crate) mod trace;
-
-use std::borrow::Cow;
 
 use smallvec::SmallVec;
 
@@ -190,7 +188,15 @@ fn lower_node(ast: &Ast, texts: &mut [String], id: NodeId) -> Result<Node, Parse
 }
 
 /// Missing field names, borrowed from compiled rules.
-pub(crate) type Missing<'a> = SmallVec<[Cow<'a, str>; 2]>;
+pub(crate) type Missing<'a> = SmallVec<[&'a str; 2]>;
+
+/// The rare parts of a result, boxed so results stay small on the happy path:
+/// an error, and missing field names a function reported (owned).
+#[derive(Debug, Default)]
+pub(crate) struct Problem {
+    pub(crate) error: Option<Error>,
+    pub(crate) missing: Vec<String>,
+}
 
 /// The outcome of [`Rule::eval`](crate::Rule::eval).
 ///
@@ -209,24 +215,114 @@ pub(crate) type Missing<'a> = SmallVec<[Cow<'a, str>; 2]>;
 /// let rule = rulekit::parse("port == 443 and tls")?;
 /// let result = rule.eval(&(), &NoInput, Opts::default());
 /// assert!(result.unknown());
-/// assert_eq!(result.missing_fields(), ["port", "tls"]);
+/// assert_eq!(result.missing_fields().collect::<Vec<_>>(), ["port", "tls"]);
 /// # Ok::<(), rulekit::ParseError>(())
 /// ```
 #[derive(Debug)]
-pub struct EvalResult<'a> {
-    value: Val<'a>,
-    error: Option<Box<Error>>,
-    missing: Missing<'a>,
-    trace: Option<Frag<'a>>,
-}
+pub struct EvalResult<'a>(Res<'a, Option<Frag<'a>>>);
 
 impl<'a> EvalResult<'a> {
+    /// The result value; `Null` when the rule did not produce one.
+    pub fn value(&self) -> ValueRef<'_> {
+        self.0.value.as_ref()
+    }
+
+    /// The result value, owned or borrowed from the rule, input, or context.
+    pub fn into_value(self) -> Val<'a> {
+        self.0.value
+    }
+
+    /// The evaluation error, if any. When both sides of `and`/`or` fail,
+    /// this is an [`Error::Multiple`].
+    pub fn error(&self) -> Option<&Error> {
+        self.0.error()
+    }
+
+    /// Fields the rule needed but the input lacked: paths in the rule, then
+    /// any names a custom function reported.
+    pub fn missing_fields(&self) -> impl Iterator<Item = &str> + '_ {
+        self.0.missing_fields()
+    }
+
+    /// The evaluation trace, when tracing was enabled.
+    pub fn trace(&self) -> Option<&Trace<'a>> {
+        self.0.trace.as_ref().and_then(Frag::node)
+    }
+
+    /// No error and no missing fields.
+    pub fn complete(&self) -> bool {
+        self.0.complete()
+    }
+
+    /// Same as [`complete`](Self::complete).
+    pub fn ok(&self) -> bool {
+        self.0.complete()
+    }
+
+    /// No error, but more input is needed.
+    pub fn unknown(&self) -> bool {
+        self.0.error().is_none() && !self.0.complete()
+    }
+
+    /// Complete with a non-zero value.
+    pub fn pass(&self) -> bool {
+        self.0.pass()
+    }
+
+    /// Complete with a zero value.
+    pub fn fail(&self) -> bool {
+        self.0.fail()
+    }
+}
+
+/// Where a node's evaluation keeps its trace fragment: `()` when not
+/// tracing (the slot does not exist, so untraced results stay small), or
+/// `Option<Frag>` when tracing.
+pub(crate) trait Slot<'a>: Sized {
+    const ENABLED: bool;
+    fn empty() -> Self;
+    fn take_frag(&mut self) -> Option<Frag<'a>>;
+    fn put_frag(&mut self, frag: Option<Frag<'a>>);
+}
+
+impl<'a> Slot<'a> for () {
+    const ENABLED: bool = false;
+    fn empty() -> Self {}
+    fn take_frag(&mut self) -> Option<Frag<'a>> {
+        None
+    }
+    fn put_frag(&mut self, _: Option<Frag<'a>>) {}
+}
+
+impl<'a> Slot<'a> for Option<Frag<'a>> {
+    const ENABLED: bool = true;
+    fn empty() -> Self {
+        None
+    }
+    fn take_frag(&mut self) -> Option<Frag<'a>> {
+        self.take()
+    }
+    fn put_frag(&mut self, frag: Option<Frag<'a>>) {
+        *self = frag;
+    }
+}
+
+/// A node's evaluation result (Go `Result`), with a trace slot `S`.
+#[derive(Debug)]
+pub(crate) struct Res<'a, S> {
+    pub(crate) value: Val<'a>,
+    pub(crate) problem: Option<Box<Problem>>,
+    pub(crate) missing: Missing<'a>,
+    trace: S,
+}
+
+impl<'a, S: Slot<'a>> Res<'a, S> {
     fn of(value: Val<'a>) -> Self {
-        EvalResult {
+        Res {
             value,
-            error: None,
+            problem: None,
             missing: Missing::new(),
-            trace: None,
+            trace: S::empty(),
         }
     }
 
@@ -235,8 +331,11 @@ impl<'a> EvalResult<'a> {
     }
 
     fn failed(error: Error) -> Self {
-        EvalResult {
-            error: Some(Box::new(error)),
+        Res {
+            problem: Some(Box::new(Problem {
+                error: Some(error),
+                missing: Vec::new(),
+            })),
             ..Self::of(Val::Ref(ValueRef::Null))
         }
     }
@@ -244,68 +343,71 @@ impl<'a> EvalResult<'a> {
     /// Keep only the error and missing fields (Go returns these without a
     /// value), with the given trace.
     fn incomplete(self, trace: Option<Frag<'a>>) -> Self {
-        EvalResult {
+        let mut out = Res {
             value: Val::Ref(ValueRef::Null),
-            error: self.error,
+            problem: self.problem,
             missing: self.missing,
-            trace,
-        }
+            trace: S::empty(),
+        };
+        out.trace.put_frag(trace);
+        out
     }
 
     fn with_trace(mut self, trace: Option<Frag<'a>>) -> Self {
-        self.trace = trace;
+        self.trace.put_frag(trace);
         self
     }
 
-    /// The result value; `Null` when the rule did not produce one.
-    pub fn value(&self) -> ValueRef<'_> {
-        self.value.as_ref()
+    /// The result as returned to callers, with no trace.
+    fn untraced(self) -> EvalResult<'a> {
+        EvalResult(Res {
+            value: self.value,
+            problem: self.problem,
+            missing: self.missing,
+            trace: None,
+        })
     }
 
-    /// The result value, owned or borrowed from the rule, input, or context.
-    pub fn into_value(self) -> Val<'a> {
-        self.value
+    pub(crate) fn complete(&self) -> bool {
+        self.problem.is_none() && self.missing.is_empty()
     }
 
-    /// The evaluation error, if any. When both sides of `and`/`or` fail,
-    /// this is an [`Error::Multiple`].
-    pub fn error(&self) -> Option<&Error> {
-        self.error.as_deref()
+    pub(crate) fn error(&self) -> Option<&Error> {
+        self.problem.as_deref().and_then(|p| p.error.as_ref())
     }
 
-    /// Fields the rule needed but the input lacked.
-    pub fn missing_fields(&self) -> &[Cow<'a, str>] {
-        &self.missing
+    /// Missing field names: from paths, then any a function reported.
+    pub(crate) fn missing_fields(&self) -> impl Iterator<Item = &str> + '_ {
+        let reported = self.problem.as_deref().map_or(&[][..], |p| &p.missing[..]);
+        self.missing
+            .iter()
+            .copied()
+            .chain(reported.iter().map(String::as_str))
     }
 
-    /// The evaluation trace, when tracing was enabled.
-    pub fn trace(&self) -> Option<&Trace<'a>> {
-        self.trace.as_ref().and_then(Frag::node)
-    }
-
-    /// No error and no missing fields.
-    pub fn complete(&self) -> bool {
-        self.error.is_none() && self.missing.is_empty()
-    }
-
-    /// Same as [`complete`](Self::complete).
-    pub fn ok(&self) -> bool {
+    fn ok(&self) -> bool {
         self.complete()
     }
 
-    /// No error, but more input is needed.
-    pub fn unknown(&self) -> bool {
-        self.error.is_none() && !self.missing.is_empty()
-    }
-
-    /// Complete with a non-zero value.
-    pub fn pass(&self) -> bool {
+    pub(crate) fn pass(&self) -> bool {
         self.complete() && !self.value.as_ref().is_zero()
     }
 
-    /// Complete with a zero value.
-    pub fn fail(&self) -> bool {
+    fn fail(&self) -> bool {
         self.complete() && self.value.as_ref().is_zero()
+    }
+}
+
+/// Evaluate a rule's root node, with or without a trace.
+pub(crate) fn run<'a, C: ?Sized, I: Input<C> + ?Sized>(
+    root: &'a Node,
+    scope: &Scope<'a, C, I>,
+    trace: bool,
+) -> EvalResult<'a> {
+    if trace {
+        EvalResult(root.eval::<Option<Frag<'a>>, C, I>(scope))
+    } else {
+        root.eval::<(), C, I>(scope).untraced()
     }
 }
 
@@ -323,10 +425,23 @@ fn union<'a>(left: Missing<'a>, right: Missing<'a>) -> Missing<'a> {
     out
 }
 
-/// Go `coalesceErrs`.
-fn coalesce(left: Option<Box<Error>>, right: Option<Box<Error>>) -> Option<Box<Error>> {
+/// Go `coalesceErrs` for errors, and `unionUnique` for reported missing
+/// field names.
+fn coalesce(left: Option<Box<Problem>>, right: Option<Box<Problem>>) -> Option<Box<Problem>> {
     match (left, right) {
-        (Some(l), Some(r)) => Some(Box::new(Error::Multiple(vec![*l, *r]))),
+        (Some(mut l), Some(r)) => {
+            let r = *r;
+            l.error = match (l.error.take(), r.error) {
+                (Some(a), Some(b)) => Some(Error::Multiple(vec![a, b])),
+                (a, b) => a.or(b),
+            };
+            for name in r.missing {
+                if !l.missing.contains(&name) {
+                    l.missing.push(name);
+                }
+            }
+            Some(l)
+        }
         (l, r) => l.or(r),
     }
 }
@@ -341,15 +456,17 @@ pub(crate) struct Scope<'a, C: ?Sized, I: ?Sized> {
 type Buf<'a, const N: usize> = SmallVec<[Val<'a>; N]>;
 
 impl Node {
-    /// Evaluate the node; with `TRACE`, describe it (Go `tracedRule`).
-    pub(crate) fn eval<'a, const TRACE: bool, C: ?Sized, I: Input<C> + ?Sized>(
+    /// Evaluate the node; when tracing, describe it (Go `tracedRule`).
+    pub(crate) fn eval<'a, S: Slot<'a>, C: ?Sized, I: Input<C> + ?Sized>(
         &'a self,
         s: &Scope<'a, C, I>,
-    ) -> EvalResult<'a> {
-        let mut r = self.eval_kind::<TRACE, C, I>(s);
-        if TRACE && let Some(meta) = &self.meta {
-            let inner = r.trace.take();
-            r.trace = Some(trace::wrap(meta, &r, inner));
+    ) -> Res<'a, S> {
+        let mut r = self.eval_kind::<S, C, I>(s);
+        if S::ENABLED
+            && let Some(meta) = &self.meta
+        {
+            let inner = r.trace.take_frag();
+            r.trace.put_frag(Some(trace::wrap(meta, &r, inner)));
         }
         r
     }
@@ -359,51 +476,55 @@ impl Node {
         self.meta.as_ref().map(trace::pruned)
     }
 
-    fn eval_kind<'a, const TRACE: bool, C: ?Sized, I: Input<C> + ?Sized>(
+    fn eval_kind<'a, S: Slot<'a>, C: ?Sized, I: Input<C> + ?Sized>(
         &'a self,
         s: &Scope<'a, C, I>,
-    ) -> EvalResult<'a> {
+    ) -> Res<'a, S> {
         match &self.kind {
             Kind::And(l, r) => {
-                let mut left = l.eval::<TRACE, C, I>(s);
+                let mut left = l.eval::<S, C, I>(s);
                 if left.fail() {
-                    if TRACE {
-                        left.trace = combine([left.trace.take(), r.pruned()]);
+                    if S::ENABLED {
+                        let frag = combine([left.trace.take_frag(), r.pruned()]);
+                        left.trace.put_frag(frag);
                     }
                     return left;
                 }
-                let mut right = r.eval::<TRACE, C, I>(s);
+                let mut right = r.eval::<S, C, I>(s);
                 if right.fail() {
-                    if TRACE {
-                        right.trace = combine([left.trace.take(), right.trace.take()]);
+                    if S::ENABLED {
+                        let frag = combine([left.trace.take_frag(), right.trace.take_frag()]);
+                        right.trace.put_frag(frag);
                     }
                     return right;
                 }
-                merge::<TRACE>(left, right, |l, r| l.pass() && r.pass())
+                merge::<S>(left, right, |l, r| l.pass() && r.pass())
             }
             Kind::Or(l, r) => {
-                let mut left = l.eval::<TRACE, C, I>(s);
+                let mut left = l.eval::<S, C, I>(s);
                 if left.pass() {
-                    if TRACE {
-                        left.trace = combine([left.trace.take(), r.pruned()]);
+                    if S::ENABLED {
+                        let frag = combine([left.trace.take_frag(), r.pruned()]);
+                        left.trace.put_frag(frag);
                     }
                     return left;
                 }
-                let mut right = r.eval::<TRACE, C, I>(s);
+                let mut right = r.eval::<S, C, I>(s);
                 if right.pass() {
-                    if TRACE {
-                        right.trace = combine([left.trace.take(), right.trace.take()]);
+                    if S::ENABLED {
+                        let frag = combine([left.trace.take_frag(), right.trace.take_frag()]);
+                        right.trace.put_frag(frag);
                     }
                     return right;
                 }
-                merge::<TRACE>(left, right, |l, r| l.pass() || r.pass())
+                merge::<S>(left, right, |l, r| l.pass() || r.pass())
             }
             Kind::Not(inner) => {
-                let mut r = inner.eval::<TRACE, C, I>(s);
+                let mut r = inner.eval::<S, C, I>(s);
                 // A negated operator has no traced node between it and its
                 // operands, so its operand traces become its children.
-                let trace = if TRACE {
-                    match r.trace.take() {
+                let trace = if S::ENABLED {
+                    match r.trace.take_frag() {
                         Some(t) if t.is_group() => Some(t),
                         other => combine([other]),
                     }
@@ -413,13 +534,13 @@ impl Node {
                 if !r.ok() {
                     return r.incomplete(trace);
                 }
-                EvalResult::bool(r.value.as_ref().is_zero()).with_trace(trace)
+                Res::bool(r.value.as_ref().is_zero()).with_trace(trace)
             }
-            Kind::Compare { op, lhs, rhs } => self.binary::<TRACE, C, I>(lhs, rhs, s, |lv, rv| {
+            Kind::Compare { op, lhs, rhs } => self.binary::<S, C, I>(lhs, rhs, s, |lv, rv| {
                 let outcome = compare(lv, *op, rv);
                 (
                     outcome.pass,
-                    if TRACE {
+                    if S::ENABLED {
                         Diagnostic::new(outcome.diagnostic, lv, *op, rv)
                     } else {
                         None
@@ -427,9 +548,9 @@ impl Node {
                 )
             }),
             Kind::Match { lhs, rhs } => {
-                self.binary::<TRACE, C, I>(lhs, rhs, s, |lv, rv| (matches(lv, rv), None))
+                self.binary::<S, C, I>(lhs, rhs, s, |lv, rv| (matches(lv, rv), None))
             }
-            Kind::In { lhs, rhs } => self.binary::<TRACE, C, I>(lhs, rhs, s, |lv, rv| {
+            Kind::In { lhs, rhs } => self.binary::<S, C, I>(lhs, rhs, s, |lv, rv| {
                 // The parser guarantees a list on the right.
                 let ValueRef::Array(_) = rv else {
                     return (false, None);
@@ -442,63 +563,63 @@ impl Node {
                     }
                     _ => compare(rv, CmpOp::Contains, lv),
                 };
-                let diagnostic = if TRACE {
+                let diagnostic = if S::ENABLED {
                     Diagnostic::new(outcome.diagnostic, rv, CmpOp::Contains, lv)
                 } else {
                     None
                 };
                 (outcome.pass, diagnostic)
             }),
-            Kind::Literal(v) => EvalResult::of(Val::Ref(v.as_ref())),
+            Kind::Literal(v) => Res::of(Val::Ref(v.as_ref())),
             Kind::ConstArray(values, items) => {
-                if TRACE {
-                    return eval_array::<TRACE, C, I>(items, s);
+                if S::ENABLED {
+                    return eval_array::<S, C, I>(items, s);
                 }
-                EvalResult::of(Val::Ref(ValueRef::Array(ArrayRef::Values(values))))
+                Res::of(Val::Ref(ValueRef::Array(ArrayRef::Values(values))))
             }
             Kind::Path { segments, text } => match s.input.get(s.ctx, segments) {
-                Ok(Some(v)) => EvalResult::of(v),
+                Ok(Some(v)) => Res::of(v),
                 Ok(None) => {
                     let mut missing = Missing::new();
-                    missing.push(Cow::Borrowed(&**text));
-                    EvalResult {
+                    missing.push(&**text);
+                    Res {
                         missing,
-                        ..EvalResult::of(Val::Ref(ValueRef::Null))
+                        ..Res::of(Val::Ref(ValueRef::Null))
                     }
                 }
-                Err(source) => EvalResult::failed(Error::Input {
+                Err(source) => Res::failed(Error::Input {
                     field: text.to_string(),
                     source,
                 }),
             },
-            Kind::Array(items) => eval_array::<TRACE, C, I>(items, s),
-            Kind::Call { target, args } => call::<TRACE, C, I>(target, args, s),
+            Kind::Array(items) => eval_array::<S, C, I>(items, s),
+            Kind::Call { target, args } => call::<S, C, I>(target, args, s),
         }
     }
 
     /// Go `nodeCompare`/`nodeMatch`/`nodeIn`: evaluate both operands (a
     /// non-ok left operand prunes the right), then apply `f`, which returns
     /// the result and, when tracing, a diagnostic.
-    fn binary<'a, const TRACE: bool, C: ?Sized, I: Input<C> + ?Sized>(
+    fn binary<'a, S: Slot<'a>, C: ?Sized, I: Input<C> + ?Sized>(
         &'a self,
         lhs: &'a Node,
         rhs: &'a Node,
         s: &Scope<'a, C, I>,
         f: impl FnOnce(ValueRef<'_>, ValueRef<'_>) -> (bool, Option<Diagnostic>),
-    ) -> EvalResult<'a> {
+    ) -> Res<'a, S> {
         let (mut lbuf, mut rbuf) = (Buf::<8>::new(), Buf::<8>::new());
-        let (mut left, left_in_buf) = lhs.operand::<TRACE, C, I, 8>(s, &mut lbuf);
+        let (mut left, left_in_buf) = lhs.operand::<S, C, I, 8>(s, &mut lbuf);
         if !left.ok() {
-            let trace = if TRACE {
-                combine([left.trace.take(), rhs.pruned()])
+            let trace = if S::ENABLED {
+                combine([left.trace.take_frag(), rhs.pruned()])
             } else {
                 None
             };
             return left.incomplete(trace);
         }
-        let (mut right, right_in_buf) = rhs.operand::<TRACE, C, I, 8>(s, &mut rbuf);
-        let trace = if TRACE {
-            combine([left.trace.take(), right.trace.take()])
+        let (mut right, right_in_buf) = rhs.operand::<S, C, I, 8>(s, &mut rbuf);
+        let trace = if S::ENABLED {
+            combine([left.trace.take_frag(), right.trace.take_frag()])
         } else {
             None
         };
@@ -520,46 +641,48 @@ impl Node {
         if let Some(diagnostic) = diagnostic {
             trace = trace::add_diagnostic(trace, diagnostic);
         }
-        EvalResult::bool(pass).with_trace(trace)
+        Res::bool(pass).with_trace(trace)
     }
 
     /// Evaluate a comparison operand. Untraced, a non-constant array literal
     /// is evaluated into `buf` (the bool is true) so comparing against it does
     /// not allocate; traced, it is evaluated as a node like in Go.
-    fn operand<'a, const TRACE: bool, C: ?Sized, I: Input<C> + ?Sized, const N: usize>(
+    fn operand<'a, S: Slot<'a>, C: ?Sized, I: Input<C> + ?Sized, const N: usize>(
         &'a self,
         s: &Scope<'a, C, I>,
         buf: &mut Buf<'a, N>,
-    ) -> (EvalResult<'a>, bool) {
-        if !TRACE && let Kind::Array(items) = &self.kind {
+    ) -> (Res<'a, S>, bool) {
+        if !S::ENABLED
+            && let Kind::Array(items) = &self.kind
+        {
             for item in items.iter() {
-                let r = item.eval::<TRACE, C, I>(s);
+                let r = item.eval::<S, C, I>(s);
                 if !r.ok() {
                     return (r, false);
                 }
                 buf.push(r.value);
             }
-            return (EvalResult::of(Val::Ref(ValueRef::Null)), true);
+            return (Res::of(Val::Ref(ValueRef::Null)), true);
         }
-        (self.eval::<TRACE, C, I>(s), false)
+        (self.eval::<S, C, I>(s), false)
     }
 }
 
-fn call<'a, const TRACE: bool, C: ?Sized, I: Input<C> + ?Sized>(
+fn call<'a, S: Slot<'a>, C: ?Sized, I: Input<C> + ?Sized>(
     target: &'a Call,
     args: &'a [Node],
     s: &Scope<'a, C, I>,
-) -> EvalResult<'a> {
+) -> Res<'a, S> {
     let name = match target {
         Call::StartsWith => {
             let mut vals = Buf::<2>::new();
-            let trace = match eval_items::<TRACE, C, I, 2>(args, s, &mut vals) {
+            let trace = match eval_items::<S, C, I, 2>(args, s, &mut vals) {
                 Ok(trace) => trace,
                 Err(r) => return r,
             };
             let r = match starts_with(&vals) {
-                Ok(b) => EvalResult::bool(b),
-                Err(e) => EvalResult::failed(e),
+                Ok(b) => Res::bool(b),
+                Err(e) => Res::failed(e),
             };
             return r.with_trace(trace);
         }
@@ -567,43 +690,49 @@ fn call<'a, const TRACE: bool, C: ?Sized, I: Input<C> + ?Sized>(
     };
     if let Some(function) = s.env.functions.get(&**name) {
         if function.args().len() != args.len() {
-            return EvalResult::failed(Error::ArgCount {
+            return Res::failed(Error::ArgCount {
                 function: name.to_string(),
                 expected: function.args().len(),
                 got: args.len(),
             });
         }
         let mut vals = Buf::<4>::new();
-        let trace = match eval_items::<TRACE, C, I, 4>(args, s, &mut vals) {
+        let trace = match eval_items::<S, C, I, 4>(args, s, &mut vals) {
             Ok(trace) => trace,
             Err(r) => return r,
         };
         let r = match function.call(name, s.ctx, &vals) {
-            Ok(v) => EvalResult::of(v),
-            Err(CallFailure::Error(e)) => EvalResult::failed(e),
-            Err(CallFailure::Missing(fields)) => EvalResult {
-                missing: fields.into_iter().map(Cow::Owned).collect(),
-                ..EvalResult::of(Val::Ref(ValueRef::Null))
+            Ok(v) => Res::of(v),
+            Err(CallFailure::Error(e)) => Res::failed(e),
+            Err(CallFailure::Missing(fields)) => Res {
+                problem: Some(Box::new(Problem {
+                    error: None,
+                    missing: fields,
+                })),
+                ..Res::of(Val::Ref(ValueRef::Null))
             },
         };
         return r.with_trace(trace);
     }
     if let Some(macro_) = s.env.macros.get(&**name) {
         if !args.is_empty() {
-            return EvalResult::failed(Error::MacroArgs {
+            return Res::failed(Error::MacroArgs {
                 name: name.to_string(),
                 got: args.len(),
             });
         }
-        let mut r = macro_.rule.root.eval::<TRACE, C, I>(s);
-        if TRACE && let Some(root) = r.trace.take() {
+        let mut r = macro_.rule.root.eval::<S, C, I>(s);
+        if S::ENABLED
+            && let Some(root) = r.trace.take_frag()
+        {
             // Go wraps the expansion in a node for the macro source; the call
             // node adopts that node's children, i.e. the expansion's root.
-            r.trace = combine([Some(root)]);
+            let frag = combine([Some(root)]);
+            r.trace.put_frag(frag);
         }
         return r;
     }
-    EvalResult::failed(Error::UnknownFunction(name.to_string()))
+    Res::failed(Error::UnknownFunction(name.to_string()))
 }
 
 /// Go `evalItems`: evaluate array items or call arguments in order into
@@ -613,39 +742,40 @@ fn call<'a, const TRACE: bool, C: ?Sized, I: Input<C> + ?Sized>(
 // The error is a whole result by design: boxing it would allocate on the
 // missing-field path, which must stay allocation-free.
 #[allow(clippy::result_large_err)]
-fn eval_items<'a, const TRACE: bool, C: ?Sized, I: Input<C> + ?Sized, const N: usize>(
+fn eval_items<'a, S: Slot<'a>, C: ?Sized, I: Input<C> + ?Sized, const N: usize>(
     items: &'a [Node],
     s: &Scope<'a, C, I>,
     vals: &mut Buf<'a, N>,
-) -> Result<Option<Frag<'a>>, EvalResult<'a>> {
+) -> Result<Option<Frag<'a>>, Res<'a, S>> {
     let mut traces: Vec<Option<Frag<'a>>> = Vec::new();
     for (i, item) in items.iter().enumerate() {
-        let mut r = item.eval::<TRACE, C, I>(s);
-        if TRACE {
-            traces.push(r.trace.take());
+        let mut r = item.eval::<S, C, I>(s);
+        if S::ENABLED {
+            traces.push(r.trace.take_frag());
         }
         if !r.ok() {
-            if TRACE {
+            if S::ENABLED {
                 traces.extend(items[i + 1..].iter().map(Node::pruned));
-                r.trace = combine(traces);
+                let frag = combine(traces);
+                r.trace.put_frag(frag);
             }
             return Err(r);
         }
         vals.push(r.value);
     }
-    Ok(if TRACE { combine(traces) } else { None })
+    Ok(if S::ENABLED { combine(traces) } else { None })
 }
 
 /// Go `ArrayValue.Eval`: the items as an owned list.
-fn eval_array<'a, const TRACE: bool, C: ?Sized, I: Input<C> + ?Sized>(
+fn eval_array<'a, S: Slot<'a>, C: ?Sized, I: Input<C> + ?Sized>(
     items: &'a [Node],
     s: &Scope<'a, C, I>,
-) -> EvalResult<'a> {
+) -> Res<'a, S> {
     let mut vals = Buf::<8>::new();
-    match eval_items::<TRACE, C, I, 8>(items, s, &mut vals) {
+    match eval_items::<S, C, I, 8>(items, s, &mut vals) {
         Ok(trace) => {
             let values = vals.into_iter().map(Val::into_owned).collect();
-            EvalResult::of(Val::Owned(Value::Array(values))).with_trace(trace)
+            Res::of(Val::Owned(Value::Array(values))).with_trace(trace)
         }
         Err(r) => r,
     }
@@ -654,24 +784,24 @@ fn eval_array<'a, const TRACE: bool, C: ?Sized, I: Input<C> + ?Sized>(
 /// Go `nodeAnd`/`nodeOr` after short-circuiting: if exactly one side is
 /// incomplete, return it; otherwise merge errors and missing fields,
 /// with a value only when both sides completed.
-fn merge<'a, const TRACE: bool>(
-    mut left: EvalResult<'a>,
-    mut right: EvalResult<'a>,
-    value: impl Fn(&EvalResult, &EvalResult) -> bool,
-) -> EvalResult<'a> {
+fn merge<'a, S: Slot<'a>>(
+    mut left: Res<'a, S>,
+    mut right: Res<'a, S>,
+    value: impl Fn(&Res<'a, S>, &Res<'a, S>) -> bool,
+) -> Res<'a, S> {
     match (left.ok(), right.ok()) {
         // Exactly one side is incomplete: return it, keeping both traces.
         (true, false) => {
-            let trace = if TRACE {
-                combine([left.trace, right.trace.take()])
+            let trace = if S::ENABLED {
+                combine([left.trace.take_frag(), right.trace.take_frag()])
             } else {
                 None
             };
             right.with_trace(trace)
         }
         (false, true) => {
-            let trace = if TRACE {
-                combine([left.trace.take(), right.trace])
+            let trace = if S::ENABLED {
+                combine([left.trace.take_frag(), right.trace.take_frag()])
             } else {
                 None
             };
@@ -683,16 +813,18 @@ fn merge<'a, const TRACE: bool>(
             } else {
                 Val::Ref(ValueRef::Null)
             };
-            EvalResult {
+            let trace = if S::ENABLED {
+                combine([left.trace.take_frag(), right.trace.take_frag()])
+            } else {
+                None
+            };
+            Res {
                 value,
-                error: coalesce(left.error, right.error),
+                problem: coalesce(left.problem, right.problem),
                 missing: union(left.missing, right.missing),
-                trace: if TRACE {
-                    combine([left.trace, right.trace])
-                } else {
-                    None
-                },
+                trace: S::empty(),
             }
+            .with_trace(trace)
         }
     }
 }
