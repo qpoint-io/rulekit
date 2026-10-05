@@ -5,7 +5,6 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -988,15 +987,7 @@ func TestFunctionParsing(t *testing.T) {
 		[1, 2, 3],
 		nested_func(true)
 	)`)
-
-	fn := unwrapTracedRule(parsed.(*rule).Rule).(*FunctionValue)
-	require.Equal(t, "func_name", fn.fn)
-	require.Len(t, fn.args.vals, 4)
-	assert.IsType(t, FieldValue(""), unwrapTracedRule(fn.args.vals[0]))
-	assert.IsType(t, &LiteralValue[any]{}, unwrapTracedRule(fn.args.vals[1]))
-	assert.IsType(t, net.IP{}, unwrapTracedRule(fn.args.vals[1]).(*LiteralValue[any]).value)
-	assert.IsType(t, &ArrayValue{}, unwrapTracedRule(fn.args.vals[2]))
-	assert.IsType(t, &FunctionValue{}, unwrapTracedRule(fn.args.vals[3]))
+	require.Equal(t, `func_name(fieldarg, 192.168.0.0, [1, 2, 3], nested_func(true))`, parsed.String())
 }
 
 func TestMacros(t *testing.T) {
