@@ -163,6 +163,38 @@ func traceIfEnabled(enabled bool, children ...*Trace) *Trace {
 	return combineTrace(children...)
 }
 
+// evalItems evaluates array items or call arguments in order into vals
+// (len(vals) == len(items)). It stops at the first incomplete item and returns
+// that result with ok false. When tracing, the returned trace holds every
+// item's trace, with items after a stop marked pruned.
+func evalItems(ctx context.Context, input Input, opts Opts, items []Rule, vals []any) (trace *Trace, res Result, ok bool) {
+	tracing := traceEnabled(opts)
+	var traces []*Trace
+	if tracing {
+		traces = make([]*Trace, 0, len(items))
+	}
+	for i, item := range items {
+		res := item.Eval(ctx, input, opts)
+		if tracing {
+			traces = append(traces, res.Trace)
+		}
+		if !res.Ok() {
+			if tracing {
+				for _, rest := range items[i+1:] {
+					traces = append(traces, prunedTrace(rest))
+				}
+				res.Trace = combineTrace(traces...)
+			}
+			return nil, res, false
+		}
+		vals[i] = res.Value
+	}
+	if !tracing {
+		return nil, Result{}, true
+	}
+	return combineTrace(traces...), Result{}, true
+}
+
 func traceStatus(res Result) TraceStatus {
 	switch {
 	case res.Error != nil:

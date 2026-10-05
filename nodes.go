@@ -31,10 +31,12 @@ func (n *nodeAnd) Eval(ctx context.Context, input Input, opts Opts) Result {
 		return rright
 	}
 
-	// if only one node is not ok, return it
+	// if only one node is not ok, return it (keeping both operand traces)
 	if rleft.Ok() && !rright.Ok() {
+		rright.Trace = traceIfEnabled(tracing, rleft.Trace, rright.Trace)
 		return rright
 	} else if !rleft.Ok() && rright.Ok() {
+		rleft.Trace = traceIfEnabled(tracing, rleft.Trace, rright.Trace)
 		return rleft
 	}
 
@@ -86,10 +88,12 @@ func (n *nodeOr) Eval(ctx context.Context, input Input, opts Opts) Result {
 		return rright
 	}
 
-	// if only one node is not ok, return it
+	// if only one node is not ok, return it (keeping both operand traces)
 	if rleft.Ok() && !rright.Ok() {
+		rright.Trace = traceIfEnabled(tracing, rleft.Trace, rright.Trace)
 		return rright
 	} else if !rleft.Ok() && rright.Ok() {
+		rleft.Trace = traceIfEnabled(tracing, rleft.Trace, rright.Trace)
 		return rleft
 	}
 

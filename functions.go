@@ -49,15 +49,26 @@ func (f *FunctionValue) eval(fn *Function, ctx context.Context, input Input, opt
 		}
 	}
 
-	argMap := make(map[string]any, len(f.args.vals))
-	for i, arg := range f.args.vals {
-		res := arg.Eval(ctx, input, opts)
-		if !res.Ok() {
-			return res
-		}
-		argMap[fn.Args[i].Name] = res.Value
+	var buf [4]any
+	vals := buf[:0]
+	if len(f.args.vals) <= len(buf) {
+		vals = buf[:len(f.args.vals)]
+	} else {
+		vals = make([]any, len(f.args.vals))
 	}
-	return fn.Eval(argMap)
+	trace, res, ok := evalItems(ctx, input, opts, f.args.vals, vals)
+	if !ok {
+		return res
+	}
+	argMap := make(map[string]any, len(vals))
+	for i, v := range vals {
+		argMap[fn.Args[i].Name] = v
+	}
+	res = fn.Eval(argMap)
+	if trace != nil {
+		res.Trace = trace
+	}
+	return res
 }
 
 func (f *FunctionValue) String() string {

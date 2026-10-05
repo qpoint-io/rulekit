@@ -137,15 +137,13 @@ type ArrayValue struct {
 
 func (a *ArrayValue) Eval(ctx context.Context, input Input, opts Opts) Result {
 	vals := make([]any, len(a.vals))
-	for i, val := range a.vals {
-		res := val.Eval(ctx, input, opts)
-		if !res.Ok() {
-			return res
-		}
-		vals[i] = res.Value
+	trace, res, ok := evalItems(ctx, input, opts, a.vals, vals)
+	if !ok {
+		return res
 	}
 	return Result{
 		Value: vals,
+		Trace: trace,
 	}
 }
 
