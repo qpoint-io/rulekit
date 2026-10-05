@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // Input resolves rule paths against an evaluation input source.
@@ -36,12 +37,21 @@ func FromContextFunc(fn func(context.Context, []PathSegment) (any, bool, error))
 }
 
 func FromKV(kv KV) Input {
-	return &kvInput{kv: kv, memo: map[string]any{}}
+	return &kvInput{kv: kv, memo: map[string]*lazyEntry{}}
 }
 
+// kvInput may be shared by concurrent evals; mu guards memo, and each
+// lazyEntry guards its own resolution.
 type kvInput struct {
 	kv   KV
-	memo map[string]any
+	mu   sync.Mutex
+	memo map[string]*lazyEntry
+}
+
+type lazyEntry struct {
+	mu    sync.Mutex
+	done  bool
+	value any
 }
 
 func (k *kvInput) Get(ctx context.Context, path []PathSegment) (any, bool, error) {
@@ -92,32 +102,46 @@ func (k *kvInput) GetPath(ctx context.Context, path []pathSegment) (any, bool, e
 }
 
 func (k *kvInput) resolveLazy(ctx context.Context, path []pathSegment, value any) (any, error) {
+	// Plain values never touch the memo, so the common path stays lock-free.
+	switch value.(type) {
+	case LazyValue, LazyContextValue:
+	default:
+		return value, nil
+	}
+
+	// A kvInput may be shared by concurrent evals. The map lock is held only to
+	// find the per-path entry; the entry lock is held across the lazy call so
+	// each path resolves once and lazy funcs resolving other paths on the same
+	// input do not block on each other.
 	key := inputPathKey(path)
-	if resolved, ok := k.memo[key]; ok {
-		return resolved, nil
+	k.mu.Lock()
+	entry := k.memo[key]
+	if entry == nil {
+		entry = &lazyEntry{}
+		k.memo[key] = entry
+	}
+	k.mu.Unlock()
+
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+	if entry.done {
+		return entry.value, nil
 	}
 
 	var (
 		resolved any
 		err      error
-		lazy     bool
 	)
 	switch v := value.(type) {
 	case LazyValue:
 		resolved, err = v()
-		lazy = true
 	case LazyContextValue:
 		resolved, err = v(ctx)
-		lazy = true
-	default:
-		return value, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	if lazy {
-		k.memo[key] = resolved
-	}
+	entry.value, entry.done = resolved, true
 	return resolved, nil
 }
 
