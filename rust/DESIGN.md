@@ -395,11 +395,13 @@ struct HostArgs<'a> { host: &'a str, #[rulekit(rename = "port")] p: i64, rest: R
 pub trait Args: 'static { type Of<'a>; const PARAMS: &'static [Param];
                           fn parse<'a>(vals: &'a [Val<'a>]) -> Result<Self::Of<'a>, Error>; }
 pub trait Returns: 'static { type Of<'a>; const TYPE: &'static str; fn into_val(v: Self::Of<'_>) -> Val<'_>; }
-pub struct FuncSchema<A, R> { name: Cow<'static, str>, doc: Cow<'static, str>, .. }
+pub struct FuncSchema { pub name: &'static str, pub doc: &'static str }
+pub struct NoArgs;                       // Args for functions without arguments
 impl<C> Function<C> {
-    pub fn new<A: Args, R: Returns, F>(schema: FuncSchema<A, R>, f: F) -> Self
-    where F: for<'a, 's> Fn(&'a C, A::Of<'s>) -> Result<R::Of<'a>, FnError> + Send + Sync + 'static;
+    pub fn new<A: Args, R: Returns>(schema: FuncSchema,
+        f: impl for<'a, 's> Fn(&'a C, A::Of<'s>) -> Result<R::Of<'a>, FnError> + Send + Sync + 'static) -> Self;
 }
+// Function::new::<HostArgs, bool>(FuncSchema { name: "host_is", doc: "" }, |ctx, a| Ok(a.host == ctx.tenant))
 ```
 
 - Each field of the derived struct is one positional argument, in order; the name is the
@@ -408,13 +410,14 @@ impl<C> Function<C> {
   borrows the remaining arguments (variadic, no allocation). Enums, tuple structs, type
   parameters, more than one lifetime, and a misplaced `Rest` are compile errors
   (tests/ui).
-- The schema carries the argument and return types because a closure taking `HostArgs<'s>`
-  and returning `&'a str` (borrowed from the context) needs a higher-ranked signature that
-  Rust cannot infer from the closure alone; with the types in the schema, the closure needs
-  no annotations. Return types give the declared type statically (`"any"` only for
+- `Function::new::<A, R>` names the argument and return types (user decision) because a
+  closure taking `HostArgs<'s>` and returning `&'a str` (borrowed from the context) needs a
+  higher-ranked signature that Rust cannot infer from the closure alone; with A and R named,
+  the closure needs no annotations. Return types give the declared type statically (`"any"` only for
   `ValueRef`/`Val`/`Value`). Results may borrow the context (`'a`) but not the arguments
   (`'s`), which live only for the call.
-- Name and doc are `Cow<'static, str>`: literals cost nothing, run-time names are accepted.
+- `FuncSchema` is a plain struct of `&'static str` name and doc, so a struct literal works
+  with string literals (run-time names can be leaked once at registration).
 - `EnvBuilder::function(f)` takes the name from the schema; `build()` rejects duplicates,
   stdlib shadowing, and macro/function collisions.
 - Functions get their arguments and the context only, never the rule's input. Macros take

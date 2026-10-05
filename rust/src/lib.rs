@@ -83,7 +83,7 @@ pub use eval::EvalResult;
 pub use eval::trace::{Diagnostic, DiagnosticCode, Trace, TraceStatus};
 #[doc(hidden)]
 pub use func::__private;
-pub use func::{Args, FnError, FromArg, FuncSchema, Function, Param, Rest, Returns};
+pub use func::{Args, FnError, FromArg, FuncSchema, Function, NoArgs, Param, Rest, Returns};
 pub use input::{FnInput, Input, Kv, KvEntry, KvInput, Lazy, NoInput};
 pub use json_input::{JsonOptions, decode_json};
 pub use print::{Edit, PrintMode, format, rewrite};

@@ -126,8 +126,8 @@ struct ClampArgs {
     max: i64,
 }
 
-let clamp = Function::new(
-    FuncSchema::<ClampArgs, i64>::new("clamp", "The smaller of n and max."),
+let clamp = Function::new::<ClampArgs, i64>(
+    FuncSchema { name: "clamp", doc: "The smaller of n and max." },
     |_: &(), a| Ok(a.n.min(a.max)),
 );
 
@@ -147,10 +147,11 @@ field (`#[rulekit(rename = "...")]` to change it), of any `FromArg` type
 (`bool`, `i64`, `u64`, `f64`, `&str`, `&[u8]`, `Ip`, `Cidr`, `Mac`, `&Url`,
 `TextForm`, or `ValueRef` for any value). The struct may have one lifetime
 for borrowed arguments, and a last `Rest<'a>` field for the remaining
-arguments. The `FuncSchema` names the argument struct and the return type
+arguments; `NoArgs` is the argument type of a function without arguments.
+`Function::new::<A, R>` names the argument struct and the return type
 (`bool`, `i64`, `&str`, `String`, `Ip`, ..., or `ValueRef`/`Val` when the
 type is decided at run time), so the closure needs no annotations and may
-return data borrowed from the context.
+return data borrowed from the context. `FuncSchema` holds the name and doc.
 
 Wrong argument counts and types are errors. Functions receive the evaluation
 context and their arguments, not the rule's input. A function returns
@@ -218,7 +219,7 @@ assert_eq!(out, "c == 2   -- first check\nand b");
 | `LazyValue`, `LazyContextValue` | `Lazy` |
 | `DecodeJSON`, `JSONOptions` | `decode_json`, `JsonOptions` |
 | `MacroSet.Register` | `EnvBuilder::macro_source` |
-| `rulekit.Func` with an args struct | `Function::new(FuncSchema::<Args, R>::new(..), closure)` with `#[derive(rulekit::Args)]` |
+| `rulekit.Func` with an args struct | `Function::new::<A, R>(FuncSchema { name, doc }, closure)` with `#[derive(rulekit::Args)]` |
 | `Format`, `Rewrite`, `Edit` | `format`, `rewrite`, `Edit` |
 | `Source()`, `Compact()`, `Multiline(indent)` | `PrintMode::Source`, `Compact`, `Multiline(indent)` |
 

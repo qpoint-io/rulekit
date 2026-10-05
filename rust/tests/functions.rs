@@ -1,7 +1,7 @@
 //! Custom functions, macros, and environment validation.
 
 use rulekit::value::{Map, Value, ValueRef};
-use rulekit::{Env, Error, FnError, FuncSchema, Function, KvInput, NoInput, Opts, Rest};
+use rulekit::{Env, Error, FnError, FuncSchema, Function, KvInput, NoArgs, NoInput, Opts, Rest};
 
 fn input(entries: &[(&str, Value)]) -> KvInput {
     KvInput::from_values(
@@ -21,9 +21,6 @@ struct AddArgs {
 }
 
 #[derive(rulekit::Args)]
-struct NoArgs {}
-
-#[derive(rulekit::Args)]
 struct KeyArgs<'a> {
     key: &'a str,
 }
@@ -36,8 +33,11 @@ struct JoinArgs<'a> {
 
 #[test]
 fn typed_arguments_and_return() {
-    let add = Function::new(
-        FuncSchema::<AddArgs, i64>::new("add", "a + b"),
+    let add = Function::new::<AddArgs, i64>(
+        FuncSchema {
+            name: "add",
+            doc: "a + b",
+        },
         |_: &(), args| Ok(args.a + args.second),
     );
     assert_eq!(add.name(), "add");
@@ -85,8 +85,11 @@ fn typed_arguments_and_return() {
 
 #[test]
 fn borrowed_arguments_and_rest() {
-    let join = Function::new(
-        FuncSchema::<JoinArgs, String>::new("join", ""),
+    let join = Function::new::<JoinArgs, String>(
+        FuncSchema {
+            name: "join",
+            doc: "",
+        },
         |_: &(), a| {
             let parts: Vec<String> = a
                 .parts
@@ -123,8 +126,11 @@ fn functions_receive_the_context_and_may_return_borrows() {
     struct Ctx {
         tenant: String,
     }
-    let tenant = Function::new(
-        FuncSchema::<NoArgs, &str>::new("tenant", ""),
+    let tenant = Function::new::<NoArgs, &str>(
+        FuncSchema {
+            name: "tenant",
+            doc: "",
+        },
         |ctx: &Ctx, _| Ok(ctx.tenant.as_str()),
     );
     assert_eq!(tenant.returns(), "string");
@@ -138,8 +144,11 @@ fn functions_receive_the_context_and_may_return_borrows() {
 
 #[test]
 fn dynamic_return_types() {
-    let pick = Function::new(
-        FuncSchema::<KeyArgs, ValueRef>::new("pick", ""),
+    let pick = Function::new::<KeyArgs, ValueRef>(
+        FuncSchema {
+            name: "pick",
+            doc: "",
+        },
         |_: &(), a| {
             Ok(if a.key == "n" {
                 ValueRef::Int(1)
@@ -157,7 +166,7 @@ fn dynamic_return_types() {
 #[test]
 fn env_validation() {
     let named = |name: &'static str| {
-        Function::<()>::new(FuncSchema::<NoArgs, bool>::new(name, ""), |_, _| Ok(true))
+        Function::<()>::new::<NoArgs, bool>(FuncSchema { name, doc: "" }, |_, _| Ok(true))
     };
     assert!(
         Env::builder()
@@ -217,8 +226,11 @@ fn macros_expand_and_reject_arguments() {
 
 #[test]
 fn functions_can_report_missing_fields_and_errors() {
-    let lookup = Function::new(
-        FuncSchema::<KeyArgs, &str>::new("lookup", ""),
+    let lookup = Function::new::<KeyArgs, &str>(
+        FuncSchema {
+            name: "lookup",
+            doc: "",
+        },
         |_: &(), a| match a.key {
             "known" => Ok("value"),
             "absent" => Err(FnError::missing(["geo.country"])),

@@ -245,8 +245,11 @@ struct PrefixArgs<'a> {
 
 /// A custom function with borrowed `&str` arguments.
 fn has_prefix() -> Function {
-    Function::new(
-        FuncSchema::<PrefixArgs, bool>::new("has_prefix", ""),
+    Function::new::<PrefixArgs, bool>(
+        FuncSchema {
+            name: "has_prefix",
+            doc: "",
+        },
         |_: &(), a| Ok(a.value.starts_with(a.prefix)),
     )
 }

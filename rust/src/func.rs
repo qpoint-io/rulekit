@@ -2,13 +2,11 @@
 //!
 //! A function's arguments are a struct deriving [`Args`](crate::Args) (one
 //! field per positional argument) and its return type is any [`Returns`]
-//! type. Both are named in the [`FuncSchema`], so the implementation closure
+//! type. Both are named when the function is made (`Function::new::<A, R>`), so the implementation closure
 //! needs no type annotations and may borrow from the arguments and from the
 //! evaluation context.
 
-use std::borrow::Cow;
 use std::fmt;
-use std::marker::PhantomData;
 use std::sync::Arc;
 
 use crate::error::{BoxError, Error};
@@ -235,32 +233,34 @@ returns!(ValueRef<'static>, ValueRef<'a>, "any", |v| Val::Ref(v));
 returns!(Val<'static>, Val<'a>, "any", |v| v);
 returns!(Value, Value, "any", |v| Val::Owned(v));
 
-/// A function's name, documentation, and (as type parameters) its argument
-/// struct `A` and return type `R`:
+/// A function's name and documentation, for [`Function::new`].
 ///
 /// ```rust
-/// # #[derive(rulekit::Args)] struct HostArgs<'a> { host: &'a str }
 /// use rulekit::FuncSchema;
-/// let schema = FuncSchema::<HostArgs, bool>::new("is_internal", "Whether host is internal.");
+/// let schema = FuncSchema { name: "is_internal", doc: "Whether a host is internal." };
 /// ```
 ///
-/// The name and doc are `Cow<'static, str>`: string literals cost nothing,
-/// and names built at run time (for example from configuration) are
-/// accepted as `String`s.
-pub struct FuncSchema<A, R> {
-    name: Cow<'static, str>,
-    doc: Cow<'static, str>,
-    types: PhantomData<fn() -> (A, R)>,
+/// The fields are `&'static str` so a struct literal works with plain string
+/// literals; function sets are normally fixed at compile time. A name built at
+/// run time can be leaked once at registration (`String::leak`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct FuncSchema {
+    /// The name rules call the function by.
+    pub name: &'static str,
+    /// What the function does, for tools and documentation.
+    pub doc: &'static str,
 }
 
-impl<A: Args, R: Returns> FuncSchema<A, R> {
-    /// A schema for the function `name`.
-    pub fn new(name: impl Into<Cow<'static, str>>, doc: impl Into<Cow<'static, str>>) -> Self {
-        FuncSchema {
-            name: name.into(),
-            doc: doc.into(),
-            types: PhantomData,
-        }
+/// The arguments of a function that takes none.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct NoArgs;
+
+impl Args for NoArgs {
+    type Of<'a> = NoArgs;
+    const PARAMS: &'static [Param] = &[];
+    #[inline(always)]
+    fn parse<'a>(_: &'a [Val<'a>]) -> Result<NoArgs, Error> {
+        Ok(NoArgs)
     }
 }
 
@@ -333,7 +333,7 @@ type Callable<C> =
 /// Register them with [`EnvBuilder::function`](crate::EnvBuilder::function).
 ///
 /// ```rust
-/// use rulekit::{Env, FuncSchema, Function, NoInput, Opts};
+/// use rulekit::{Env, FuncSchema, Function, NoArgs, NoInput, Opts};
 ///
 /// struct Ctx {
 ///     tenant: String,
@@ -345,17 +345,15 @@ type Callable<C> =
 ///     max: i64,
 /// }
 ///
-/// #[derive(rulekit::Args)]
-/// struct NoArgs {}
-///
-/// let clamp = Function::new(
-///     FuncSchema::<ClampArgs, i64>::new("clamp", "The smaller of n and max."),
+/// let clamp = Function::new::<ClampArgs, i64>(
+///     FuncSchema { name: "clamp", doc: "The smaller of n and max." },
 ///     |_: &Ctx, a| Ok(a.n.min(a.max)),
 /// );
 /// // The result borrows from the context.
-/// let tenant = Function::new(FuncSchema::<NoArgs, &str>::new("tenant", ""), |ctx: &Ctx, _| {
-///     Ok(ctx.tenant.as_str())
-/// });
+/// let tenant = Function::new::<NoArgs, &str>(
+///     FuncSchema { name: "tenant", doc: "The tenant of the request." },
+///     |ctx: &Ctx, _| Ok(ctx.tenant.as_str()),
+/// );
 ///
 /// let env = Env::builder().function(clamp).function(tenant).build()?;
 /// let rule = rulekit::parse(r#"clamp(150, 100) == 100 and tenant() == "acme""#)?;
@@ -364,8 +362,8 @@ type Callable<C> =
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub struct Function<C: ?Sized = ()> {
-    name: Cow<'static, str>,
-    doc: Cow<'static, str>,
+    name: &'static str,
+    doc: &'static str,
     params: &'static [Param],
     returns: &'static str,
     call: Arc<Callable<C>>,
@@ -374,8 +372,8 @@ pub struct Function<C: ?Sized = ()> {
 impl<C: ?Sized> Clone for Function<C> {
     fn clone(&self) -> Self {
         Function {
-            name: self.name.clone(),
-            doc: self.doc.clone(),
+            name: self.name,
+            doc: self.doc,
             params: self.params,
             returns: self.returns,
             call: self.call.clone(),
@@ -394,33 +392,35 @@ impl<C: ?Sized> fmt::Debug for Function<C> {
 }
 
 impl<C: ?Sized + 'static> Function<C> {
-    /// A function with the schema's name, parameters (from `A`), and return
-    /// type (from `R`), implemented by `f`.
-    pub fn new<A, R, F>(schema: FuncSchema<A, R>, f: F) -> Self
-    where
-        A: Args,
-        R: Returns,
-        F: for<'a, 's> Fn(&'a C, A::Of<'s>) -> Result<R::Of<'a>, FnError> + Send + Sync + 'static,
-    {
+    /// A function named by `schema`, taking the arguments `A` (a struct
+    /// deriving [`Args`](crate::Args), or [`NoArgs`]) and returning `R`,
+    /// implemented by `f`: `Function::new::<A, R>(schema, |ctx, args| ...)`.
+    ///
+    /// The result may borrow from the context; argument values live only for
+    /// the call.
+    pub fn new<A: Args, R: Returns>(
+        schema: FuncSchema,
+        f: impl for<'a, 's> Fn(&'a C, A::Of<'s>) -> Result<R::Of<'a>, FnError> + Send + Sync + 'static,
+    ) -> Self {
         Function {
             name: schema.name,
             doc: schema.doc,
             params: A::PARAMS,
             returns: R::TYPE,
-            call: Arc::new(move |ctx, vals| invoke::<C, A, R, F>(&f, ctx, vals)),
+            call: Arc::new(move |ctx, vals| invoke::<C, A, R, _>(&f, ctx, vals)),
         }
     }
 }
 
 impl<C: ?Sized> Function<C> {
     /// The function name.
-    pub fn name(&self) -> &str {
-        &self.name
+    pub fn name(&self) -> &'static str {
+        self.name
     }
 
     /// The documentation.
-    pub fn doc(&self) -> &str {
-        &self.doc
+    pub fn doc(&self) -> &'static str {
+        self.doc
     }
 
     /// The parameters, in order.
@@ -435,13 +435,13 @@ impl<C: ?Sized> Function<C> {
 
     /// Check the argument count and run the function.
     pub(crate) fn call<'a>(&self, ctx: &'a C, vals: &[Val<'_>]) -> Result<Val<'a>, CallFailure> {
-        (self.call)(ctx, vals).map_err(|failure| failure.named(&self.name))
+        (self.call)(ctx, vals).map_err(|failure| failure.named(self.name))
     }
 
     /// Check an argument count against the parameters (Go: before the
     /// arguments are evaluated).
     pub(crate) fn check_arity(&self, got: usize) -> Result<(), Error> {
-        check_arity(&self.name, self.params, got)
+        check_arity(self.name, self.params, got)
     }
 }
 
