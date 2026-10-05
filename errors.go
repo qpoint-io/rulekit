@@ -1,7 +1,6 @@
 package rulekit
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/hashicorp/go-multierror"
@@ -43,8 +42,6 @@ func coalesceErrs(errs ...error) error {
 func coalesceMissingFields(left, right []string) []string {
 	return unionUnique(left, right)
 }
-
-var ErrInvalidOperation = errors.New("invalid operation")
 
 type ErrInvalidFunctionArg struct {
 	Name     string

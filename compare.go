@@ -21,10 +21,6 @@ type compareOutcome struct {
 	diagnostic compareDiagnostic
 }
 
-func compare(left any, op int, right any) (ret bool) {
-	return compareDetailed(left, op, right).pass
-}
-
 func compareDetailed(left any, op int, right any) compareOutcome {
 	// any ? []any
 	//      -> run the comparison for each element in the right array.
@@ -248,12 +244,6 @@ func diagnosticType(value any) string {
 		return "object"
 	}
 	return "unknown"
-}
-
-func compareSlice[T any](slice []T, op int, fn func(el T, op int) bool) bool {
-	return compareSliceDetailed(slice, op, func(el T, op int) compareOutcome {
-		return comparePass(fn(el, op))
-	}).pass
 }
 
 func compareSliceDetailed[T any](slice []T, op int, fn func(el T, op int) compareOutcome) compareOutcome {

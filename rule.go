@@ -6,8 +6,6 @@
 // https://github.com/qpoint-io/rulekit#readme
 package rulekit
 
-//go:generate bash gen.sh
-
 import (
 	"context"
 	"fmt"
@@ -161,10 +159,6 @@ func (r Result) Fail() bool {
 	return r.Complete() && isZero(r.Value)
 }
 
-func (r Result) incomplete() bool {
-	return r.Error != nil || len(r.MissingFields) > 0
-}
-
 type ParseError struct {
 	Line       int
 	Column     int
@@ -190,39 +184,7 @@ func (e *ParseError) Error() string {
 	}
 
 	if e.Message != "" {
-		replacer := strings.NewReplacer(
-			"token_ERROR", `symbol`,
-			"token_LPAREN", `"("`,
-			"token_RPAREN", `")"`,
-			"op_NOT", `"!"`,
-			"op_AND", `"&&"`,
-			"op_OR", `"||"`,
-			"op_EQ", `"=="`,
-			"op_NE", `"!="`,
-			"op_GT", `">"`,
-			"op_GE", `">="`,
-			"op_LT", `"<"`,
-			"op_LE", `"<="`,
-			"op_CONTAINS", `"contains"`,
-			"op_MATCHES", `"=~"`,
-			"token_INT", `"integer"`,
-			"token_FLOAT", `"float"`,
-			"token_BOOL", `"boolean"`,
-			"token_IP_CIDR", `"cidr"`,
-			"token_IP", `"ip"`,
-			"token_REGEX", `"regex"`,
-			"token_FIELD", `"field name"`,
-			"token_STRING", `"string"`,
-			"token_HEX_STRING", `"hex"`,
-			"token_ARRAY", `"array"`,
-			"token_LBRACKET", `"["`,
-			"token_RBRACKET", `"]"`,
-			"token_DOT", `"."`,
-			"token_LPAREN", `"("`,
-			"token_RPAREN", `")"`,
-			"token_FUNCTION", `"function or field identifier"`,
-		)
-		result += "\n" + replacer.Replace(e.Message)
+		result += "\n" + e.Message
 	}
 
 	if e.Suggestion != "" {

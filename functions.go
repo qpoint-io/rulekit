@@ -78,15 +78,6 @@ func newFunctionValue(fn string, args []Rule) *FunctionValue {
 	}
 }
 
-func (f *FunctionValue) ValidateStdlibFnArgs() error {
-	if stdlibFn, ok := StdlibFuncs[f.fn]; ok {
-		if len(stdlibFn.Args) != len(f.args.vals) {
-			return fmt.Errorf("function %q expects %d arguments, got %d", f.fn, len(stdlibFn.Args), len(f.args.vals))
-		}
-	}
-	return nil
-}
-
 type Function struct {
 	// Args is an optional list of arguments that the function expects.
 	// If set, rulekit will ensure validity of the arguments and pass them as a named map to the Eval function.

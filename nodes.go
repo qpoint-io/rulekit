@@ -215,10 +215,6 @@ func (n *nodeMatch) apply(lv any, rv any) bool {
 	return false
 }
 
-func (n *nodeMatch) FieldName() string {
-	return n.lv.String()
-}
-
 func (n *nodeMatch) String() string {
 	return n.lv.String() + " =~ " + n.rv.String()
 }

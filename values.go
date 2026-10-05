@@ -100,17 +100,6 @@ func (p *PathValue) Print(PrintMode) string {
 	return p.String()
 }
 
-func asPathValue(r Rule) (*PathValue, bool) {
-	switch v := r.(type) {
-	case FieldValue:
-		return &PathValue{segments: fieldPathSegments(string(v))}, true
-	case *PathValue:
-		return v, true
-	default:
-		return nil, false
-	}
-}
-
 func fieldPathSegments(path string) []pathSegment {
 	parts := strings.Split(path, ".")
 	segments := make([]pathSegment, 0, len(parts))

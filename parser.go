@@ -44,14 +44,6 @@ const (
 	op_IN
 )
 
-func init() {
-	SetErrorVerbose(true)
-}
-
-// SetErrorVerbose is retained for API compatibility. The hand-written parser
-// always returns verbose ParseError values.
-func SetErrorVerbose(bool) {}
-
 func operatorToString(op int) string {
 	switch op {
 	case op_EQ:
