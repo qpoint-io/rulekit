@@ -86,7 +86,7 @@ type ctx struct {
 	Input     Input
 	KV        KV
 	Macros    MacroSet
-	Functions map[string]*Function
+	Functions FunctionSet
 	Trace     bool
 }
 

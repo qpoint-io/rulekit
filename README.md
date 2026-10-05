@@ -350,48 +350,55 @@ Rulekit comes with a built-in standard library of functions:
 
 ### Custom Functions
 
-Custom functions may be used to extend Rulekit with additional functionality. Note that functions only have access to their arguments and do not have access to the context KV map. Rulekit will validate the function's arguments per the provided spec before executing the handler.
+Define a custom function with `rulekit.Func`: an argument struct whose fields are the parameters, in call order, and a handler that receives the evaluation context and the arguments.
 
 ```go
-// define a custom function
-customFuncs := map[string]*rulekit.Function{
-    "randomInt": {
-        Args: []rulekit.FunctionArg{
-            {Name: "min"},
-            {Name: "max"},
-        },
-        Eval: func(args map[string]any) rulekit.Result {
-            // use the rulekit.IndexFuncArg helper to retrieve args and validate types.
-            // rulekit.IndexFuncArg[any] will skip type validation.
-            min, err := rulekit.IndexFuncArg[int64](args, "min")
-            if err != nil {
-                return rulekit.Result{Error: err}
-            }
-
-            max, err := rulekit.IndexFuncArg[int64](args, "max")
-            if err != nil {
-                return rulekit.Result{Error: err}
-            }
-
-            num := rand.Int64N(max-min) + min
-            return rulekit.Result{
-                Value: num,
-            }
-        },
-    },
+type clampArgs struct {
+    N   int64
+    Max int64 `rulekit:"limit"` // parameter name; default is the field name in snake_case ("max")
 }
 
-// call the function in a rule
-rule, err := rulekit.Parse(`randomInt(10, 20) == 15`)
+// Package-level, so a bad definition panics at startup.
+var clamp = rulekit.Func(rulekit.FuncSchema{Name: "clamp", Doc: "Clamp n to limit."},
+    func(ctx context.Context, a clampArgs) (int64, error) {
+        return min(a.N, a.Max), nil
+    })
+
+var functions = rulekit.NewFunctionSet(clamp)
+
+rule, err := rulekit.Parse(`clamp(request.size, 1024) == 1024`)
 if err != nil { /* ... */ }
 
-result := rule.Eval(context.Background(), nil, rulekit.Opts{Functions: customFuncs})
-if result.Error != nil { /* ... */ }
-
-if result.Pass() {
-    // the random number is 15!
-}
+result := rule.Eval(ctx, input, rulekit.Opts{Functions: functions})
 ```
+
+Parameter (field) and result types, and the rule values they accept:
+
+| Go type            | Rule value                                    |
+| ------------------ | --------------------------------------------- |
+| `bool`             | bool                                          |
+| `int64`            | int64                                         |
+| `uint64`           | uint64                                        |
+| `float64`          | float64                                       |
+| `string`           | string                                        |
+| `[]byte`           | bytes                                         |
+| `net.IP`           | ip                                            |
+| `*net.IPNet`       | cidr                                          |
+| `net.HardwareAddr` | mac                                           |
+| `rulekit.URL`      | url                                           |
+| `*regexp.Regexp`   | regex                                         |
+| `[]any`            | array                                         |
+| `map[string]any`   | object                                        |
+| `any`              | any value, unconverted                        |
+
+Conversions are exact: an `int64` parameter does not accept a `uint64` or `float64` argument. The last field may have type `rulekit.Rest` to accept any number of further arguments, unconverted.
+
+- An argument of the wrong type, or the wrong number of arguments, makes the result an error (`*rulekit.ErrInvalidFunctionArg` for a type), without calling the handler.
+- If an argument is missing from the input, the result is unknown and the handler is not called.
+- A handler error makes the result an error wrapping it. Return `rulekit.ErrMissing("field", ...)` instead to make the result unknown with those missing fields.
+- `rulekit.Func` panics on an argument struct or result type it does not support, like `regexp.MustCompile`.
+
+Functions receive only their arguments and the context passed to `Eval`, not the rule input: pass input values as arguments. Macros see the input but take no arguments.
 
 ## License
 

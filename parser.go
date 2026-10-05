@@ -913,9 +913,10 @@ func (p *parser) parseFunction(name token) (astNode, error) {
 	if err != nil {
 		return nil, err
 	}
-	if stdlibFn, ok := StdlibFuncs[name.raw]; ok && len(stdlibFn.Args) != len(args) {
-		err := fmt.Errorf("function %q expects %d arguments, got %d", name.raw, len(stdlibFn.Args), len(args))
-		return nil, p.errorf(token{start: end.end, end: end.end}, "%s", err.Error())
+	if stdlibFn, ok := StdlibFuncs[name.raw]; ok {
+		if err := stdlibFn.checkArity(len(args)); err != nil {
+			return nil, p.errorf(token{start: end.end, end: end.end}, "%s", err.Error())
+		}
 	}
 	return &astCall{span: astSpan{Start: name.start, End: end.end}, name: name.raw, args: args}, nil
 }

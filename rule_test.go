@@ -152,6 +152,11 @@ func BenchmarkEval(b *testing.B) {
 			ctx:  kv{"path": "/api/v1"},
 		},
 		{
+			name: "custom_function",
+			expr: `clamp(n, 100) == 100`,
+			ctx:  &ctx{KV: KV{"n": int64(150)}, Functions: NewFunctionSet(testClamp)},
+		},
+		{
 			name: "macro",
 			expr: `is_internal() and user != "root"`,
 			ctx: &ctx{
@@ -308,42 +313,6 @@ func TestFunctionErrorMessages(t *testing.T) {
 	}
 }
 
-func TestCustomFunction(t *testing.T) {
-	fns := map[string]*Function{
-		"custom_func": {
-			Args: []FunctionArg{
-				{Name: "msg"},
-			},
-			Eval: func(args map[string]any) Result {
-				msg, err := IndexFuncArg[string](args, "msg")
-				if err != nil {
-					return Result{Error: err}
-				}
-				return Result{Value: "Got msg: " + msg}
-			},
-		},
-	}
-
-	assertRulep(t, `custom_func("test")`, &ctx{
-		Functions: fns,
-	}).Ok().Value(`Got msg: test`)
-	assertRulep(t, `custom_func(1.2.3.4)`, &ctx{
-		Functions: fns,
-	}).ErrorString(`arg msg: expected string, got net.IP`)
-	assertRulep(t, `custom_func()`, &ctx{
-		Functions: fns,
-	}).ErrorString(`function "custom_func" expects 1 arguments, got 0`)
-	assertRulep(t, `custom_func(1, 2)`, &ctx{
-		Functions: fns,
-	}).ErrorString(`function "custom_func" expects 1 arguments, got 2`)
-
-	// mix & match functions, macros, stdlib functions
-	assertRulep(t, `starts_with(macro(), "Got msg")`, &ctx{
-		Functions: fns,
-		Macros:    mustMacroSet(t, map[string]string{"macro": `custom_func("test")`}),
-	}).Pass()
-}
-
 func TestOpts_Validate(t *testing.T) {
 	tcs := []struct {
 		name string
@@ -353,16 +322,28 @@ func TestOpts_Validate(t *testing.T) {
 		{
 			name: "happy path",
 			opts: Opts{
-				Macros: mustMacroSet(t, map[string]string{"dst_k8s_svc": `true`}),
-				Functions: map[string]*Function{
-					"custom_func": {},
-				},
+				Macros:    mustMacroSet(t, map[string]string{"dst_k8s_svc": `true`}),
+				Functions: NewFunctionSet(testFunc("custom_func")),
 			},
+		},
+		{
+			name: "function not defined with Func",
+			opts: Opts{
+				Functions: FunctionSet{"custom_func": {Name: "custom_func"}},
+			},
+			err: `function "custom_func": must be defined with rulekit.Func`,
+		},
+		{
+			name: "function registered under another name",
+			opts: Opts{
+				Functions: FunctionSet{"other": testFunc("custom_func")},
+			},
+			err: `function "other": registered under another name than its own, "custom_func"`,
 		},
 		{
 			name: "nil func",
 			opts: Opts{
-				Functions: map[string]*Function{
+				Functions: FunctionSet{
 					"custom_func": nil,
 				},
 			},
@@ -380,10 +361,8 @@ func TestOpts_Validate(t *testing.T) {
 		{
 			name: "macro name conflicts with function",
 			opts: Opts{
-				Macros: mustMacroSet(t, map[string]string{"custom_func": `true`}),
-				Functions: map[string]*Function{
-					"custom_func": {},
-				},
+				Macros:    mustMacroSet(t, map[string]string{"custom_func": `true`}),
+				Functions: NewFunctionSet(testFunc("custom_func")),
 			},
 			err: `macro "custom_func": name conflicts with a custom function`,
 		},
@@ -397,9 +376,7 @@ func TestOpts_Validate(t *testing.T) {
 		{
 			name: "custom function name conflicts with stdlib function",
 			opts: Opts{
-				Functions: map[string]*Function{
-					"starts_with": {},
-				},
+				Functions: NewFunctionSet(testFunc("starts_with")),
 			},
 			err: `function "starts_with": name conflicts with a stdlib function`,
 		},

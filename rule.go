@@ -32,9 +32,11 @@ func MustParse(str string) Rule {
 type KV = map[string]any
 
 type Opts struct {
-	Trace     bool
-	Macros    MacroSet
-	Functions map[string]*Function
+	Trace  bool
+	Macros MacroSet
+	// Functions are custom functions, keyed by their names. Build the set
+	// with NewFunctionSet.
+	Functions FunctionSet
 }
 
 func (o Opts) Validate() error {
@@ -44,6 +46,12 @@ func (o Opts) Validate() error {
 		}
 		if fn == nil {
 			return fmt.Errorf("function %q: must not be nil", name)
+		}
+		if fn.call == nil {
+			return fmt.Errorf("function %q: must be defined with rulekit.Func", name)
+		}
+		if fn.Name != name {
+			return fmt.Errorf("function %q: registered under another name than its own, %q", name, fn.Name)
 		}
 	}
 	for name, macro := range o.Macros {
