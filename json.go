@@ -223,7 +223,11 @@ func decodeScalarValue(typ string, value any, encoding string) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		return net.ParseMAC(s)
+		mac, ok := parseMAC(s)
+		if !ok {
+			return nil, fmt.Errorf("invalid mac %q", s)
+		}
+		return mac, nil
 	case "url":
 		s, err := stringScalar(value)
 		if err != nil {

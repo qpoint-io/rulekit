@@ -150,6 +150,11 @@
     {"name": "hex literal on the left equals bytes input", "expr": "ab:cd == x", "input": {"x.$hex": "abcd"}, "expect": {"value": true}},
     {"name": "hex literal on the left equals string", "expr": "x\"504f\" == s", "input": {"s": "PO"}, "expect": {"value": true}},
     {"name": "hex literal on the left equals mac", "expr": "00:1a:2b:3c:4d:5e == mac", "input": {"mac.$mac": "00:1a:2b:3c:4d:5e"}, "expect": {"value": true}},
+    {"name": "string field equals quoted MAC text", "expr": "s == \"aa:bb:cc:dd:ee:ff\"", "input": {"s": "aa:bb:cc:dd:ee:ff"}, "expect": {"value": true}},
+    {"name": "twelve bare hex digits in quotes stay a string", "expr": "s == \"123456789012\"", "input": {"s": "123456789012"}, "expect": {"value": true}},
+    {"name": "mixed MAC separators stay a string", "expr": "s == \"aa:bb-cc:dd:ee:ff\"", "input": {"s": "aa:bb-cc:dd:ee:ff"}, "expect": {"value": true}},
+    {"name": "five MAC groups stay a string", "expr": "s == \"aa:bb:cc:dd:ee\"", "input": {"s": "aa:bb:cc:dd:ee"}, "expect": {"value": true}},
+    {"name": "quoted dotted 8-byte MAC is a MAC", "expr": "mac == \"0123.4567.89ab.cdef\"", "input": {"mac.$mac": "01:23:45:67:89:ab:cd:ef"}, "expect": {"value": true}},
     {
       "name": "quoted plain value is a string",
       "expr": "s == \"just a string\"",

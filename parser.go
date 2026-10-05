@@ -92,7 +92,7 @@ func parseString[T interface{ string | []byte }](data T) (any, error) {
 		return ip, nil
 	} else if _, ipnet, err := net.ParseCIDR(str); err == nil {
 		return ipnet, nil
-	} else if mac, err := net.ParseMAC(str); err == nil && (len(mac) == 6 || len(mac) == 8) {
+	} else if mac, ok := parseMAC(str); ok {
 		return mac, nil
 	}
 	if u, ok := parseAbsoluteURL(str); ok {
