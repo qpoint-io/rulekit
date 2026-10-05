@@ -10,10 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func init() {
-	// SetErrorVerbose(true)
-}
-
 func TestEngineExample(t *testing.T) {
 	filter, err := Parse(`
 		tags == 'db-svc'
@@ -415,36 +411,6 @@ func TestFilterParseBool(t *testing.T) {
 	_, err := Parse("f_bool.1 == true or f_bool.2 != false")
 	if err != nil {
 		t.Error(err)
-	}
-}
-
-func TestFilterOperationFieldTypes(t *testing.T) {
-	// want error
-	for _, s := range []string{
-		"f == 123",
-		"f == 123",
-		"f == 123",
-		"f == 123",
-		"f == 123",
-	} {
-		_, err := Parse(s)
-		if err != nil {
-			t.Errorf("expected error for %s", s)
-		}
-	}
-
-	// want no error
-	for _, s := range []string{
-		"f == 123",
-		"f == 123",
-		"f == 123",
-		"f == 123",
-		"f == 123",
-	} {
-		_, err := Parse(s)
-		if err != nil {
-			t.Errorf("unexpected error for %s", s)
-		}
 	}
 }
 
@@ -977,45 +943,6 @@ func TestSpecialBooleanFields(t *testing.T) {
 		})
 	}
 }
-
-// func TestEvaluatedRule(t *testing.T) {
-// 	rule := MustParse(`user == "root" or (dst.protocol == "mysql" and dst.port == 3306)`)
-// 	// happy path
-// 	assertRule(t, rule, kv{"user": "root"}).
-// 		Ok().
-// 		Pass().
-// 		EvaluatedRule(`user == "root"`)
-// 	assertRule(t, rule, kv{"user": "test", "dst": KV{"protocol": "mysql", "port": 3306}}).
-// 		Ok().
-// 		Pass().
-// 		EvaluatedRule(`dst.protocol == "mysql" and dst.port == 3306`)
-// 	assertRule(t, rule, kv{"user": "test", "dst": KV{"protocol": "mysql", "port": 123}}).
-// 		Ok().
-// 		Fail().
-// 		EvaluatedRule(`user == "root" or dst.port == 3306`)
-//
-// 	// In the case of missing fields, EvaluatedRule should return an optimized rule that
-// 	// allows us to progressively build up the rule's result.
-// 	res1 := assertRule(t, rule, kv{}).
-// 		MissingFields("user", "dst.protocol", "dst.port").
-// 		Value(nil).
-// 		EvaluatedRule(`user == "root" or (dst.protocol == "mysql" and dst.port == 3306)`).
-// 		GetResult()
-//
-// 	res2 := assertRule(t, res1.EvaluatedRule, kv{"dst": KV{"protocol": "mysql"}}).
-// 		MissingFields("user", "dst.port").
-// 		Value(nil).
-// 		// we've only supplied dst.protocol, so the rule should be optimized
-// 		EvaluatedRule(`user == "root" or dst.port == 3306`).
-// 		GetResult()
-//
-// 	// dst.protocol should be "carried over" from the previous eval
-// 	assertRule(t, res2.EvaluatedRule, kv{"dst": KV{"port": 3306}}).
-// 		Ok().
-// 		// we have passed enough data for the and statement to pass
-// 		Pass().
-// 		EvaluatedRule(`dst.port == 3306`)
-// }
 
 func TestStringAutomaticCasting(t *testing.T) {
 	tests := []struct {
