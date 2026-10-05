@@ -9,6 +9,7 @@ repository = "https://github.com/qpoint-io/rulekit"
 include = ["src/**", "Cargo.toml"]
 
 [dependencies]
+fluent-uri = "0.4.1"
 foldhash = "0.2"
 ipnet = "2.12.2"
 regex = "1"
