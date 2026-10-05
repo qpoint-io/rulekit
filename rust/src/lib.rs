@@ -66,6 +66,7 @@ mod func;
 mod input;
 mod input_value;
 mod json_input;
+mod kv;
 mod lex;
 mod literal;
 mod parse;
@@ -88,6 +89,7 @@ pub use func::{Args, FnError, FromArg, FuncSchema, Function, NoArgs, Param, Rest
 pub use input::{FnInput, Input, Kv, KvEntry, KvInput, Lazy, NoInput};
 pub use input_value::InputValue;
 pub use json_input::{JsonOptions, decode_json};
+pub use kv::{KvEnd, KvList, LazyVal, lazy};
 pub use print::{Edit, PrintMode, format, rewrite};
 /// Derive [`Args`](trait@Args) for a struct of function arguments. See the
 /// trait for the rules.

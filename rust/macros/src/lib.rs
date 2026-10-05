@@ -277,14 +277,8 @@ fn expand_input(input: &DeriveInput) -> Result<TokenStream2, Error> {
         });
     }
 
-    let ctx = ctx_param(&input.generics);
-    let params = &input.generics.params;
-    let impl_params = if params.is_empty() {
-        quote!(#ctx: ?Sized)
-    } else {
-        quote!(#params, #ctx: ?Sized)
-    };
-    let (_, ty_generics, _) = input.generics.split_for_impl();
+    let ctx = context_ty(input)?;
+    let (impl_generics, ty_generics, _) = input.generics.split_for_impl();
 
     let arms = parsed.iter().map(|f| {
         let (name, ident, ty) = (&f.name, &f.ident, &f.ty);
@@ -315,7 +309,7 @@ fn expand_input(input: &DeriveInput) -> Result<TokenStream2, Error> {
 
     let bounds = &bounds;
     Ok(quote! {
-        impl<#impl_params> ::rulekit::Input<#ctx> for #ident #ty_generics
+        impl #impl_generics ::rulekit::Input<#ctx> for #ident #ty_generics
         where
             #orig_where
             #(#bounds,)*
@@ -347,7 +341,7 @@ fn expand_input(input: &DeriveInput) -> Result<TokenStream2, Error> {
             }
         }
 
-        impl<#impl_params> ::rulekit::InputValue<#ctx> for #ident #ty_generics
+        impl #impl_generics ::rulekit::InputValue<#ctx> for #ident #ty_generics
         where
             #orig_where
             #(#bounds,)*
@@ -366,13 +360,23 @@ fn expand_input(input: &DeriveInput) -> Result<TokenStream2, Error> {
     })
 }
 
-fn ctx_param(generics: &syn::Generics) -> syn::Ident {
-    let name = if generics.type_params().any(|p| p.ident == "C") {
-        "__C"
-    } else {
-        "C"
-    };
-    syn::Ident::new(name, Span::call_site())
+fn context_ty(input: &DeriveInput) -> Result<Type, Error> {
+    let mut ctx = None;
+    for attr in &input.attrs {
+        if !attr.path().is_ident("rulekit") {
+            continue;
+        }
+        attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("context") {
+                ctx = Some(meta.value()?.parse()?);
+                Ok(())
+            } else {
+                Err(meta
+                    .error("unknown `rulekit` attribute; expected `context = ...` on the struct"))
+            }
+        })?;
+    }
+    Ok(ctx.unwrap_or_else(|| syn::parse_quote!(())))
 }
 
 fn mentions_type_param(ty: &Type, params: &[String]) -> bool {
