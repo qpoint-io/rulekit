@@ -25,6 +25,8 @@ func stringable(value any) (string, bool) {
 		return macText(v), true
 	case *url.URL:
 		return urlText(v), true
+	case URL:
+		return v.text, true
 	}
 	return "", false
 }

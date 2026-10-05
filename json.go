@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/url"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -300,7 +299,7 @@ func decodeScalarValue(typ string, value any, encoding string) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		return url.Parse(s)
+		return ParseURL(s)
 	case "bytes":
 		return decodeBytes(value, encoding)
 	case "hex":

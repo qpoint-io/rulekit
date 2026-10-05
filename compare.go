@@ -124,7 +124,11 @@ func compareDetailed(left any, op int, right any) compareOutcome {
 
 	case *url.URL:
 		// url ? any
-		return compareURL(lv, op, right)
+		return compareURL(urlText(lv), op, right)
+
+	case URL:
+		// url ? any
+		return compareURL(lv.text, op, right)
 
 	case []byte:
 		// bytes ? any
@@ -247,7 +251,7 @@ func diagnosticType(value any) string {
 		return "cidr"
 	case net.HardwareAddr:
 		return "mac"
-	case *url.URL:
+	case *url.URL, URL:
 		return "url"
 	case *regexp.Regexp:
 		return "regex"

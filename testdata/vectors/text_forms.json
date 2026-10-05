@@ -27,6 +27,26 @@
     {"name": "url: ipv6 host keeps brackets", "expr": "v == \"http://[::1]:80/p\"", "input": {"v.$url": "http://[::1]:80/p"}, "expect": {"value": true}},
     {"name": "url: user info is kept", "expr": "v == \"http://user:pw@h\"", "input": {"v.$url": "http://user:pw@h"}, "expect": {"value": true}},
     {"name": "url: opaque", "expr": "v == \"mailto:a@b.com\"", "input": {"v.$url": "mailto:a@b.com"}, "expect": {"value": true}},
-    {"name": "url: characters not allowed in a path are percent-encoded", "expr": "v == \"http://h/a%20b\"", "input": {"v.$url": "http://h/a b"}, "expect": {"value": true}}
+    {"name": "url rejected: space in the path", "input": {"v.$url": "http://h/a b"}, "expect": {"decode_error": true}},
+    {"name": "url rejected: non-ASCII in the path", "input": {"v.$url": "http://h/é"}, "expect": {"decode_error": true}},
+    {"name": "url rejected: braces in the path", "input": {"v.$url": "http://h/{x}"}, "expect": {"decode_error": true}},
+    {"name": "url rejected: backslash", "input": {"v.$url": "http:\\\\h"}, "expect": {"decode_error": true}},
+    {"name": "url rejected: space in the query", "input": {"v.$url": "http://h?a b"}, "expect": {"decode_error": true}},
+    {"name": "url rejected: invalid percent escape in the query", "input": {"v.$url": "http://h/?c=%zz"}, "expect": {"decode_error": true}},
+    {"name": "url rejected: space in the fragment", "input": {"v.$url": "http://h#a b"}, "expect": {"decode_error": true}},
+    {"name": "url rejected: second # in the fragment", "input": {"v.$url": "http://h#a#b"}, "expect": {"decode_error": true}},
+    {"name": "url rejected: invalid percent escape in an opaque URL", "input": {"v.$url": "mailto:%zz"}, "expect": {"decode_error": true}},
+    {"name": "url rejected: non-ASCII host", "input": {"v.$url": "http://é/"}, "expect": {"decode_error": true}},
+    {"name": "url rejected: percent escape in the host", "input": {"v.$url": "http://Ex%41mple.com/"}, "expect": {"decode_error": true}},
+    {"name": "url rejected: two @ in the authority", "input": {"v.$url": "http://a@b@c/"}, "expect": {"decode_error": true}},
+    {"name": "url rejected: IPv6 zone", "input": {"v.$url": "http://[fe80::1%25en0]/"}, "expect": {"decode_error": true}},
+    {"name": "url rejected: IPvFuture literal", "input": {"v.$url": "http://[v1.x]/"}, "expect": {"decode_error": true}},
+    {"name": "url rejected: two colons in the host", "input": {"v.$url": "foo://h:80:80/"}, "expect": {"decode_error": true}},
+    {"name": "url rejected: colon in the first segment of a relative URL", "input": {"v.$url": "1a:b/c"}, "expect": {"decode_error": true}},
+    {"name": "url: an empty fragment is kept", "expr": "v == \"http://h#\"", "input": {"v.$url": "http://h#"}, "expect": {"value": true}},
+    {"name": "url: an empty authority is kept", "expr": "v == \"http://\"", "input": {"v.$url": "http://"}, "expect": {"value": true}},
+    {"name": "url: userinfo is kept as written", "expr": "v == \"http://user:p:w@h/\"", "input": {"v.$url": "http://user:p:w@H/"}, "expect": {"value": true}},
+    {"name": "url: percent escapes are kept as written", "expr": "v == \"http://h/a%7e?q=%41#%2F\"", "input": {"v.$url": "http://h/a%7e?q=%41#%2F"}, "expect": {"value": true}},
+    {"name": "url: relative reference", "expr": "v == \"/a/b?c\"", "input": {"v.$url": "/a/b?c"}, "expect": {"value": true}}
   ]
 }

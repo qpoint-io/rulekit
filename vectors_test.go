@@ -441,6 +441,8 @@ func canonicalVectorValue(v any) (any, error) {
 		return typedVectorNode("mac", v.String()), nil
 	case *url.URL:
 		return typedVectorNode("url", v.String()), nil
+	case URL:
+		return typedVectorNode("url", v.String()), nil
 	case []byte:
 		return map[string]any{"$type": "bytes", "encoding": "hex", "value": hex.EncodeToString(v)}, nil
 	case HexString:

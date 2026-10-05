@@ -5,14 +5,16 @@ import (
 	"regexp"
 )
 
-func compareURL(left *url.URL, op int, right any) compareOutcome {
+// compareURL compares a URL by its text form: with another URL, or with a
+// string, regex, or query.
+func compareURL(left string, op int, right any) compareOutcome {
 	switch right := right.(type) {
 	case *url.URL:
-		// url ? url
-		return compareStringString(urlText(left), op, urlText(right))
+		return compareStringString(left, op, urlText(right))
+	case URL:
+		return compareStringString(left, op, right.text)
 	case string, *regexp.Regexp, urlQuery:
-		// url ? string: compare the URL's text form
-		return compareString(urlText(left), op, right)
+		return compareString(left, op, right)
 	}
 	return incomparable()
 }

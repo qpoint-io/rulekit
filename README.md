@@ -115,7 +115,7 @@ The Result also provides additional helper methods:
 | **CIDR**               | VALUE        | `192.168.1.0/24`, `2001:db8:3333:4444:cccc:dddd:eeee:ffff/64`  | An IPv4 or IPv6 CIDR block. Maps to Go type: `*net.IPNet`                                                                                                                               |
 | **MAC address**        | FIELD        | `01:23:45:67:89:ab`                                            | A MAC address from the input. Compares as bytes with hexadecimal values such as `01:23:45:67:89:ab`, and with strings by its lowercase colon text. Maps to Go type: `net.HardwareAddr` |
 | **Hexadecimal string** | VALUE, FIELD | `50:4f:53:54`, `x"504f5354"`, `x"0a"`                          | Bytes, written either as two or more colon-separated hex pairs or as hex digits in `x"..."` (`X` and single quotes also work). Equals a string with the same bytes (`x"504f5354" == "POST"`) or a MAC address with the same value. Eight colon-separated pairs read as an IPv6 address; use `x"..."` for 8-byte values. |
-| **URL**                | FIELD        |                                                                | A URL from the input. Compares with strings by its text. Maps to Go type: `*url.URL`                                                                                                    |
+| **URL**                | FIELD        |                                                                | A URL from the input: an RFC 3986 URL in ASCII (see Text Forms). Compares with strings by its text. Maps to Go type: `rulekit.URL` (build one with `rulekit.ParseURL`). A `*url.URL` also works, compared by its `String()` form with a lowercase host                                                                                                    |
 | **Regex**              | VALUE        | `/example\.com$/`, `/curl/i`, `\|a/b\|`                        | A regular expression in [RE2 syntax](https://github.com/google/re2/wiki/Syntax), surrounded by forward slashes or by `\|` (handy when the pattern contains `/`). May not be quoted with double quotes (otherwise it will be parsed as a string). Lowercase flags may follow the closing delimiter: `i` (ignore case), `m` (`^` and `$` match at line breaks), `s` (`.` matches newlines). `\d`, `\w`, and `\b` match ASCII only, and `\s` matches space, `\t`, `\n`, `\f`, and `\r`. Repetition counts go up to 1000. Not supported: `\Q...\E`, `\<` and `\>`, numeric escapes such as `\0` (use `\x{...}`), `{,n}` (use `{0,n}`), a `{` that does not start a repetition (use `\{`), `\p{^...}` (use `\P{...}`), nested classes, and `&&`, `--`, or `~~` inside a class. |
 
 ### Text Forms
@@ -128,7 +128,7 @@ When an IP address, CIDR, MAC address, or URL is compared with a string (with `=
 | IPv6 address | Lowercase, with the longest run of zero groups shortened to `::`. IPv4-mapped addresses (`::ffff:1.2.3.4`) print as IPv4 | `2001:db8::1`, `1.2.3.4` |
 | CIDR | Network address, `/`, prefix length | `10.0.0.0/8` |
 | MAC address | Lowercase hex pairs separated by `:` | `aa:bb:cc:dd:ee:ff` |
-| URL | As written, with the scheme and host in lowercase | `https://example.com:443/a%20b?q=1` |
+| URL | As written, with the scheme and host in lowercase; nothing is added, removed, or re-encoded | `https://example.com:443/a%20b?q=1` |
 
 To compare by value instead, use an unquoted literal: `ip == 2001:DB8::1` matches however the address is written.
 
@@ -178,8 +178,8 @@ device.mac.oui == 00:1a:2b
 | URL | `port` | Port number, if the URL has one |
 | URL | `path` | Path as written, with percent escapes kept, e.g. `"/api/v1"` or `"/a%20b"` (`""` if empty) |
 | URL | `query["name"]` or `query.name` | Query parameter value, decoded like an HTML form: pairs are separated by `&`, `+` is a space, and `%XX` escapes are decoded. A parameter given more than once is a list. `query` on its own is the raw query text |
-| URL | `fragment` | Text after `#` |
-| URL | `user` | User name |
+| URL | `fragment` | Text after `#`, with `%XX` escapes decoded |
+| URL | `user` | User name, with `%XX` escapes decoded |
 | IP address | `version` | `"v4"` or `"v6"` |
 | CIDR | `network` | Network address, e.g. `10.0.0.0` |
 | CIDR | `prefix` | Prefix length, e.g. `16` |

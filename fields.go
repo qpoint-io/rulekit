@@ -15,6 +15,8 @@ func valueField(value any, key string) (any, bool) {
 	switch v := value.(type) {
 	case *url.URL:
 		return urlField(v, key)
+	case URL:
+		return urlValueField(v, key)
 	case urlQuery:
 		return queryField(string(v), key)
 	case net.IP:
@@ -41,11 +43,7 @@ func urlField(u *url.URL, key string) (any, bool) {
 	case "host":
 		return nonEmpty(strings.ToLower(u.Hostname()))
 	case "port":
-		port, err := strconv.Atoi(u.Port())
-		if err != nil {
-			return nil, false
-		}
-		return port, true
+		return portNumber(u.Port())
 	case "path":
 		return u.EscapedPath(), true
 	case "query":
@@ -184,4 +182,14 @@ func nonEmpty(s string) (any, bool) {
 		return nil, false
 	}
 	return s, true
+}
+
+// portNumber is a URL port as a number; an empty or out-of-range port is
+// missing.
+func portNumber(port string) (any, bool) {
+	n, err := strconv.Atoi(port)
+	if err != nil {
+		return nil, false
+	}
+	return n, true
 }

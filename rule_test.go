@@ -159,6 +159,11 @@ func BenchmarkEval(b *testing.B) {
 				Macros: mustMacroSet(b, map[string]string{"is_internal": `ip in 172.16.0.0/16`}),
 			},
 		},
+		{
+			name: "url_field",
+			expr: `u.host == "example.com" and u.port == 8443 and u =~ /^https:/`,
+			ctx:  kv{"u": mustParseURL(b, "https://Example.com:8443/a?b=c")},
+		},
 	}
 
 	for _, tc := range cases {

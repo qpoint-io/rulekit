@@ -108,11 +108,20 @@ exactly these forms, whatever their platform libraries print:
 | Other IPv6 address | RFC 5952: lowercase hex, leading zeros dropped in each group, the longest run of two or more zero groups replaced by `::` (the first run on a tie), and a single zero group not compressed. No embedded dotted form: `::1.2.3.4` prints as `::102:304`. |
 | CIDR | The network address (host bits cleared) in the IP form above, `/`, and the prefix length in decimal. An IPv4-mapped network prints as IPv4 with the prefix reduced by 96: `::ffff:10.0.0.0/104` is `10.0.0.0/8`. |
 | MAC address | Lowercase hex pairs separated by `:`: `aa:bb:cc:dd:ee:ff` (6 or 8 bytes). |
-| URL | The URL as written, except the scheme and host are lowercase and characters that are not allowed in a URL are percent-encoded. Nothing is added or removed: no default port is dropped, no `/` is added for an empty path, dot segments stay, and an empty query (`http://h?`) keeps its `?`. User info is kept. |
+| URL | The URL as written, except the scheme and host are lowercase. Nothing is added, removed, or re-encoded: no default port is dropped, no `/` is added for an empty path, dot segments stay, an empty query (`http://h?`), an empty fragment (`http://h#`), and an empty authority (`http://`) are kept, and user info and percent escapes stay as written. |
 
 `text_forms.json` pins each rule.
 
 ## Other shared rules
+
+- **URLs** (`$url` input) are RFC 3986 URI references written in ASCII, with
+  no `%` escapes in the host, no IPvFuture literal (`[v1.x]`), no IPv6 zone,
+  and at most one `@`; anything else is invalid input. Fields: `scheme` and
+  `host` lowercase (IPv6 without brackets), `port` the digits after the host
+  (missing when empty), `path` the RFC 3986 path as written (also for
+  `mailto:a@b.com`, and `/p` for `///p`), `query` the raw query, `fragment`
+  and `user` percent-decoded, or as written if the decoded bytes are not
+  valid UTF-8.
 
 - **Bracket keys** print as `"..."` with `"` and `\` escaped, `\n`, `\r`, and
   `\t` as escapes, other control characters (U+0000–U+001F, U+007F) as

@@ -27,6 +27,9 @@ func compareString(left string, op int, right any) compareOutcome {
 	case *url.URL:
 		// string ? url
 		return compareStringString(left, op, urlText(right))
+	case URL:
+		// string ? url
+		return compareStringString(left, op, right.text)
 	case HexString:
 		// string ? hex
 		return compareBytesBytes([]byte(left), op, right.Bytes)

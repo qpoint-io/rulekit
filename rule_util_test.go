@@ -113,3 +113,12 @@ func mustMacroSet(t testing.TB, macros map[string]string) MacroSet {
 	}
 	return set
 }
+
+func mustParseURL(t testing.TB, s string) URL {
+	t.Helper()
+	u, err := ParseURL(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return u
+}

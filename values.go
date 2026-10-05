@@ -234,6 +234,8 @@ func isZero(val any) bool {
 		return v == nil || v.IP == nil
 	case *url.URL:
 		return v == nil
+	case URL:
+		return false
 	case urlQuery:
 		return v == ""
 	case []any:
