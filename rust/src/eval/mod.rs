@@ -60,8 +60,9 @@ enum Kind {
         text: Box<str>,
     },
     Array(Box<[Node]>),
-    /// An array whose items are all literals, built once.
-    ConstArray(Box<[Value]>),
+    /// An array whose items are all literals, built once. The item nodes are
+    /// kept for traces.
+    ConstArray(Box<[Value]>, Box<[Node]>),
     Call {
         target: Call,
         args: Box<[Node]>,
@@ -95,11 +96,11 @@ pub(crate) fn lower(ast: &Ast, id: NodeId) -> Result<Node, ParseError> {
                 .iter()
                 .all(|item| matches!(item.kind, Kind::Literal(_)))
             {
-                let values = items.into_iter().map(|item| match item.kind {
-                    Kind::Literal(v) => v,
+                let values = items.iter().map(|item| match &item.kind {
+                    Kind::Literal(v) => v.clone(),
                     _ => unreachable!("checked above"),
                 });
-                Kind::ConstArray(values.collect())
+                Kind::ConstArray(values.collect(), items.into_boxed_slice())
             } else {
                 Kind::Array(items.into_boxed_slice())
             }
@@ -418,35 +419,22 @@ impl Node {
                 (outcome.pass, diagnostic)
             }),
             Kind::Literal(v) => EvalResult::value(Val::Ref(v.as_ref())),
-            Kind::ConstArray(items) => {
-                EvalResult::value(Val::Ref(ValueRef::Array(ArrayRef::Values(items))))
+            Kind::ConstArray(values, items) => {
+                if TRACE {
+                    return eval_array::<TRACE, C, I>(items, s);
+                }
+                EvalResult::value(Val::Ref(ValueRef::Array(ArrayRef::Values(values))))
             }
             Kind::Path { segments, text } => match s.input.get(s.ctx, segments) {
                 Ok(Some(v)) => EvalResult::value(v),
                 Ok(None) => {
                     let mut missing = Missing::new();
                     missing.push(&**text);
-                    EvalResult {
-                        missing,
-                        ..EvalResult::value(Val::Ref(ValueRef::Null))
-                    }
+                    EvalResult { missing, ..EvalResult::value(Val::Ref(ValueRef::Null)) }
                 }
-                Err(source) => EvalResult::error(Error::Input {
-                    field: text.to_string(),
-                    source,
-                }),
+                Err(source) => EvalResult::error(Error::Input { field: text.to_string(), source }),
             },
-            Kind::Array(items) => {
-                let mut values = Vec::with_capacity(items.len());
-                for item in items.iter() {
-                    let r = item.eval::<TRACE, C, I>(s);
-                    if !r.ok() {
-                        return r;
-                    }
-                    values.push(r.value.into_owned());
-                }
-                EvalResult::value(Val::Owned(Value::Array(values)))
-            }
+            Kind::Array(items) => eval_array::<TRACE, C, I>(items, s),
             Kind::Call { target, args } => call::<TRACE, C, I>(target, args, s),
         }
     }
@@ -528,13 +516,15 @@ fn call<'a, const TRACE: bool, C: ?Sized, I: Input<C> + ?Sized>(
     let name = match target {
         Call::StartsWith => {
             let mut vals = Buf::<2>::new();
-            if let Err(r) = eval_args::<TRACE, C, I, 2>(args, s, &mut vals) {
-                return r;
-            }
-            return match starts_with(&vals) {
+            let trace = match eval_items::<TRACE, C, I, 2>(args, s, &mut vals) {
+                Ok(trace) => trace,
+                Err(r) => return r,
+            };
+            let r = match starts_with(&vals) {
                 Ok(b) => EvalResult::bool(b),
                 Err(e) => EvalResult::error(e),
             };
+            return r.with_trace(trace);
         }
         Call::Named(name) => name,
     };
@@ -547,13 +537,15 @@ fn call<'a, const TRACE: bool, C: ?Sized, I: Input<C> + ?Sized>(
             });
         }
         let mut vals = Buf::<4>::new();
-        if let Err(r) = eval_args::<TRACE, C, I, 4>(args, s, &mut vals) {
-            return r;
-        }
-        return match function.call(name, s.ctx, &vals) {
+        let trace = match eval_items::<TRACE, C, I, 4>(args, s, &mut vals) {
+            Ok(trace) => trace,
+            Err(r) => return r,
+        };
+        let r = match function.call(name, s.ctx, &vals) {
             Ok(v) => EvalResult::value(v),
             Err(e) => EvalResult::error(e),
         };
+        return r.with_trace(trace);
     }
     if let Some(macro_) = s.env.macros.get(&**name) {
         if !args.is_empty() {
@@ -576,33 +568,66 @@ fn call<'a, const TRACE: bool, C: ?Sized, I: Input<C> + ?Sized>(
     EvalResult::error(Error::UnknownFunction(name.to_string()))
 }
 
-/// Evaluate call arguments in order; the first non-ok argument is the result.
-fn eval_args<'a, const TRACE: bool, C: ?Sized, I: Input<C> + ?Sized, const N: usize>(
-    args: &'a [Node],
+/// Go `evalItems`: evaluate array items or call arguments in order into
+/// `vals`, stopping at the first incomplete item, which is returned as the
+/// error. When tracing, the trace holds every item's trace, with the items
+/// after a stop marked pruned.
+fn eval_items<'a, const TRACE: bool, C: ?Sized, I: Input<C> + ?Sized, const N: usize>(
+    items: &'a [Node],
     s: &Scope<'a, C, I>,
     vals: &mut Buf<'a, N>,
-) -> Result<(), EvalResult<'a>> {
-    for arg in args {
-        let r = arg.eval::<TRACE, C, I>(s);
+) -> Result<Option<Box<Trace>>, EvalResult<'a>> {
+    let mut traces: Vec<Option<Box<Trace>>> = Vec::new();
+    for (i, item) in items.iter().enumerate() {
+        let mut r = item.eval::<TRACE, C, I>(s);
+        if TRACE {
+            traces.push(r.trace.take());
+        }
         if !r.ok() {
+            if TRACE {
+                traces.extend(items[i + 1..].iter().map(Node::pruned));
+                r.trace = combine(traces);
+            }
             return Err(r);
         }
         vals.push(r.value);
     }
-    Ok(())
+    Ok(if TRACE { combine(traces) } else { None })
+}
+
+/// Go `ArrayValue.Eval`: the items as an owned list.
+fn eval_array<'a, const TRACE: bool, C: ?Sized, I: Input<C> + ?Sized>(
+    items: &'a [Node],
+    s: &Scope<'a, C, I>,
+) -> EvalResult<'a> {
+    let mut vals = Buf::<8>::new();
+    match eval_items::<TRACE, C, I, 8>(items, s, &mut vals) {
+        Ok(trace) => {
+            let values = vals.into_iter().map(Val::into_owned).collect();
+            EvalResult::value(Val::Owned(Value::Array(values))).with_trace(trace)
+        }
+        Err(r) => r,
+    }
 }
 
 /// Go `nodeAnd`/`nodeOr` after short-circuiting: if exactly one side is
-/// incomplete, return it as is; otherwise merge errors and missing fields,
+/// incomplete, return it; otherwise merge errors and missing fields,
 /// with a value only when both sides completed.
 fn merge<'a, const TRACE: bool>(
-    left: EvalResult<'a>,
-    right: EvalResult<'a>,
+    mut left: EvalResult<'a>,
+    mut right: EvalResult<'a>,
     value: impl Fn(&EvalResult, &EvalResult) -> bool,
 ) -> EvalResult<'a> {
     match (left.ok(), right.ok()) {
-        (true, false) => right,
-        (false, true) => left,
+        // Exactly one side is incomplete: return it, keeping both traces.
+        (true, false) => {
+            let trace = if TRACE { combine([left.trace, right.trace.take()]) } else { None };
+            right.with_trace(trace)
+        }
+        (false, true) => {
+            let trace = if TRACE { combine([left.trace.take(), right.trace]) } else { None };
+            left.with_trace(trace)
+        }
         (both_ok, _) => {
             let value = if both_ok {
                 Val::Ref(ValueRef::Bool(value(&left, &right)))
