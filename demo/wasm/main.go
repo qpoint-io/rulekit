@@ -238,13 +238,11 @@ func evalRule(source string, inputJSON string) evalResponse {
 	if err != nil {
 		return evalResponse{OK: false, Error: err.Error(), AST: ast.JSON().Root}
 	}
-	var input map[string]any
-	decoder := json.NewDecoder(strings.NewReader(inputJSON))
-	decoder.UseNumber()
-	if err := decoder.Decode(&input); err != nil {
+	input, err := rulekit.DecodeJSON([]byte(inputJSON), rulekit.JSONOptions{})
+	if err != nil {
 		return evalResponse{OK: false, Error: "input json: " + err.Error(), AST: ast.JSON().Root}
 	}
-	res := rule.Eval(context.Background(), jsonInput(input), rulekit.Opts{Trace: true})
+	res := rule.Eval(context.Background(), rulekit.FromKV(input), rulekit.Opts{Trace: true})
 	out := evalResponse{
 		OK:            res.Error == nil,
 		Value:         res.Value,
@@ -366,43 +364,4 @@ func sourceForNode(source string, node rulekit.ASTNode) string {
 		return node.String()
 	}
 	return source[span.Start:span.End]
-}
-
-type jsonInput map[string]any
-
-func (j jsonInput) Get(ctx context.Context, path []rulekit.PathSegment) (any, bool, error) {
-	var current any = map[string]any(j)
-	for _, segment := range path {
-		if segment.IsIndex {
-			arr, ok := current.([]any)
-			if !ok || segment.Index < 0 || segment.Index >= len(arr) {
-				return nil, false, nil
-			}
-			current = normalizeJSONValue(arr[segment.Index])
-			continue
-		}
-		obj, ok := current.(map[string]any)
-		if !ok {
-			return nil, false, nil
-		}
-		value, ok := obj[segment.Key]
-		if !ok {
-			return nil, false, nil
-		}
-		current = normalizeJSONValue(value)
-	}
-	return current, true, nil
-}
-
-func normalizeJSONValue(value any) any {
-	switch v := value.(type) {
-	case json.Number:
-		if i, err := v.Int64(); err == nil {
-			return i
-		}
-		if f, err := v.Float64(); err == nil {
-			return f
-		}
-	}
-	return value
 }
