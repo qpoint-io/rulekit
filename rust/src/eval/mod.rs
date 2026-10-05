@@ -9,6 +9,8 @@ mod compare;
 pub use compare::cmp_number;
 pub(crate) mod trace;
 
+use std::borrow::Cow;
+
 use smallvec::SmallVec;
 
 use crate::ast::{Ast, AstKind, LiteralKind, NodeData, NodeId, Operator, Segment};
@@ -19,7 +21,7 @@ use crate::literal::parse_literal;
 use crate::print::{canonical, path_string};
 use crate::value::{ArrayRef, Val, Value, ValueRef};
 use compare::{CmpOp, compare, compare_slice};
-use trace::{Diagnostic, Trace, combine};
+use trace::{Diagnostic, Frag, Trace, combine};
 
 /// A compiled expression node. `meta` identifies the AST node for traces; it
 /// is `None` only for the base operator under a negated `not in`/`not
@@ -183,7 +185,7 @@ pub(crate) fn lower(ast: &Ast, id: NodeId) -> Result<Node, ParseError> {
 }
 
 /// Missing field names, borrowed from compiled rules.
-pub(crate) type Missing<'a> = SmallVec<[&'a str; 2]>;
+pub(crate) type Missing<'a> = SmallVec<[Cow<'a, str>; 2]>;
 
 /// The outcome of [`Rule::eval`](crate::Rule::eval).
 ///
@@ -210,7 +212,7 @@ pub struct EvalResult<'a> {
     value: Val<'a>,
     error: Option<Box<Error>>,
     missing: Missing<'a>,
-    trace: Option<Box<Trace>>,
+    trace: Option<Frag<'a>>,
 }
 
 impl<'a> EvalResult<'a> {
@@ -236,7 +238,7 @@ impl<'a> EvalResult<'a> {
 
     /// Keep only the error and missing fields (Go returns these without a
     /// value), with the given trace.
-    fn incomplete(self, trace: Option<Box<Trace>>) -> Self {
+    fn incomplete(self, trace: Option<Frag<'a>>) -> Self {
         EvalResult {
             value: Val::Ref(ValueRef::Null),
             error: self.error,
@@ -245,7 +247,7 @@ impl<'a> EvalResult<'a> {
         }
     }
 
-    fn with_trace(mut self, trace: Option<Box<Trace>>) -> Self {
+    fn with_trace(mut self, trace: Option<Frag<'a>>) -> Self {
         self.trace = trace;
         self
     }
@@ -267,13 +269,13 @@ impl<'a> EvalResult<'a> {
     }
 
     /// Fields the rule needed but the input lacked.
-    pub fn missing_fields(&self) -> &[&'a str] {
+    pub fn missing_fields(&self) -> &[Cow<'a, str>] {
         &self.missing
     }
 
     /// The evaluation trace, when tracing was enabled.
-    pub fn trace(&self) -> Option<&Trace> {
-        self.trace.as_deref()
+    pub fn trace(&self) -> Option<&Trace<'a>> {
+        self.trace.as_ref().and_then(Frag::node)
     }
 
     /// No error and no missing fields.
@@ -309,7 +311,7 @@ fn union<'a>(left: Missing<'a>, right: Missing<'a>) -> Missing<'a> {
     }
     let mut out = left;
     for name in right {
-        if !out.contains(&name) {
+        if !out.iter().any(|existing| *existing == name) {
             out.push(name);
         }
     }
@@ -342,14 +344,14 @@ impl Node {
         let mut r = self.eval_kind::<TRACE, C, I>(s);
         if TRACE && let Some(meta) = &self.meta {
             let inner = r.trace.take();
-            r.trace = Some(Box::new(trace::wrap(meta, &r, inner)));
+            r.trace = Some(trace::wrap(meta, &r, inner));
         }
         r
     }
 
     /// Go `prunedTrace`.
-    fn pruned(&self) -> Option<Box<Trace>> {
-        self.meta.as_ref().map(|meta| Box::new(trace::pruned(meta)))
+    fn pruned(&self) -> Option<Frag<'_>> {
+        self.meta.as_ref().map(trace::pruned)
     }
 
     fn eval_kind<'a, const TRACE: bool, C: ?Sized, I: Input<C> + ?Sized>(
@@ -397,7 +399,7 @@ impl Node {
                 // operands, so its operand traces become its children.
                 let trace = if TRACE {
                     match r.trace.take() {
-                        Some(t) if t.node.is_none() => Some(t),
+                        Some(t) if t.is_group() => Some(t),
                         other => combine([other]),
                     }
                 } else {
@@ -453,7 +455,7 @@ impl Node {
                 Ok(Some(v)) => EvalResult::of(v),
                 Ok(None) => {
                     let mut missing = Missing::new();
-                    missing.push(&**text);
+                    missing.push(Cow::Borrowed(&**text));
                     EvalResult {
                         missing,
                         ..EvalResult::of(Val::Ref(ValueRef::Null))
@@ -511,7 +513,7 @@ impl Node {
         let (pass, diagnostic) = f(lv, rv);
         let mut trace = trace;
         if let Some(diagnostic) = diagnostic {
-            trace.get_or_insert_default().diagnostics.push(diagnostic);
+            trace = trace::add_diagnostic(trace, diagnostic);
         }
         EvalResult::bool(pass).with_trace(trace)
     }
@@ -588,10 +590,7 @@ fn call<'a, const TRACE: bool, C: ?Sized, I: Input<C> + ?Sized>(
         if TRACE && let Some(root) = r.trace.take() {
             // Go wraps the expansion in a node for the macro source; the call
             // node adopts that node's children, i.e. the expansion's root.
-            r.trace = Some(Box::new(Trace {
-                children: vec![*root],
-                ..Trace::default()
-            }));
+            r.trace = combine([Some(root)]);
         }
         return r;
     }
@@ -606,8 +605,8 @@ fn eval_items<'a, const TRACE: bool, C: ?Sized, I: Input<C> + ?Sized, const N: u
     items: &'a [Node],
     s: &Scope<'a, C, I>,
     vals: &mut Buf<'a, N>,
-) -> Result<Option<Box<Trace>>, EvalResult<'a>> {
-    let mut traces: Vec<Option<Box<Trace>>> = Vec::new();
+) -> Result<Option<Frag<'a>>, EvalResult<'a>> {
+    let mut traces: Vec<Option<Frag<'a>>> = Vec::new();
     for (i, item) in items.iter().enumerate() {
         let mut r = item.eval::<TRACE, C, I>(s);
         if TRACE {

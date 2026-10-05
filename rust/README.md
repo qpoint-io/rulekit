@@ -153,10 +153,10 @@ use rulekit::{NoInput, Opts, TraceStatus};
 let rule = rulekit::parse("port == 443 or tls")?;
 let result = rule.eval(&NoInput, &(), Opts::default().with_trace(true));
 let trace = result.trace().unwrap();
-assert_eq!(trace.status, TraceStatus::Missing);
-assert_eq!(trace.missing_fields, ["port", "tls"]);
-for child in &trace.children {
-    println!("{} -> {}", child.expr, child.status.name());
+assert_eq!(trace.status(), TraceStatus::Missing);
+assert_eq!(trace.missing_fields(), ["port", "tls"]);
+for child in trace.children() {
+    println!("{} -> {}", child.expr(), child.status().name());
 }
 ```
 

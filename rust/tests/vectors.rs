@@ -341,40 +341,46 @@ fn check_trace(path: &str, got: &rulekit::Trace, want: &TraceExpect) -> Result<(
         Err(format!("{path}.{what}: got {got:?}, want {want:?}"))
     };
     if let Some(kind) = &want.kind {
-        let got_kind = got.kind.map_or("", |k| k.name());
+        let got_kind = got.kind().map_or("", |k| k.name());
         if got_kind != kind {
             return fail("kind", &got_kind, kind);
         }
     }
     if let Some(expr) = &want.expr
-        && &got.expr != expr
+        && got.expr() != expr
     {
-        return fail("expr", &got.expr, expr);
+        return fail("expr", &got.expr(), expr);
     }
     if let Some(status) = &want.status
-        && got.status.name() != status
+        && got.status().name() != status
     {
-        return fail("status", &got.status.name(), status);
+        return fail("status", &got.status().name(), status);
     }
     if let Some(value) = &want.value {
         let want_value = canonical(expected_value(value)?.as_ref())?;
-        let got_value = canonical(got.value.as_ref())?;
+        let got_value = canonical(got.value())?;
         if want_value != got_value {
             return fail("value", &got_value, &want_value);
         }
     }
     if let Some(active) = want.active
-        && got.active != active
+        && got.active() != active
     {
-        return fail("active", &got.active, &active);
+        return fail("active", &got.active(), &active);
     }
     if let Some(pruned) = want.pruned
-        && got.pruned != pruned
+        && got.pruned() != pruned
     {
-        return fail("pruned", &got.pruned, &pruned);
+        return fail("pruned", &got.pruned(), &pruned);
     }
     if let Some(missing) = &want.missing_fields {
-        let (mut a, mut b) = (got.missing_fields.clone(), missing.clone());
+        let (mut a, mut b) = (
+            got.missing_fields()
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>(),
+            missing.clone(),
+        );
         a.sort();
         b.sort();
         if a != b {
@@ -383,7 +389,7 @@ fn check_trace(path: &str, got: &rulekit::Trace, want: &TraceExpect) -> Result<(
     }
     if let Some(diagnostics) = &want.diagnostics {
         let got_diags: Vec<_> = got
-            .diagnostics
+            .diagnostics()
             .iter()
             .map(|d| (d.code.name(), d.left_type, d.operator, d.right_type))
             .collect();
@@ -401,15 +407,15 @@ fn check_trace(path: &str, got: &rulekit::Trace, want: &TraceExpect) -> Result<(
         if got_diags != want_diags {
             return fail("diagnostics", &got_diags, &want_diags);
         }
-        if got.diagnostics.iter().any(|d| d.message.is_empty()) {
+        if got.diagnostics().iter().any(|d| d.message.is_empty()) {
             return Err(format!("{path}.diagnostics: empty message"));
         }
     }
     if let Some(children) = &want.children {
-        if got.children.len() != children.len() {
-            return fail("children.len", &got.children.len(), &children.len());
+        if got.children().len() != children.len() {
+            return fail("children.len", &got.children().len(), &children.len());
         }
-        for (i, (g, w)) in got.children.iter().zip(children).enumerate() {
+        for (i, (g, w)) in got.children().iter().zip(children).enumerate() {
             check_trace(&format!("{path}.children[{i}]"), g, w)?;
         }
     }

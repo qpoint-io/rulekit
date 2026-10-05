@@ -1,9 +1,11 @@
 //! Evaluation traces.
 
 use super::compare::{CmpOp, Diagnostic as Outcome};
-use super::{EvalResult, Meta};
+use std::borrow::Cow;
+
+use super::{EvalResult, Meta, Missing};
 use crate::ast::{AstKind, NodeId};
-use crate::value::{Value, ValueRef};
+use crate::value::{Val, ValueRef};
 
 /// How a traced node ended.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -114,8 +116,10 @@ impl Diagnostic {
 /// How evaluation reached its result, node by node.
 ///
 /// Returned by [`EvalResult::trace`] when [`Opts::trace`](crate::Opts::trace)
-/// is set. The root describes the whole rule; `children` follow the
-/// expression tree. A macro call has the macro's expression as its child.
+/// is set. The root describes the whole rule; [`children`](Self::children)
+/// follow the expression tree. A macro call has the macro's expression as its
+/// child. A trace borrows from the rule and the input like the result does;
+/// [`into_owned`](Self::into_owned) detaches it.
 ///
 /// ```rust
 /// use rulekit::value::{Map, Value};
@@ -126,40 +130,125 @@ impl Diagnostic {
 ///
 /// let result = rule.eval(&input, &(), Opts::default().with_trace(true));
 /// let trace = result.trace().expect("tracing was on");
-/// assert_eq!(trace.status, TraceStatus::Passed);
-/// assert_eq!(trace.expr, "port == 443 or tls");
+/// assert_eq!(trace.status(), TraceStatus::Passed);
+/// assert_eq!(trace.expr(), "port == 443 or tls");
 ///
 /// // `or` short-circuited: `tls` was never read.
-/// let [left, right] = &trace.children[..] else { panic!() };
-/// assert_eq!(left.status, TraceStatus::Passed);
-/// assert_eq!(right.status, TraceStatus::Pruned);
+/// let [left, right] = trace.children() else { panic!() };
+/// assert_eq!(left.status(), TraceStatus::Passed);
+/// assert_eq!(right.status(), TraceStatus::Pruned);
 /// # Ok::<(), rulekit::ParseError>(())
 /// ```
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct Trace {
-    /// The AST node (of the rule, or of a macro's rule for nodes inside a
-    /// macro expansion). `None` only for internal grouping nodes.
-    pub node: Option<NodeId>,
-    /// The node's kind; `None` only for internal grouping nodes.
-    pub kind: Option<AstKind>,
+#[derive(Clone, Debug)]
+pub struct Trace<'a> {
+    pub(crate) node: Option<NodeId>,
+    pub(crate) kind: Option<AstKind>,
+    pub(crate) expr: Cow<'a, str>,
+    pub(crate) value: Val<'a>,
+    pub(crate) error: Option<String>,
+    pub(crate) missing: Missing<'a>,
+    pub(crate) diagnostics: Vec<Diagnostic>,
+    pub(crate) status: TraceStatus,
+    pub(crate) active: bool,
+    pub(crate) pruned: bool,
+    pub(crate) children: Vec<Trace<'a>>,
+}
+
+impl Default for Trace<'_> {
+    fn default() -> Self {
+        Trace {
+            node: None,
+            kind: None,
+            expr: Cow::Borrowed(""),
+            value: Val::Ref(ValueRef::Null),
+            error: None,
+            missing: Missing::new(),
+            diagnostics: Vec::new(),
+            status: TraceStatus::Unknown,
+            active: false,
+            pruned: false,
+            children: Vec::new(),
+        }
+    }
+}
+
+impl<'a> Trace<'a> {
+    /// The AST node: of the rule, or of a macro's rule for nodes inside a
+    /// macro expansion.
+    pub fn node(&self) -> Option<NodeId> {
+        self.node
+    }
+
+    /// The node's kind.
+    pub fn kind(&self) -> Option<AstKind> {
+        self.kind
+    }
+
     /// The node's canonical expression.
-    pub expr: String,
+    pub fn expr(&self) -> &str {
+        &self.expr
+    }
+
     /// The node's value (`Null` if it produced none).
-    pub value: Value,
+    pub fn value(&self) -> ValueRef<'_> {
+        self.value.as_ref()
+    }
+
     /// The error message, if the node failed.
-    pub error: Option<String>,
+    pub fn error(&self) -> Option<&str> {
+        self.error.as_deref()
+    }
+
     /// Fields the node needed but the input lacked.
-    pub missing_fields: Vec<String>,
+    pub fn missing_fields(&self) -> &[Cow<'a, str>] {
+        &self.missing
+    }
+
     /// Comparisons that evaluated to false because they could not be made.
-    pub diagnostics: Vec<Diagnostic>,
+    pub fn diagnostics(&self) -> &[Diagnostic] {
+        &self.diagnostics
+    }
+
     /// How the node ended.
-    pub status: TraceStatus,
+    pub fn status(&self) -> TraceStatus {
+        self.status
+    }
+
     /// Whether the node was evaluated.
-    pub active: bool,
+    pub fn active(&self) -> bool {
+        self.active
+    }
+
     /// Whether the node was skipped by short-circuiting.
-    pub pruned: bool,
+    pub fn pruned(&self) -> bool {
+        self.pruned
+    }
+
     /// Traces of the node's operands, arguments, or items.
-    pub children: Vec<Trace>,
+    pub fn children(&self) -> &[Trace<'a>] {
+        &self.children
+    }
+
+    /// A copy that owns all its data.
+    pub fn into_owned(self) -> Trace<'static> {
+        Trace {
+            node: self.node,
+            kind: self.kind,
+            expr: Cow::Owned(self.expr.into_owned()),
+            value: Val::Owned(self.value.into_owned()),
+            error: self.error,
+            missing: self
+                .missing
+                .into_iter()
+                .map(|name| Cow::Owned(name.into_owned()))
+                .collect(),
+            diagnostics: self.diagnostics,
+            status: self.status,
+            active: self.active,
+            pruned: self.pruned,
+            children: self.children.into_iter().map(Trace::into_owned).collect(),
+        }
+    }
 }
 
 /// Go `traceStatus`.
@@ -175,49 +264,111 @@ pub(crate) fn status(r: &EvalResult<'_>) -> TraceStatus {
     }
 }
 
+/// A trace under construction: a described node, or an unnamed group of
+/// child traces (Go's `combineTrace` nodes), possibly with diagnostics.
+#[derive(Debug)]
+pub(crate) enum Frag<'a> {
+    Node(Box<Trace<'a>>),
+    Group(Vec<Trace<'a>>),
+    Diagnosed(Box<(Vec<Trace<'a>>, Vec<Diagnostic>)>),
+}
+
+impl<'a> Frag<'a> {
+    /// The fragment as one trace node (a group becomes an unnamed node).
+    fn into_trace(self) -> Trace<'a> {
+        match self {
+            Frag::Node(trace) => *trace,
+            Frag::Group(children) => Trace {
+                children,
+                ..Trace::default()
+            },
+            Frag::Diagnosed(group) => {
+                let (children, diagnostics) = *group;
+                Trace {
+                    children,
+                    diagnostics,
+                    ..Trace::default()
+                }
+            }
+        }
+    }
+
+    /// Whether this is an unnamed group rather than a described node.
+    pub(crate) fn is_group(&self) -> bool {
+        !matches!(self, Frag::Node(_))
+    }
+
+    /// The described node, if this is one.
+    pub(crate) fn node(&self) -> Option<&Trace<'a>> {
+        match self {
+            Frag::Node(trace) => Some(trace),
+            _ => None,
+        }
+    }
+}
+
+/// Add a diagnostic to a fragment (Go `addTraceDiagnostic`).
+pub(crate) fn add_diagnostic<'a>(
+    frag: Option<Frag<'a>>,
+    diagnostic: Diagnostic,
+) -> Option<Frag<'a>> {
+    let (children, mut diagnostics) = match frag {
+        None => (Vec::new(), Vec::new()),
+        Some(Frag::Group(children)) => (children, Vec::new()),
+        Some(Frag::Diagnosed(group)) => *group,
+        Some(node @ Frag::Node(_)) => (vec![node.into_trace()], Vec::new()),
+    };
+    diagnostics.push(diagnostic);
+    Some(Frag::Diagnosed(Box::new((children, diagnostics))))
+}
+
 /// Go `tracedRule.Eval`: describe a node, adopting the children and
 /// diagnostics of the trace its evaluation produced.
-pub(crate) fn wrap(meta: &Meta, r: &EvalResult<'_>, inner: Option<Box<Trace>>) -> Trace {
-    let (children, diagnostics) = inner
-        .map(|t| (t.children, t.diagnostics))
-        .unwrap_or_default();
-    Trace {
+pub(crate) fn wrap<'a>(meta: &'a Meta, r: &EvalResult<'a>, inner: Option<Frag<'a>>) -> Frag<'a> {
+    let (children, diagnostics) = match inner {
+        None => (Vec::new(), Vec::new()),
+        Some(Frag::Node(trace)) => (trace.children, trace.diagnostics),
+        Some(Frag::Group(children)) => (children, Vec::new()),
+        Some(Frag::Diagnosed(group)) => *group,
+    };
+    Frag::Node(Box::new(Trace {
         node: Some(meta.id),
         kind: Some(meta.kind),
-        expr: meta.expr.to_string(),
-        value: r.value.as_ref().to_owned(),
+        expr: Cow::Borrowed(&meta.expr),
+        value: r.value.clone(),
         error: r.error.as_ref().map(ToString::to_string),
-        missing_fields: r.missing.iter().map(|s| s.to_string()).collect(),
+        missing: r.missing.clone(),
         diagnostics,
         status: status(r),
         active: true,
         pruned: false,
         children,
-    }
+    }))
 }
 
 /// Go `prunedTrace`.
-pub(crate) fn pruned(meta: &Meta) -> Trace {
-    Trace {
+pub(crate) fn pruned(meta: &Meta) -> Frag<'_> {
+    Frag::Node(Box::new(Trace {
         node: Some(meta.id),
         kind: Some(meta.kind),
-        expr: meta.expr.to_string(),
+        expr: Cow::Borrowed(&meta.expr),
         status: TraceStatus::Pruned,
         pruned: true,
         ..Trace::default()
-    }
+    }))
 }
 
-/// Go `combineTrace`: an internal grouping node over the present children.
-pub(crate) fn combine(
-    children: impl IntoIterator<Item = Option<Box<Trace>>>,
-) -> Option<Box<Trace>> {
-    let children: Vec<Trace> = children.into_iter().flatten().map(|t| *t).collect();
+/// Go `combineTrace`: an unnamed group of the present children.
+pub(crate) fn combine<'a>(
+    children: impl IntoIterator<Item = Option<Frag<'a>>>,
+) -> Option<Frag<'a>> {
+    let children: Vec<Trace<'a>> = children
+        .into_iter()
+        .flatten()
+        .map(Frag::into_trace)
+        .collect();
     if children.is_empty() {
         return None;
     }
-    Some(Box::new(Trace {
-        children,
-        ..Trace::default()
-    }))
+    Some(Frag::Group(children))
 }
