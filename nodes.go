@@ -144,23 +144,12 @@ func (n *nodeNot) Eval(ctx context.Context, input Input, opts Opts) Result {
 
 func (n *nodeNot) String() string {
 	right := unwrapTracedRule(n.right)
-	if nn, ok := right.(*nodeCompare); ok {
-		if nn.op == op_EQ {
-			// special formatting for !=
-			return nn.lv.String() + " != " + nn.rv.String()
-		} else if nn.op == op_CONTAINS {
-			// special formatting for field not contains "item"
-			return nn.lv.String() + " not contains " + nn.rv.String()
-		}
+	if nn, ok := right.(*nodeCompare); ok && nn.op == op_EQ {
+		// special formatting for !=
+		return nn.lv.String() + " != " + nn.rv.String()
 	} else if nn, ok := right.(FieldValue); ok {
 		// special formatting for !FIELD (no space between ! and field)
 		return "!" + nn.String()
-	} else if nn, ok := right.(*nodeMatch); ok {
-		// special formatting for field not =~ /pattern/
-		return nn.lv.String() + " not =~ " + nn.rv.String()
-	} else if nn, ok := right.(*nodeIn); ok {
-		// special formatting for field not in [1, "str", 3]
-		return nn.lv.String() + " not in " + nn.rv.String()
 	}
 
 	return "not (" + right.String() + ")"
