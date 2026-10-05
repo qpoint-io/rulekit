@@ -22,6 +22,7 @@ mod text;
 mod url;
 
 use std::collections::HashMap;
+use std::fmt;
 
 pub(crate) use fields::value_field;
 pub use ip::{Cidr, Ip};
@@ -182,13 +183,100 @@ pub enum ValueRef<'a> {
     Object(ObjectRef<'a>),
 }
 
+/// A list a rule can iterate without copying, such as `Vec<String>`.
+///
+/// Returned references borrow the list. [`InputValue`](crate::InputValue)
+/// resolves paths; this trait is what `` `"x" in tags` `` uses once the list
+/// itself is the value.
+pub trait ListSource {
+    /// The number of items.
+    fn len(&self) -> usize;
+
+    /// The item at `index`, or `None` if it is out of range.
+    fn get(&self, index: usize) -> Option<ValueRef<'_>>;
+
+    /// Whether the list has no items.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+/// An object a rule can look up by key without copying, such as a `HashMap`.
+///
+/// [`InputValue`](crate::InputValue) resolves a whole path. This trait is the
+/// single-key step used when an object value is indexed later.
+pub trait ObjectSource {
+    /// The value at `key`, or `None` if the key is absent.
+    fn get(&self, key: &str) -> Option<Val<'_>>;
+}
+
 /// A borrowed list of values.
-#[derive(Clone, Copy, Debug)]
+///
+/// [`List`](Self::List) reads a user collection one index at a time.
+#[derive(Clone, Copy)]
 pub enum ArrayRef<'a> {
     /// Items of a [`Value::Array`].
     Values(&'a [Value]),
     /// Items computed during evaluation.
     Vals(&'a [Val<'a>]),
+    /// A user list. Only indexes the rule actually reads are touched.
+    List(&'a dyn ListSource),
+    /// A `[T]` viewed without copying. The reader is a monomorphized function;
+    /// it does not capture a lifetime, so [`ValueRef`] stays covariant.
+    Erased(ErasedList<'a>),
+}
+
+/// Byte view of a `[T]`, indexed by a function that knows `T`.
+#[derive(Clone, Copy)]
+pub struct ErasedList<'a> {
+    data: *const u8,
+    len: usize,
+    stride: usize,
+    read: fn(*const u8, usize, usize) -> Option<ValueRef<'static>>,
+    _lt: std::marker::PhantomData<&'a [u8]>,
+}
+
+impl<'a> ErasedList<'a> {
+    pub(crate) fn new(
+        data: *const u8,
+        len: usize,
+        stride: usize,
+        read: fn(*const u8, usize, usize) -> Option<ValueRef<'static>>,
+    ) -> Self {
+        Self {
+            data,
+            len,
+            stride,
+            read,
+            _lt: std::marker::PhantomData,
+        }
+    }
+
+    fn len(self) -> usize {
+        self.len
+    }
+
+    fn get(self, index: usize) -> Option<ValueRef<'a>> {
+        if index >= self.len {
+            return None;
+        }
+        // SAFETY: `read` extends borrows of `data` to `'static`. The data is
+        // the `[T]` this list was built from, which lives for `'a`, and the
+        // result is shortened to that lifetime before it escapes.
+        let value = (self.read)(self.data, self.stride, index)?;
+        Some(unsafe { std::mem::transmute::<ValueRef<'static>, ValueRef<'a>>(value) })
+    }
+}
+
+impl fmt::Debug for ArrayRef<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ArrayRef::Values(v) => f.debug_tuple("Values").field(v).finish(),
+            ArrayRef::Vals(v) => f.debug_tuple("Vals").field(v).finish(),
+            ArrayRef::List(v) => f.debug_struct("List").field("len", &v.len()).finish(),
+            ArrayRef::Erased(v) => f.debug_struct("Erased").field("len", &v.len()).finish(),
+        }
+    }
 }
 
 impl<'a> ArrayRef<'a> {
@@ -197,6 +285,8 @@ impl<'a> ArrayRef<'a> {
         match self {
             ArrayRef::Values(v) => v.len(),
             ArrayRef::Vals(v) => v.len(),
+            ArrayRef::List(v) => v.len(),
+            ArrayRef::Erased(v) => v.len(),
         }
     }
 
@@ -207,9 +297,12 @@ impl<'a> ArrayRef<'a> {
 
     /// The item at index `i`.
     pub fn get(&self, i: usize) -> Option<ValueRef<'a>> {
-        match self {
+        match *self {
             ArrayRef::Values(v) => v.get(i).map(Value::as_ref),
             ArrayRef::Vals(v) => v.get(i).map(Val::as_ref),
+            // `list` is already `&'a`, so the item borrows the list for `'a`.
+            ArrayRef::List(list) => list.get(i),
+            ArrayRef::Erased(list) => list.get(i),
         }
     }
 
@@ -221,13 +314,25 @@ impl<'a> ArrayRef<'a> {
 }
 
 /// A borrowed object.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub enum ObjectRef<'a> {
     /// A plain object.
     Map(&'a Map<Value>),
     /// A map holding inputs or lazy values, or a nested input, reached as a
     /// value. It is truthy and compares with nothing.
     Opaque,
+    /// A user object. Keys are looked up one at a time.
+    Source(&'a dyn ObjectSource),
+}
+
+impl fmt::Debug for ObjectRef<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ObjectRef::Map(map) => f.debug_tuple("Map").field(map).finish(),
+            ObjectRef::Opaque => f.write_str("Opaque"),
+            ObjectRef::Source(_) => f.write_str("Source(..)"),
+        }
+    }
 }
 
 /// A borrowed or owned value: what inputs, functions, and evaluation return.
@@ -283,7 +388,9 @@ impl<'a> ValueRef<'a> {
     #[allow(clippy::wrong_self_convention)]
     pub fn to_owned(self) -> Value {
         match self {
-            ValueRef::Null | ValueRef::Object(ObjectRef::Opaque) => Value::Null,
+            ValueRef::Null | ValueRef::Object(ObjectRef::Opaque | ObjectRef::Source(_)) => {
+                Value::Null
+            }
             ValueRef::Bool(b) => Value::Bool(b),
             ValueRef::Int(n) => Value::Int(n),
             ValueRef::Uint(n) => Value::Uint(n),

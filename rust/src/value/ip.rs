@@ -72,14 +72,20 @@ impl Cidr {
             return None;
         }
         let net = IpNet::new(addr.parse().ok()?, prefix.parse().ok()?).ok()?;
-        Some(Cidr(match net.trunc() {
+        Some(Cidr::from_net(net))
+    }
+
+    /// Wraps `net`, clearing host bits and normalizing an IPv4-mapped
+    /// network to the IPv4 network it denotes.
+    pub fn from_net(net: IpNet) -> Cidr {
+        Cidr(match net.trunc() {
             IpNet::V6(n) => match (n.network().to_ipv4_mapped(), n.prefix_len().checked_sub(96)) {
                 // A prefix of 96..=128 leaves at most 32 bits.
                 (Some(v4), Some(p)) => IpNet::V4(Ipv4Net::new_assert(v4, p)),
                 _ => IpNet::V6(n),
             },
             n => n,
-        }))
+        })
     }
 
     /// The network address.

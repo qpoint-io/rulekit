@@ -488,7 +488,9 @@ fn canonical(value: ValueRef<'_>) -> Result<Json, String> {
             }
             serde_json::json!({ "$type": "object", "value": out })
         }
-        ValueRef::Query(_) | ValueRef::Regex(_) | ValueRef::Object(ObjectRef::Opaque) => {
+        ValueRef::Query(_)
+        | ValueRef::Regex(_)
+        | ValueRef::Object(ObjectRef::Opaque | ObjectRef::Source(_)) => {
             return Err(format!("value has no vector representation: {value:?}"));
         }
     })

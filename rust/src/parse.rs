@@ -161,7 +161,11 @@ impl<'a> Parser<'a> {
                         }
                     );
                     let is_array = matches!(self.ast.nodes[right.index()], NodeData::Array { .. });
-                    if !is_cidr && !is_array {
+                    // A path is a list (or a CIDR) known only at evaluation.
+                    // Literals other than an array or CIDR stay a parse error,
+                    // matching `a not in 1` in the shared vectors.
+                    let is_path = matches!(self.ast.nodes[right.index()], NodeData::Path { .. });
+                    if !is_cidr && !is_array && !is_path {
                         return Err(self.error(tok, "in requires an array or CIDR value"));
                     }
                     right

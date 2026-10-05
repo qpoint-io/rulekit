@@ -64,6 +64,7 @@ mod error;
 pub(crate) mod eval;
 mod func;
 mod input;
+mod input_value;
 mod json_input;
 mod lex;
 mod literal;
@@ -85,6 +86,7 @@ pub use eval::trace::{Diagnostic, DiagnosticCode, Trace, TraceStatus};
 pub use func::__private;
 pub use func::{Args, FnError, FromArg, FuncSchema, Function, NoArgs, Param, Rest, Returns};
 pub use input::{FnInput, Input, Kv, KvEntry, KvInput, Lazy, NoInput};
+pub use input_value::InputValue;
 pub use json_input::{JsonOptions, decode_json};
 pub use print::{Edit, PrintMode, format, rewrite};
 /// Derive [`Args`](trait@Args) for a struct of function arguments. See the

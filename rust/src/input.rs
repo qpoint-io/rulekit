@@ -337,6 +337,9 @@ fn key_value<'a, C: ?Sized>(
         Cursor::Val(Val::Ref(ValueRef::Object(ObjectRef::Map(map)))) => {
             map.get(key).map(|v| Cursor::Val(Val::Ref(v.as_ref())))
         }
+        Cursor::Val(Val::Ref(ValueRef::Object(ObjectRef::Source(src)))) => {
+            src.get(key).map(Cursor::Val)
+        }
         Cursor::Val(Val::Ref(ValueRef::Object(ObjectRef::Opaque))) => None,
         Cursor::Val(Val::Ref(v)) => value_field(v, key).map(Cursor::Val),
         Cursor::Val(Val::Owned(Value::Object(mut map))) => {
