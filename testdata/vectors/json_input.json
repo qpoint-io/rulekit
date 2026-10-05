@@ -232,6 +232,11 @@
     {"name": "nesting: 101 levels is an error", "input_mode": "plain", "input": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": {"a": 1}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}, "expect": {"decode_error": true}},
     {"name": "typed float64: decimal exponent", "input_mode": "typed_document", "expr": "f == 1000", "input": {"f": {"$type": "float64", "value": "1e3"}}, "expect": {"value": true}},
     {"name": "typed float64: hex float is an error", "input_mode": "typed_document", "input": {"f": {"$type": "float64", "value": "0x1p3"}}, "expect": {"decode_error": true}},
-    {"name": "typed float64: inf is an error", "input_mode": "typed_document", "input": {"f": {"$type": "float64", "value": "inf"}}, "expect": {"decode_error": true}}
+    {"name": "typed float64: inf is an error", "input_mode": "typed_document", "input": {"f": {"$type": "float64", "value": "inf"}}, "expect": {"decode_error": true}},
+    {"name": "base64: canonical padded value decodes", "input_mode": "annotated_keys", "expr": "b == \"PO\"", "input": {"b.$base64": "UE8="}, "expect": {"value": true}},
+    {"name": "base64: nonzero trailing bits are an error", "input_mode": "annotated_keys", "input": {"b.$base64": "UE9="}, "expect": {"decode_error": true}},
+    {"name": "base64: line breaks are an error", "input_mode": "typed_document", "input": {"b": {"$type": "bytes", "encoding": "base64", "value": "UE8=\n"}}, "expect": {"decode_error": true}},
+    {"name": "uint64: leading plus sign is accepted", "input_mode": "annotated_keys", "expr": "n == 7", "input": {"n.$uint64": "+7"}, "expect": {"value": true}},
+    {"name": "uint64: minus sign is an error", "input_mode": "annotated_keys", "input": {"n.$uint64": "-0"}, "expect": {"decode_error": true}}
   ]
 }

@@ -33,3 +33,29 @@ func TestDecodeJSONRejectsTrailingData(t *testing.T) {
 		require.Error(t, err, data)
 	}
 }
+
+// Invalid UTF-8 and lone surrogate escapes cannot be expressed as test vectors
+// (vector files are valid JSON), so they are pinned here and in the Rust tests.
+func TestDecodeJSONRejectsInvalidText(t *testing.T) {
+	for _, doc := range []string{
+		"{\"a\": \"x\xffy\"}",
+		"{\"x\xff\": 1}",
+		`{"a": "\ud800"}`,
+		`{"a": "\udc00"}`,
+		`{"a": "\ude00\ud83d"}`,
+		`{"a": "\ud800\u0041"}`,
+		`{"\ud800": 1}`,
+		`{"a": "\\ud800\udc00"}`,
+	} {
+		_, err := DecodeJSON([]byte(doc), JSONOptions{})
+		require.Error(t, err, "%q", doc)
+	}
+	for _, doc := range []string{
+		`{"a": "\ud83d\ude00"}`,
+		`{"a": "\\ud800"}`,
+		`{"a": "\u00e9 \"\\"}`,
+	} {
+		_, err := DecodeJSON([]byte(doc), JSONOptions{})
+		require.NoError(t, err, "%q", doc)
+	}
+}

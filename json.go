@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 type JSONOptions struct {
@@ -31,7 +32,7 @@ func DecodeJSON(data []byte, opts JSONOptions) (KV, error) {
 	if opts.AnnotatedKeys && opts.TypedDocument {
 		return nil, fmt.Errorf("json options AnnotatedKeys and TypedDocument are mutually exclusive")
 	}
-	if err := checkJSONDepth(data); err != nil {
+	if err := checkJSONText(data); err != nil {
 		return nil, err
 	}
 
@@ -56,29 +57,55 @@ func DecodeJSON(data []byte, opts JSONOptions) (KV, error) {
 	return KV(kv), nil
 }
 
-// checkJSONDepth rejects documents nested deeper than maxJSONDepth. Brackets
-// inside strings are skipped; syntax errors are left to the decoder.
-func checkJSONDepth(data []byte) error {
-	depth, inString, escaped := 0, false, false
-	for _, c := range data {
+// checkJSONText applies the shared input rules the decoder does not: the
+// input must be valid UTF-8, objects and arrays may nest at most maxJSONDepth
+// levels, and a \u escape in D800-DBFF must be followed directly by a \u
+// escape in DC00-DFFF (no lone surrogates). Syntax errors are left to the
+// decoder. The loop skips escapes, so it indexes explicitly.
+func checkJSONText(data []byte) error {
+	if !utf8.Valid(data) {
+		return fmt.Errorf("json input is not valid UTF-8")
+	}
+	depth, inString, highSurrogate := 0, false, false
+	for i := 0; i < len(data); i++ {
+		c := data[i]
+		if !inString {
+			switch c {
+			case '"':
+				inString = true
+			case '{', '[':
+				if depth++; depth > maxJSONDepth {
+					return fmt.Errorf("json nesting exceeds %d levels", maxJSONDepth)
+				}
+			case '}', ']':
+				depth--
+			}
+			continue
+		}
+		surrogate := -1 // -1: not a \u escape; 0: other; 1: high; 2: low
+		if c == '\\' && i+5 < len(data) && data[i+1] == 'u' {
+			if v, err := strconv.ParseUint(string(data[i+2:i+6]), 16, 16); err == nil {
+				switch {
+				case v >= 0xD800 && v < 0xDC00:
+					surrogate = 1
+				case v >= 0xDC00 && v < 0xE000:
+					surrogate = 2
+				default:
+					surrogate = 0
+				}
+			}
+		}
+		if highSurrogate != (surrogate == 2) {
+			return fmt.Errorf("json string has a lone surrogate escape")
+		}
+		highSurrogate = surrogate == 1
 		switch {
-		case inString:
-			switch {
-			case escaped:
-				escaped = false
-			case c == '\\':
-				escaped = true
-			case c == '"':
-				inString = false
-			}
+		case surrogate >= 0:
+			i += 5
+		case c == '\\':
+			i++
 		case c == '"':
-			inString = true
-		case c == '{' || c == '[':
-			if depth++; depth > maxJSONDepth {
-				return fmt.Errorf("json nesting exceeds %d levels", maxJSONDepth)
-			}
-		case c == '}' || c == ']':
-			depth--
+			inString = false
 		}
 	}
 	return nil
@@ -321,7 +348,11 @@ func decodeBytes(value any, encoding string) ([]byte, error) {
 	case "hex":
 		return hex.DecodeString(strings.ReplaceAll(s, ":", ""))
 	case "base64":
-		return base64.StdEncoding.DecodeString(s)
+		// Canonical padded base64 only: no line breaks, zero trailing bits.
+		if strings.ContainsAny(s, "\r\n") {
+			return nil, fmt.Errorf("invalid base64: line breaks are not allowed")
+		}
+		return base64.StdEncoding.Strict().DecodeString(s)
 	default:
 		return nil, fmt.Errorf("bytes encoding must be hex or base64")
 	}
@@ -348,7 +379,8 @@ func uint64Scalar(value any) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return strconv.ParseUint(s, 10, 64)
+	// An optional leading '+' is accepted, as for int64.
+	return strconv.ParseUint(strings.TrimPrefix(s, "+"), 10, 64)
 }
 
 func float64Scalar(value any) (float64, error) {
