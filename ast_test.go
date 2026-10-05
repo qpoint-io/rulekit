@@ -230,7 +230,7 @@ func TestEvalTraceComparisonDiagnostics(t *testing.T) {
 			code:       DiagnosticComparisonInvalidShape,
 			leftType:   "int64",
 			operator:   "contains",
-			rightType:  "[]interface {}",
+			rightType:  "array",
 			wantStatus: TraceFailed,
 		},
 	}
