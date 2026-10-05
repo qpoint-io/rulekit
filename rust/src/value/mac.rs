@@ -65,6 +65,15 @@ impl Mac {
             bytes,
         })
     }
+
+    /// The first three bytes (the `oui` field). Like Go's `mac[:3]`, the
+    /// result is still a MAC value: it compares as bytes and prints as
+    /// `00:1a:2b`.
+    pub fn oui(&self) -> Mac {
+        let mut bytes = [0; 8];
+        bytes[..3].copy_from_slice(&self.bytes[..3]);
+        Mac { len: 3, bytes }
+    }
 }
 
 /// Go `hex.DecodeString` digit: either case.
