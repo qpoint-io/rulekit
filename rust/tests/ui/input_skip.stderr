@@ -1,5 +1,0 @@
-error: unknown `rulekit` attribute; expected `rename = "..."` or `bytes`
- --> tests/ui/input_skip.rs:3:15
-  |
-3 |     #[rulekit(skip)]
-  |               ^^^^
