@@ -35,7 +35,7 @@ func FromContextFunc(fn func(context.Context, []PathSegment) (any, bool, error))
 }
 
 func FromKV(kv KV) Input {
-	return &kvInput{kv: kv, memo: map[string]*lazyEntry{}}
+	return &kvInput{kv: kv}
 }
 
 // kvInput may be shared by concurrent evals; mu guards memo, and each
@@ -104,6 +104,27 @@ func (k *kvInput) GetPath(ctx context.Context, path []pathSegment) (any, bool, e
 	return current, true, nil
 }
 
+// getField resolves a single top-level key. It is GetPath for one segment
+// without building a path slice, which keeps plain field reads allocation-free.
+func (k *kvInput) getField(ctx context.Context, key string) (any, bool, error) {
+	if k == nil || k.kv == nil {
+		return nil, false, nil
+	}
+	value, ok := k.kv[key]
+	if !ok {
+		return nil, false, nil
+	}
+	switch value.(type) {
+	case LazyValue, LazyContextValue:
+		resolved, err := k.resolveLazy(ctx, []pathSegment{{key: key}}, value)
+		if err != nil {
+			return nil, false, err
+		}
+		return resolved, true, nil
+	}
+	return value, true, nil
+}
+
 func (k *kvInput) resolveLazy(ctx context.Context, path []pathSegment, value any) (any, error) {
 	// Plain values never touch the memo, so the common path stays lock-free.
 	switch value.(type) {
@@ -120,6 +141,9 @@ func (k *kvInput) resolveLazy(ctx context.Context, path []pathSegment, value any
 	k.mu.Lock()
 	entry := k.memo[key]
 	if entry == nil {
+		if k.memo == nil {
+			k.memo = map[string]*lazyEntry{}
+		}
 		entry = &lazyEntry{}
 		k.memo[key] = entry
 	}

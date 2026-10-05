@@ -11,11 +11,19 @@ import (
 type FieldValue string
 
 func (f FieldValue) Eval(ctx context.Context, input Input, opts Opts) Result {
-	segments := [1]pathSegment{{key: string(f)}}
-	val, ok, err := resolveInputPath(ctx, input, segments[:])
+	var (
+		val any
+		ok  bool
+		err error
+	)
+	if kv, isKV := input.(*kvInput); isKV {
+		val, ok, err = kv.getField(ctx, string(f))
+	} else {
+		segments := [1]pathSegment{{key: string(f)}}
+		val, ok, err = resolveInputPath(ctx, input, segments[:])
+	}
 	if err != nil {
-		res := inputError(string(f), err)
-		return res
+		return inputError(string(f), err)
 	}
 	if !ok {
 		return Result{MissingFields: []string{string(f)}}
