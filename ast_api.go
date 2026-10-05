@@ -55,6 +55,9 @@ const (
 	OperatorContains
 	OperatorMatches
 	OperatorIn
+	OperatorNotContains
+	OperatorNotMatches
+	OperatorNotIn
 )
 
 // ASTNode is the read-only public view of a parsed expression node.
@@ -212,6 +215,12 @@ func publicOperator(op astOperator) Operator {
 		return OperatorMatches
 	case astOpIn:
 		return OperatorIn
+	case astOpNotContains:
+		return OperatorNotContains
+	case astOpNotMatches:
+		return OperatorNotMatches
+	case astOpNotIn:
+		return OperatorNotIn
 	default:
 		return OperatorUnknown
 	}

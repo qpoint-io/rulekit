@@ -396,7 +396,7 @@ function valueText(value: unknown) {
               <div class="rk-edit-meta">{{ selectedNode?.text || 'click a node to edit or delete safe nodes' }}</div>
               <template v-if="selectedNode && editableKind !== 'none'">
                 <select v-if="editableKind === 'operator'" v-model="draft" class="rk-input">
-                  <option v-for="[op, label] in [['and', 'and'], ['or', 'or'], ['eq', '=='], ['ne', '!='], ['gt', '>'], ['ge', '>='], ['lt', '<'], ['le', '<='], ['contains', 'contains'], ['matches', '=~'], ['in', 'in']]" :key="op" :value="op">{{ label }}</option>
+                  <option v-for="[op, label] in [['and', 'and'], ['or', 'or'], ['eq', '=='], ['ne', '!='], ['gt', '>'], ['ge', '>='], ['lt', '<'], ['le', '<='], ['contains', 'contains'], ['not_contains', 'not contains'], ['matches', '=~'], ['not_matches', 'not =~'], ['in', 'in'], ['not_in', 'not in']]" :key="op" :value="op">{{ label }}</option>
                 </select>
                 <input v-else v-model="draft" class="rk-input" />
                 <button class="rk-btn" @click="applyRewrite">rewrite</button>

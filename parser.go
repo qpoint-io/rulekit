@@ -654,28 +654,45 @@ func (p *parser) parseExpr(minPrec int) (astNode, error) {
 
 	for {
 		tok := p.peek()
-		prec := infixPrecedence(tok.kind)
+		kind, negated := tok.kind, false
+		// `not` directly before contains, matches, or in negates that operator.
+		if tok.kind == op_NOT && tok.raw != "!" {
+			switch next := p.peekAt(1); next.kind {
+			case op_CONTAINS, op_MATCHES, op_IN:
+				kind, negated = next.kind, true
+			}
+		}
+		prec := infixPrecedence(kind)
 		if prec < minPrec {
 			break
 		}
 		p.next()
+		rawOp := tok.raw
+		if negated {
+			opTok := p.next()
+			rawOp = p.input[tok.start:opTok.end]
+		}
+		op := astOperatorFromToken(kind)
+		if negated {
+			op, _ = astNegated(op)
+		}
 
-		switch tok.kind {
+		switch kind {
 		case op_AND, op_OR:
 			right, err := p.parseExpr(prec + 1)
 			if err != nil {
 				return nil, err
 			}
-			left = &astBinary{span: joinSpan(left.astSpan(), right.astSpan()), left: left, op: astOperatorFromToken(tok.kind), rawOp: tok.raw, right: right}
+			left = &astBinary{span: joinSpan(left.astSpan(), right.astSpan()), left: left, op: op, rawOp: rawOp, right: right}
 		case op_EQ, op_NE, op_CONTAINS, op_GT, op_GE, op_LT, op_LE:
 			right, err := p.parseExpr(prec + 1)
 			if err != nil {
 				return nil, err
 			}
-			if isInequality(tok.kind) && (!astValidInequalityOperand(left) || !astValidInequalityOperand(right)) {
+			if isInequality(kind) && (!astValidInequalityOperand(left) || !astValidInequalityOperand(right)) {
 				return nil, p.errorf(tok, "invalid operation")
 			}
-			left = &astBinary{span: joinSpan(left.astSpan(), right.astSpan()), left: left, op: astOperatorFromToken(tok.kind), rawOp: tok.raw, right: right}
+			left = &astBinary{span: joinSpan(left.astSpan(), right.astSpan()), left: left, op: op, rawOp: rawOp, right: right}
 		case op_MATCHES:
 			rhs := p.peek()
 			if rhs.kind != token_REGEX {
@@ -689,7 +706,7 @@ func (p *parser) parseExpr(minPrec int) (astNode, error) {
 			if err != nil {
 				return nil, err
 			}
-			left = &astBinary{span: joinSpan(left.astSpan(), right.astSpan()), left: left, op: astOpMatches, rawOp: tok.raw, right: right}
+			left = &astBinary{span: joinSpan(left.astSpan(), right.astSpan()), left: left, op: op, rawOp: rawOp, right: right}
 		case op_IN:
 			right, err := p.parseExpr(prec + 1)
 			if err != nil {
@@ -700,7 +717,7 @@ func (p *parser) parseExpr(minPrec int) (astNode, error) {
 					return nil, p.errorf(tok, "in requires an array or CIDR value")
 				}
 			}
-			left = &astBinary{span: joinSpan(left.astSpan(), right.astSpan()), left: left, op: astOpIn, rawOp: tok.raw, right: right}
+			left = &astBinary{span: joinSpan(left.astSpan(), right.astSpan()), left: left, op: op, rawOp: rawOp, right: right}
 		}
 	}
 	return left, nil
@@ -919,6 +936,14 @@ func (p *parser) expect(kind int) (token, error) {
 
 func (p *parser) peek() token {
 	return p.tokens[p.pos]
+}
+
+// peekAt returns the token n positions ahead, or the final EOF token.
+func (p *parser) peekAt(n int) token {
+	if p.pos+n < len(p.tokens) {
+		return p.tokens[p.pos+n]
+	}
+	return p.tokens[len(p.tokens)-1]
 }
 
 func (p *parser) next() token {

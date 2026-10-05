@@ -669,6 +669,43 @@
           ]
         }
       }
+    },
+    {
+      "name": "negated operator",
+      "expr": "x not in [1]",
+      "expect": {
+        "ast_json": {
+          "source": "x not in [1]",
+          "root": {
+            "id": "root",
+            "kind": "binary",
+            "text": "x not in [1]",
+            "operator": "not_in",
+            "raw": "not in",
+            "span": {"start": 0, "end": 12, "startLine": 1, "startColumn": 1, "endLine": 1, "endColumn": 13},
+            "children": [
+              {"id": "root.0", "kind": "path", "text": "x", "path": "x", "span": {"start": 0, "end": 1, "startLine": 1, "startColumn": 1, "endLine": 1, "endColumn": 2}},
+              {
+                "id": "root.1",
+                "kind": "array",
+                "text": "[1]",
+                "span": {"start": 9, "end": 12, "startLine": 1, "startColumn": 10, "endLine": 1, "endColumn": 13},
+                "children": [
+                  {"id": "root.1.0", "kind": "literal", "text": "1", "raw": "1", "span": {"start": 10, "end": 11, "startLine": 1, "startColumn": 11, "endLine": 1, "endColumn": 12}}
+                ]
+              }
+            ]
+          },
+          "tokens": [
+            {"kind": "FIELD", "role": "id", "raw": "x", "span": {"start": 0, "end": 1, "startLine": 1, "startColumn": 1, "endLine": 1, "endColumn": 2}},
+            {"kind": "NOT", "role": "kw", "raw": "not", "span": {"start": 2, "end": 5, "startLine": 1, "startColumn": 3, "endLine": 1, "endColumn": 6}},
+            {"kind": "IN", "role": "kw", "raw": "in", "span": {"start": 6, "end": 8, "startLine": 1, "startColumn": 7, "endLine": 1, "endColumn": 9}},
+            {"kind": "LBRACKET", "role": "pun", "raw": "[", "span": {"start": 9, "end": 10, "startLine": 1, "startColumn": 10, "endLine": 1, "endColumn": 11}},
+            {"kind": "INT", "role": "num", "raw": "1", "span": {"start": 10, "end": 11, "startLine": 1, "startColumn": 11, "endLine": 1, "endColumn": 12}},
+            {"kind": "RBRACKET", "role": "pun", "raw": "]", "span": {"start": 11, "end": 12, "startLine": 1, "startColumn": 12, "endLine": 1, "endColumn": 13}}
+          ]
+        }
+      }
     }
   ]
 }

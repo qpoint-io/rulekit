@@ -35,6 +35,10 @@
     {"name": "compact: not over a comparison", "expr": "not a == 1", "expect": {"print": {"compact": "not (a == 1)"}}},
     {"name": "compact: not as comparison operand keeps parens", "expr": "(not a) == false", "expect": {"print": {"compact": "(not a) == false"}}},
     {"name": "compact: not under and", "expr": "not a and b", "expect": {"print": {"compact": "not a and b"}}},
+    {"name": "compact: not contains", "expr": "s  NOT   contains \"x\"", "expect": {"print": {"compact": "s not contains \"x\"", "source": "s  NOT   contains \"x\""}}},
+    {"name": "compact: not in", "expr": "x not in [1, 2]", "expect": {"print": {"compact": "x not in [1, 2]"}}},
+    {"name": "compact: not matches prints as not =~", "expr": "s not matches /x/i", "expect": {"print": {"compact": "s not =~ /x/i"}}},
+    {"name": "compact: explicit not over contains keeps its form", "expr": "not (s contains \"x\")", "expect": {"print": {"compact": "not (s contains \"x\")"}}},
     {
       "name": "compact: ip in 192.168.0.0/16",
       "expr": "ip in 192.168.0.0/16",

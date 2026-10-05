@@ -126,6 +126,12 @@ func (o Operator) String() string {
 		return "matches"
 	case OperatorIn:
 		return "in"
+	case OperatorNotContains:
+		return "not_contains"
+	case OperatorNotMatches:
+		return "not_matches"
+	case OperatorNotIn:
+		return "not_in"
 	default:
 		return "unknown"
 	}

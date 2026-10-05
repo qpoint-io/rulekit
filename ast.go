@@ -40,7 +40,31 @@ const (
 	astOpContains
 	astOpMatches
 	astOpIn
+	astOpNotContains
+	astOpNotMatches
+	astOpNotIn
 )
+
+// astNegatedBase maps a negated operator (not contains, not matches, not in)
+// to the operator it negates.
+var astNegatedBase = map[astOperator]astOperator{
+	astOpNotContains: astOpContains,
+	astOpNotMatches:  astOpMatches,
+	astOpNotIn:       astOpIn,
+}
+
+// astNegated returns the negated form of contains, matches, or in.
+func astNegated(op astOperator) (astOperator, bool) {
+	switch op {
+	case astOpContains:
+		return astOpNotContains, true
+	case astOpMatches:
+		return astOpNotMatches, true
+	case astOpIn:
+		return astOpNotIn, true
+	}
+	return astOpUnknown, false
+}
 
 func astOperatorFromToken(kind int) astOperator {
 	switch kind {
@@ -74,6 +98,9 @@ func astOperatorFromToken(kind int) astOperator {
 }
 
 func tokenKindFromASTOperator(op astOperator) int {
+	if base, ok := astNegatedBase[op]; ok {
+		op = base
+	}
 	switch op {
 	case astOpNot:
 		return op_NOT
@@ -251,20 +278,32 @@ func lowerAST(node astNode) (Rule, error) {
 		if err != nil {
 			return nil, err
 		}
-		switch n.op {
+		op, negated := n.op, false
+		if base, ok := astNegatedBase[n.op]; ok {
+			op, negated = base, true
+		}
+		var r Rule
+		switch op {
 		case astOpAnd:
-			return withTrace(n, &nodeAnd{left: left, right: right}), nil
+			r = &nodeAnd{left: left, right: right}
 		case astOpOr:
-			return withTrace(n, &nodeOr{left: left, right: right}), nil
+			r = &nodeOr{left: left, right: right}
 		case astOpEQ, astOpNE, astOpContains, astOpGT, astOpGE, astOpLT, astOpLE:
-			return withTrace(n, &nodeCompare{lv: left, op: tokenKindFromASTOperator(n.op), rv: right}), nil
+			r = &nodeCompare{lv: left, op: tokenKindFromASTOperator(op), rv: right}
 		case astOpMatches:
-			return withTrace(n, &nodeMatch{lv: left, rv: right}), nil
+			r = &nodeMatch{lv: left, rv: right}
 		case astOpIn:
 			if literalIs[*net.IPNet](right) {
-				return withTrace(n, &nodeCompare{lv: left, op: op_EQ, rv: right}), nil
+				r = &nodeCompare{lv: left, op: op_EQ, rv: right}
+			} else {
+				r = &nodeIn{lv: left, rv: right}
 			}
-			return withTrace(n, &nodeIn{lv: left, rv: right}), nil
+		}
+		if r != nil {
+			if negated {
+				r = &nodeNot{right: r}
+			}
+			return withTrace(n, r), nil
 		}
 	}
 	return nil, &astLowerError{span: node.astSpan(), msg: "unsupported AST node"}
@@ -342,7 +381,7 @@ func astPrecedence(node astNode) int {
 			return 1
 		case astOpAnd:
 			return 2
-		case astOpEQ, astOpNE, astOpGT, astOpGE, astOpLT, astOpLE, astOpContains, astOpMatches, astOpIn:
+		case astOpEQ, astOpNE, astOpGT, astOpGE, astOpLT, astOpLE, astOpContains, astOpMatches, astOpIn, astOpNotContains, astOpNotMatches, astOpNotIn:
 			return 3
 		}
 	}
@@ -350,6 +389,9 @@ func astPrecedence(node astNode) int {
 }
 
 func astOperatorString(op astOperator) string {
+	if base, ok := astNegatedBase[op]; ok {
+		return "not " + astOperatorString(base)
+	}
 	switch op {
 	case astOpAnd:
 		return "and"

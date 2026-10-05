@@ -365,6 +365,7 @@ func rewriteOperator(source string, node rulekit.ASTNode, next string) (string, 
 // spelling written into rule text.
 var operatorSpelling = map[string]string{
 	"eq": "==", "ne": "!=", "gt": ">", "ge": ">=", "lt": "<", "le": "<=", "matches": "=~",
+	"not_contains": "not contains", "not_matches": "not =~", "not_in": "not in",
 }
 
 func sourceForNode(source string, node rulekit.ASTNode) string {
