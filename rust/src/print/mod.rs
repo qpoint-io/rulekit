@@ -182,9 +182,8 @@ mod tests {
         ] {
             let ast = Ast::parse(expr).unwrap();
             let texts = canonical_all(&ast);
-            for i in 0..ast.nodes.len() {
-                let id = ast.node_id(i);
-                assert_eq!(texts[i], canonical(&ast, id), "{expr}: node {i}");
+            for (i, text) in texts.iter().enumerate() {
+                assert_eq!(text, &canonical(&ast, ast.node_id(i)), "{expr}: node {i}");
             }
         }
     }
