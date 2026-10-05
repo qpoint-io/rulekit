@@ -34,6 +34,14 @@ func compareDetailed(left any, op int, right any) compareOutcome {
 			return compareDetailed(left, op, rv)
 		})
 	}
+	if rightStrs, ok := right.([]string); ok {
+		if op == op_CONTAINS {
+			return invalidShape()
+		}
+		return compareSliceDetailed(rightStrs, op, func(rv string, op int) compareOutcome {
+			return compareDetailed(left, op, rv)
+		})
+	}
 
 	// the left value type determines the comparison logic
 	switch lv := left.(type) {

@@ -102,6 +102,8 @@
     {"name": "query: whole query compares as its text", "expr": "u.query == \"a=1&b=2\"", "input": {"u.$url": "http://h/?a=1&b=2"}, "expect": {"value": true}},
     {"name": "query: repeated values compare with ip text", "expr": "u.query.t == 10.0.0.1", "input": {"u.$url": "http://h/?t=x&t=10.0.0.1"}, "expect": {"value": true}},
     {"name": "query: repeated values match any element", "expr": "u.query.t matches /^10\\./", "input": {"u.$url": "http://h/?t=x&t=10.0.0.1"}, "expect": {"value": true}},
+    {"name": "query: repeated values on the right match any element", "expr": "\"x\" == u.query.t", "input": {"u.$url": "http://h/?t=x&t=y"}, "expect": {"value": true}},
+    {"name": "query: repeated values on the right, none equal", "expr": "\"z\" != u.query.t", "input": {"u.$url": "http://h/?t=x&t=y"}, "expect": {"value": true}},
     {"name": "cidr field: mapped prefix matches its ipv4 text form", "expr": "n.prefix == 8 and n.version == \"v4\"", "input": {"n.$cidr": "::ffff:10.0.0.0/104"}, "expect": {"value": true}},
     {
       "name": "absent url part is missing: bare.fragment",
