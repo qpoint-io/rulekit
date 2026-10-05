@@ -46,7 +46,7 @@ func urlField(u *url.URL, key string) (any, bool) {
 		}
 		return port, true
 	case "path":
-		return u.Path, true
+		return u.EscapedPath(), true
 	case "query":
 		return urlQuery(u.RawQuery), true
 	case "fragment":

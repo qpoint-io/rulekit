@@ -91,6 +91,7 @@
       },
       "expect": {"value": null, "missing_fields": ["bare.query.env"]}
     },
+    {"name": "path keeps percent escapes as written", "expr": "u.path == \"/a%20b/c%2Fd\"", "input": {"u.$url": "https://h/a%20b/c%2Fd"}, "expect": {"value": true}},
     {"name": "query: semicolon is not a separator", "expr": "u.query.a == \"1;b=2\"", "input": {"u.$url": "http://h/?a=1;b=2"}, "expect": {"value": true}},
     {"name": "query: plus is a space", "expr": "u.query.d == \"x y\"", "input": {"u.$url": "http://h/?d=x+y"}, "expect": {"value": true}},
     {"name": "query: invalid percent escape is kept", "expr": "u.query.c == \"%zz\"", "input": {"u.$url": "http://h/?c=%zz"}, "expect": {"value": true}},
