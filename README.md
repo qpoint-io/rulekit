@@ -107,14 +107,15 @@ The Result also provides additional helper methods:
 
 | Type                   | Used As      | Example                                                        | Description                                                                                                                                                                             |
 | ---------------------- | ------------ | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **bool**               | VALUE, FIELD | `true`                                                         | Valid values: `true`, `false`                                                                                                                                                           |
+| **bool**               | VALUE, FIELD | `true`                                                         | Valid values: `true`, `false` (any letter case)                                                                                                                                         |
 | **number**             | VALUE, FIELD | `8080`, `0x1f`, `1_000`, `1.5`                                 | Integer or float. Integers may be decimal (leading zeros are still decimal: `010` is ten) or use a `0x`, `0o`, or `0b` prefix, with optional `_` separators. Parsed as int64, or uint64 if out of range for int64, or float64 if float. |
 | **string**             | VALUE, FIELD | `"domain.com"`, `'domain.com'`                                 | A double- or single-quoted string. Both accept backslash escapes: `"a \"quoted\" word"`, `'it\'s'`. A quoted value that is a valid IP address, CIDR, MAC address, or absolute URL is treated as that type (e.g. `"10.0.0.1"` is an IP). Any other quoted value is a string. |
 | **IP address**         | VALUE, FIELD | `192.168.1.1`, `2001:db8:3333:4444:cccc:dddd:eeee:ffff`        | An IPv4, IPv6, or an IPv6 dual address. Maps to Go type: `net.IP`                                                                                                                       |
 | **CIDR**               | VALUE        | `192.168.1.0/24`, `2001:db8:3333:4444:cccc:dddd:eeee:ffff/64`  | An IPv4 or IPv6 CIDR block. Maps to Go type: `*net.IPNet`                                                                                                                               |
-| **Hexadecimal string** | VALUE, FIELD | `50:4f:53:54`, `x"504f5354"`, `x"0a"`                          | Bytes, written either as two or more colon-separated hex pairs or as hex digits in `x"..."`. Equals a string with the same bytes (`x"504f5354" == "POST"`) or a MAC address with the same value. Eight colon-separated pairs read as an IPv6 address; use `x"..."` for 8-byte values. |
+| **MAC address**        | VALUE, FIELD | `"01:23:45:67:89:ab"`, `"01-23-45-67-89-ab"`, `"0123.4567.89ab"` | A 6- or 8-byte MAC address in quotes, written with colons, hyphens, or dot-separated groups of four. Unquoted pairs such as `01:23:45:67:89:ab` are hexadecimal bytes, which also equal a MAC address with the same value. Maps to Go type: `net.HardwareAddr` |
+| **Hexadecimal string** | VALUE, FIELD | `50:4f:53:54`, `x"504f5354"`, `x"0a"`                          | Bytes, written either as two or more colon-separated hex pairs or as hex digits in `x"..."` (`X` and single quotes also work). Equals a string with the same bytes (`x"504f5354" == "POST"`) or a MAC address with the same value. Eight colon-separated pairs read as an IPv6 address; use `x"..."` for 8-byte values. |
 | **URL**                | VALUE, FIELD | `"https://example.com/api"`                                    | An absolute URL in quotes. Compares against strings and other URLs by its text. Maps to Go type: `*url.URL`                                                                             |
-| **Regex**              | VALUE        | `/example\.com$/`, `/curl/i`                                   | A regular expression in [RE2 syntax](https://github.com/google/re2/wiki/Syntax), surrounded by forward slashes. May not be quoted with double quotes (otherwise it will be parsed as a string). Flags may follow the closing slash: `i` (ignore case), `m` (`^` and `$` match at line breaks), `s` (`.` matches newlines). `\d`, `\w`, `\s`, and `\b` match ASCII only. Not supported: `\Q...\E`, `\<` and `\>`, numeric escapes such as `\0` (use `\x{...}`), `{,n}` (use `{0,n}`), `\p{^...}` (use `\P{...}`), nested classes, and `&&`, `--`, or `~~` inside a class. |
+| **Regex**              | VALUE        | `/example\.com$/`, `/curl/i`, `\|a/b\|`                        | A regular expression in [RE2 syntax](https://github.com/google/re2/wiki/Syntax), surrounded by forward slashes or by `\|` (handy when the pattern contains `/`). May not be quoted with double quotes (otherwise it will be parsed as a string). Lowercase flags may follow the closing delimiter: `i` (ignore case), `m` (`^` and `$` match at line breaks), `s` (`.` matches newlines). `\d`, `\w`, and `\b` match ASCII only, and `\s` matches space, `\t`, `\n`, `\f`, and `\r`. Repetition counts go up to 1000. Not supported: `\Q...\E`, `\<` and `\>`, numeric escapes such as `\0` (use `\x{...}`), `{,n}` (use `{0,n}`), a `{` that does not start a repetition (use `\{`), `\p{^...}` (use `\P{...}`), nested classes, and `&&`, `--`, or `~~` inside a class. |
 
 ### Constructs
 
@@ -161,7 +162,7 @@ device.mac.oui == 00:1a:2b
 | URL | `host` | Lowercase host name without the port |
 | URL | `port` | Port number, if the URL has one |
 | URL | `path` | Path, e.g. `"/api/v1"` (`""` if empty) |
-| URL | `query["name"]` | Query parameter value; a parameter given more than once is a list |
+| URL | `query["name"]` or `query.name` | Query parameter value; a parameter given more than once is a list |
 | URL | `fragment` | Text after `#` |
 | URL | `user` | User name |
 | IP address | `version` | `"v4"` or `"v6"` |
@@ -357,8 +358,8 @@ customFuncs := map[string]*rulekit.Function{
                 return rulekit.Result{Error: err}
             }
 
-			num := rand.IntN(max-min) + min
-			return rulekit.Result{
+            num := rand.Int64N(max-min) + min
+            return rulekit.Result{
                 Value: num,
             }
         },
