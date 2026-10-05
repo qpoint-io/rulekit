@@ -114,7 +114,7 @@ The Result also provides additional helper methods:
 | **CIDR**               | VALUE        | `192.168.1.0/24`, `2001:db8:3333:4444:cccc:dddd:eeee:ffff/64`  | An IPv4 or IPv6 CIDR block. Maps to Go type: `*net.IPNet`                                                                                                                               |
 | **Hexadecimal string** | VALUE, FIELD | `50:4f:53:54`, `x"504f5354"`, `x"0a"`                          | Bytes, written either as two or more colon-separated hex pairs or as hex digits in `x"..."`. Equals a string with the same bytes (`x"504f5354" == "POST"`) or a MAC address with the same value. Eight colon-separated pairs read as an IPv6 address; use `x"..."` for 8-byte values. |
 | **URL**                | VALUE, FIELD | `"https://example.com/api"`                                    | An absolute URL in quotes. Compares against strings and other URLs by its text. Maps to Go type: `*url.URL`                                                                             |
-| **Regex**              | VALUE        | `/example\.com$/`                                              | A Go-style regular expression. Must be surrounded by forward slashes. May not be quoted with double quotes (otherwise it will be parsed as a string). Maps to Go type: `*regexp.Regexp` |
+| **Regex**              | VALUE        | `/example\.com$/`, `/curl/i`                                   | A Go-style regular expression. Must be surrounded by forward slashes. May not be quoted with double quotes (otherwise it will be parsed as a string). Flags may follow the closing slash: `i` (ignore case), `m` (`^` and `$` match at line breaks), `s` (`.` matches newlines). Maps to Go type: `*regexp.Regexp` |
 
 ### Constructs
 

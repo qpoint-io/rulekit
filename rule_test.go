@@ -1230,3 +1230,16 @@ func TestHexLiterals(t *testing.T) {
 
 	require.Equal(t, `x == x"0a"`, MustParse(`x == x"0a"`).String())
 }
+
+func TestRegexFlags(t *testing.T) {
+	assertRulep(t, `ua matches /curl/i`, kv{"ua": "CURL/8.0"}).Ok().DoesPass(true)
+	assertRulep(t, `ua matches |curl|i`, kv{"ua": "CURL/8.0"}).Ok().DoesPass(true)
+	assertRulep(t, `ua matches /curl/`, kv{"ua": "CURL/8.0"}).Ok().DoesPass(false)
+	assertRulep(t, `body matches /a.b/s`, kv{"body": "a\nb"}).Ok().DoesPass(true)
+	assertRulep(t, `body matches /^b$/m`, kv{"body": "a\nb"}).Ok().DoesPass(true)
+	assertRulep(t, `body matches /^A.B$/ims`, kv{"body": "x\na\nb"}).Ok().DoesPass(true)
+	assertParseError(t, `ua matches /curl/q`)
+	// A keyword directly after the closing delimiter is still a keyword.
+	assertRulep(t, `ua matches /curl/and ok`, kv{"ua": "curl", "ok": true}).Ok().DoesPass(true)
+	require.Equal(t, `ua =~ /curl/i`, MustParse(`ua matches /curl/i`).String())
+}

@@ -142,7 +142,11 @@ func parseBool[T interface{ string | []byte }](data T) (bool, error) {
 
 func parseRegex[T interface{ string | []byte }](data T) (*regexp.Regexp, error) {
 	raw := string(data)
-	pattern := raw[1 : len(raw)-1]
+	end := strings.LastIndexByte(raw, raw[0])
+	pattern := raw[1:end]
+	if flags := raw[end+1:]; flags != "" {
+		pattern = "(?" + flags + ")" + pattern
+	}
 	return regexp.Compile(pattern)
 }
 
@@ -307,7 +311,7 @@ func (l *lexer) next() token {
 		if l.match("||") {
 			return token{kind: op_OR, raw: "||", start: start, end: l.pos, leadingTrivia: leading}
 		}
-		return l.scanDelimited('|', token_REGEX, leading)
+		return l.scanRegex('|', leading)
 	case '=':
 		if l.match("==") {
 			return token{kind: op_EQ, raw: "==", start: start, end: l.pos, leadingTrivia: leading}
@@ -341,11 +345,10 @@ func (l *lexer) next() token {
 		if ch == '/' && l.hasPrefix("/*") {
 			break
 		}
-		kind := token_REGEX
 		if ch == '\'' || ch == '"' {
-			kind = token_STRING
+			return l.scanDelimited(ch, token_STRING, leading)
 		}
-		return l.scanDelimited(ch, kind, leading)
+		return l.scanRegex(ch, leading)
 	}
 
 	if ch == '+' || ch == '-' || ch == ':' || isAtomStart(rune(ch)) || unicode.IsDigit(rune(ch)) {
@@ -404,6 +407,27 @@ func (l *lexer) scanDelimited(delim byte, kind int, leading string) token {
 		}
 	}
 	return token{kind: token_ERROR, raw: "unterminated literal", start: start, end: l.pos, leadingTrivia: leading}
+}
+
+// scanRegex scans a delimited regex and an optional run of i, m, and s flags
+// directly after the closing delimiter. A run containing any other letter is
+// left for the next token, so /x/and still lexes as a regex followed by "and".
+func (l *lexer) scanRegex(delim byte, leading string) token {
+	tok := l.scanDelimited(delim, token_REGEX, leading)
+	if tok.kind != token_REGEX {
+		return tok
+	}
+	end := l.pos
+	for end < len(l.input) && unicode.IsLetter(rune(l.input[end])) {
+		end++
+	}
+	flags := l.input[l.pos:end]
+	if flags != "" && strings.Trim(flags, "ims") == "" {
+		l.pos = end
+		tok.raw = l.input[tok.start:end]
+		tok.end = end
+	}
+	return tok
 }
 
 func (l *lexer) scanAtom(leading string) token {
