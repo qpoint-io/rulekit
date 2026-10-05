@@ -36,6 +36,14 @@ fn bench_eval(c: &mut Criterion) {
     let trace = cases::trace_case();
     c.bench_function("BenchmarkEvalTrace", |b| b.iter(|| black_box(trace.eval())));
 
+    let derived = cases::DerivedBench::new();
+    c.bench_function("BenchmarkEval/derived_struct", |b| {
+        b.iter(|| black_box(derived.eval()))
+    });
+    c.bench_function("BenchmarkEval/derived_vs_kv", |b| {
+        b.iter(|| black_box(derived.kv.eval()))
+    });
+
     let mut group = c.benchmark_group("BenchmarkParse");
     for (name, expr) in cases::PARSE_CASES {
         group.bench_function(name, |b| {

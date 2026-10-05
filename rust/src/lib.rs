@@ -14,9 +14,8 @@
 //!   [`compile`] split that into two steps for tools that inspect the tree.
 //! - [`Rule::eval`] evaluates a rule against an [`Input`] and returns an
 //!   [`EvalResult`]: a value, an error, or the fields the input lacked.
-//! - Inputs: [`KvInput`] over a [`Kv`] tree (built by hand or with
-//!   [`decode_json`]), [`FnInput`] for a resolver closure, [`NoInput`], or
-//!   your own [`Input`] implementation.
+//! - Inputs: [`derive(Input)`](Input) on your structs, [`kv!`], a string-keyed
+//!   map, or [`serde_json::Value`]. [`KvInput`] remains for owned trees.
 //! - [`Env`] holds custom [`Function`]s and [`Macro`]s; [`Opts`] passes it to
 //!   evaluation and turns on [`Trace`]s.
 //! - [`format`](fn@format), [`Rule::print`], and [`rewrite`] print
@@ -25,15 +24,16 @@
 //! # Example
 //!
 //! ```rust
-//! use rulekit::value::{Map, Value};
-//! use rulekit::{KvInput, Opts};
+//! use rulekit::Opts;
+//!
+//! #[derive(rulekit::Input)]
+//! struct Request<'a> {
+//!     domain: &'a str,
+//!     port: u16,
+//! }
 //!
 //! let rule = rulekit::parse(r"domain matches /example\.com$/ and port == 8080")?;
-//!
-//! let input = KvInput::from_values(Map::from_iter([
-//!     ("domain".to_owned(), Value::String("example.com".into())),
-//!     ("port".to_owned(), Value::Int(8080)),
-//! ]));
+//! let input = Request { domain: "example.com", port: 8080 };
 //!
 //! let result = rule.eval(&(), &input, Opts::default());
 //! if let Some(err) = result.error() {

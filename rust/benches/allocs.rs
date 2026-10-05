@@ -66,6 +66,13 @@ fn main() {
         let input = cases::lazy_input();
         black_box(rule.eval(&(), &input, Opts::default()).pass());
     });
+    let derived = cases::DerivedBench::new();
+    measure("BenchmarkEval/derived_struct", || {
+        black_box(derived.eval());
+    });
+    measure("BenchmarkEval/derived_vs_kv", || {
+        black_box(derived.kv.eval());
+    });
     let trace = cases::trace_case();
     measure("BenchmarkEvalTrace", || {
         black_box(trace.eval());

@@ -23,15 +23,16 @@ Requires Rust 1.88 or later.
 ## Parse and evaluate
 
 ```rust
-use rulekit::value::{Map, Value};
-use rulekit::{KvInput, Opts};
+use rulekit::Opts;
+
+#[derive(rulekit::Input)]
+struct Request<'a> {
+    domain: &'a str,
+    port: u16,
+}
 
 let rule = rulekit::parse(r"domain matches /example\.com$/ and port == 8080")?;
-
-let input = KvInput::from_values(Map::from_iter([
-    ("domain".to_owned(), Value::String("example.com".into())),
-    ("port".to_owned(), Value::Int(8080)),
-]));
+let input = Request { domain: "example.com", port: 8080 };
 
 let result = rule.eval(&(), &input, Opts::default());
 if let Some(err) = result.error() {
@@ -63,41 +64,75 @@ offending source.
 
 ## Input
 
-`KvInput` evaluates against a `Kv` tree: a map of field names to `KvEntry`
-values. An entry is plain data (`Value`), a nested map, a nested `Input` that
-resolves the rest of the path, or a `Lazy` value computed from the context on
-first read:
+Pass a `#[derive(rulekit::Input)]` struct, a `kv!` map, a `HashMap`/`BTreeMap`
+with string keys, or a `serde_json::Value`. A rule reads only the fields it
+names; the rest of a large input is not walked or copied. Strings are borrowed
+from your data.
 
 ```rust
-use rulekit::value::Value;
-use rulekit::{Env, Kv, KvEntry, KvInput, Lazy, Opts};
+use std::collections::HashMap;
+use rulekit::{Opts, kv, lazy};
 
 struct Ctx {
     user: String,
 }
 
-let input = KvInput::new(Kv::from_iter([
-    ("method".to_owned(), Value::String("GET".into()).into()),
-    (
-        "user".to_owned(),
-        KvEntry::Lazy(Lazy::new(|ctx: &Ctx| Ok(Value::String(ctx.user.clone())))),
-    ),
-]));
+#[derive(rulekit::Input)]
+struct Request<'a> {
+    method: &'a str,
+    headers: &'a HashMap<String, String>,
+    user: rulekit::LazyVal<'static, Ctx>,
+}
 
-let rule = rulekit::parse(r#"method == "GET" and user == "alice""#)?;
-let env = Env::new();
+let headers = HashMap::from([("host".into(), "example.com".into())]);
+let input = Request {
+    method: "GET",
+    headers: &headers,
+    user: lazy(|ctx: &Ctx| Ok(ctx.user.as_str().into())),
+};
+
+let rule = rulekit::parse(
+    r#"method == "GET" and headers.host == "example.com" and user == "alice""#,
+)?;
+let env: rulekit::Env<Ctx> = rulekit::Env::new();
 let ctx = Ctx { user: "alice".into() };
 assert!(rule.eval(&ctx, &input, Opts::new(&env)).pass());
 ```
 
-`FnInput` wraps a closure that resolves a path; implement the `Input` trait
-for full control. `NoInput` has no fields.
+`#[rulekit(rename = "x")]` changes the name a rule sees; `#[rulekit(skip)]`
+omits a field. `#[rulekit(context = Ctx)]` on the struct sets the context
+type when it is not `()`. An unknown field is missing. `None` is missing.
+
+`kv!` is the ad-hoc form. A nested `{ ... }` is another map. [`lazy`] runs
+only if the field is read:
+
+```rust
+use rulekit::{Opts, kv};
+
+let input = kv! {
+    "host" => "api.acme.com",
+    "port" => 8443,
+    "user" => { "id" => 42 },
+};
+let rule = rulekit::parse(r#"host == "api.acme.com" and port == 8443 and user.id == 42"#)?;
+assert!(rule.eval(&(), &input, Opts::default()).pass());
+```
+
+List membership is `tags contains "db"` (`in` takes an array or CIDR literal,
+as in Go). `Vec<u8>` and `&[u8]` are lists of numbers, not byte strings; use
+`Value::Bytes` for bytes. `url::Url` and `http::Uri` fields (`host`, `path`,
+`query.env`, ...) work with the default `url` and `http` features.
+`http::Uri` compared as a whole URL allocates its text form; field access does
+not.
+
+`FnInput` wraps a closure that resolves a path. `NoInput` has no fields.
+`Kv` / `KvInput` / `Value` remain for annotated JSON and other owned trees.
 
 ### JSON
 
-`decode_json` turns a JSON object into a `Kv`. Plain JSON decodes
-dynamically; `JsonOptions` enables annotated keys (`"src.$ip": "1.2.3.4"`)
-or fully typed documents (`{"$type": "ip", "value": "1.2.3.4"}`):
+A `serde_json::Value` is walked lazily, borrowing strings from the tree.
+`decode_json` is the annotated form (`"src.$ip": "1.2.3.4"`, or
+`{"$type": "ip", "value": "1.2.3.4"}`), and still yields a `Kv`:
 
 ```rust
 use rulekit::{JsonOptions, KvInput, Opts, decode_json};
@@ -214,9 +249,10 @@ assert_eq!(out, "c == 2   -- first check\nand b");
 | `rule.Eval(ctx, input, opts)` | `rule.eval(&ctx, &input, opts)` |
 | `Result` | `EvalResult` |
 | `Opts{Functions, Macros, Trace}` | `Opts { env, trace }` with `Env::builder()` |
-| `FromKV`, `KV` | `KvInput::new`, `Kv` |
+| struct / map literal | `#[derive(Input)]`, `kv!` |
+| `FromKV`, `KV` | `KvInput::new`, `Kv` (owned escape hatch) |
 | `FromFunc`, `FromContextFunc` | `FnInput` |
-| `LazyValue`, `LazyContextValue` | `Lazy` |
+| `LazyValue`, `LazyContextValue` | `lazy`, `Lazy` |
 | `DecodeJSON`, `JSONOptions` | `decode_json`, `JsonOptions` |
 | `MacroSet.Register` | `EnvBuilder::macro_source` |
 | `rulekit.Func` with an args struct | `Function::new::<A, R>(FuncSchema { name, doc }, closure)` with `#[derive(rulekit::Args)]` |

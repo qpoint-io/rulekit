@@ -4,6 +4,8 @@
 #![allow(dead_code)]
 
 use rulekit::value::{Ip, Map, Url, Value, ValueRef};
+use std::collections::HashMap;
+
 use rulekit::{Env, FuncSchema, Function, KvEntry, KvInput, Lazy, Opts, Rule};
 
 /// One `BenchmarkEval`-style case: a rule, its input, and its environment.
@@ -252,4 +254,51 @@ fn has_prefix() -> Function {
         },
         |_: &(), a| Ok(a.value.starts_with(a.prefix)),
     )
+}
+
+#[derive(rulekit::Input)]
+pub struct DerivedInput {
+    pub host: String,
+    pub port: u16,
+    pub tags: Vec<String>,
+    pub headers: HashMap<String, String>,
+}
+
+pub struct DerivedBench {
+    pub rule: Rule,
+    pub input: DerivedInput,
+    pub kv: EvalCase,
+}
+
+impl DerivedBench {
+    pub fn new() -> Self {
+        let expr = r#"host == "api.acme.com" and port == 8443 and tags contains "db" and headers["x-env"] == "prod""#;
+        let kv = case(
+            "derived_vs_kv",
+            expr,
+            input(vec![
+                ("host", s("api.acme.com")),
+                ("port", Value::Int(8443)),
+                ("tags", Value::Array(vec![s("db"), s("api")])),
+                (
+                    "headers",
+                    object(vec![("x-env", s("prod"))]),
+                ),
+            ]),
+        );
+        Self {
+            rule: rulekit::parse(expr).expect("parse"),
+            input: DerivedInput {
+                host: "api.acme.com".into(),
+                port: 8443,
+                tags: vec!["db".into(), "api".into()],
+                headers: HashMap::from([("x-env".into(), "prod".into())]),
+            },
+            kv,
+        }
+    }
+
+    pub fn eval(&self) -> bool {
+        self.rule.eval(&(), &self.input, Opts::default()).pass()
+    }
 }

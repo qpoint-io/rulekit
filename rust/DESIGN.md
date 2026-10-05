@@ -6,6 +6,30 @@ The Go code at the repo root is the reference. Every semantic rule below is a po
 named Go code. "Mirror Go" means: port that function's behaviour, including its quirks,
 unless a QUESTION in the report says otherwise.
 
+## Input values (implemented)
+
+Users pass their own types: `#[derive(Input)]` on a named-field struct, `kv!`
+for an ad-hoc map, or a `HashMap` / `BTreeMap` / `serde_json::Value`.
+`InputValue` is the field trait. An empty path is the value; a longer path
+reads only those segments. Lists and objects are `&dyn` sources
+(`ArrayRef::List`, `ObjectRef::Source`), so `tags contains "x"` and
+`headers["k"]` do not copy the collection. A borrowed `&[T]` is handed out as
+`&&[T]`: a slice is unsized and cannot itself be `&dyn`.
+
+Rejected: implementing input via `serde::Serialize`. Serde walks every field
+in order and returns strings with a lifetime that ends when the serializer
+call returns, so strings would be copied and unread fields would still be
+visited.
+
+`Vec<u8>` and `&[u8]` are lists of numbers. A blanket list impl cannot also
+treat them as byte strings. Bytes stay `Value::Bytes`.
+
+The `url` and `http` features are on by default. `url::Url` field access and
+comparison borrow `as_str()` (the crate's serialization, not the original
+spelling). `http::Uri` field access borrows; reading the URI as a value
+allocates its `Display` form (3 allocations on a short URI).
+
+
 ## 1. Crate layout
 
 One library crate, `rulekit`, in `rust/`. Edition 2024, `rust-version = "1.88"` (let
