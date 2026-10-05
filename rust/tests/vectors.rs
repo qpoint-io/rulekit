@@ -6,7 +6,8 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use rulekit::{Ast, PrintMode};
+use rulekit::value::{ObjectRef, Value, ValueRef};
+use rulekit::{Ast, JsonOptions, KvInput, NoInput, Opts, PrintMode};
 use serde::Deserialize;
 use serde_json::Value as Json;
 
@@ -17,8 +18,6 @@ struct VectorFile {
     cases: Vec<Case>,
 }
 
-// `input` and `macros` are decoded strictly now and used once evaluation exists.
-#[allow(dead_code)]
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Case {
@@ -80,8 +79,7 @@ struct PrintExpect {
     multiline_4sp: Option<String>,
 }
 
-// Trace and evaluation expectations are decoded strictly now and checked once
-// evaluation exists.
+// Trace expectations are decoded strictly now and checked once tracing exists.
 #[allow(dead_code)]
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -175,7 +173,7 @@ fn vectors() {
                 "{file_name}/{}: bad input_mode {mode:?}",
                 case.name
             );
-            match run_case(case, &mut report) {
+            match run_case(case, mode, &mut report) {
                 Ok(()) => {}
                 Err(msg) => report
                     .failures
@@ -200,7 +198,14 @@ fn vectors() {
     );
 }
 
-fn run_case(case: &Case, report: &mut Report) -> Result<(), String> {
+fn json_options(mode: &str) -> JsonOptions {
+    JsonOptions {
+        annotated_keys: mode == "annotated_keys",
+        typed_document: mode == "typed_document",
+    }
+}
+
+fn run_case(case: &Case, mode: &str, report: &mut Report) -> Result<(), String> {
     let want = &case.expect;
     let has_expectation = want.decode_error
         || want.parse_error.is_some()
@@ -210,13 +215,29 @@ fn run_case(case: &Case, report: &mut Report) -> Result<(), String> {
     if !has_expectation {
         return Err("case has no expectations".into());
     }
-    if want.decode_error {
-        if case.expr.is_some() {
-            return Err("decode_error cases must not have an expr".into());
+    let input = match &case.input {
+        Some(json) => {
+            let bytes = serde_json::to_vec(json).expect("serialize input");
+            let decoded = rulekit::decode_json::<()>(&bytes, json_options(mode));
+            if want.decode_error {
+                if case.expr.is_some() {
+                    return Err("decode_error cases must not have an expr".into());
+                }
+                return match decoded {
+                    Ok(_) => Err("expected input decode error".into()),
+                    Err(_) => {
+                        report.passed += 1;
+                        Ok(())
+                    }
+                };
+            }
+            Some(KvInput::new(
+                decoded.map_err(|err| format!("decoding input: {err}"))?,
+            ))
         }
-        *report.skipped.entry("needs decode_json").or_default() += 1;
-        return Ok(());
-    }
+        None if want.decode_error => return Err("decode_error requires input".into()),
+        None => None,
+    };
     let expr = case.expr.as_deref().ok_or("case requires expr")?;
 
     let parsed = Ast::parse(expr)
@@ -262,11 +283,126 @@ fn run_case(case: &Case, report: &mut Report) -> Result<(), String> {
         }
     }
     if want.evaluates() {
-        *report.skipped.entry("needs evaluation").or_default() += 1;
-        return Ok(());
+        let mut builder = rulekit::Env::<()>::builder();
+        for (name, source) in case.macros.iter().flatten() {
+            builder = builder
+                .macro_source(name.clone(), source)
+                .map_err(|err| format!("macro {name:?}: {err}"))?;
+        }
+        let env = builder.build().map_err(|err| format!("env: {err}"))?;
+        let opts = Opts::new(&env);
+        let result = match &input {
+            Some(input) => rule.eval(input, &(), opts),
+            None => rule.eval(&NoInput, &(), opts),
+        };
+        check_result(&result, want)?;
+        if want.trace.is_some() {
+            *report
+                .skipped
+                .entry("trace expectation unchecked until tracing")
+                .or_default() += 1;
+        }
     }
     report.passed += 1;
     Ok(())
+}
+
+fn check_result(got: &rulekit::EvalResult<'_>, want: &Expect) -> Result<(), String> {
+    let want_error = want.error.unwrap_or(false);
+    match (want_error, got.error_ref()) {
+        (true, None) => return Err("expected eval error".into()),
+        (false, Some(err)) => return Err(format!("eval error: {err}")),
+        _ => {}
+    }
+    let mut want_missing = want.missing_fields.clone().unwrap_or_default();
+    want_missing.sort();
+    let mut got_missing: Vec<String> = got.missing_fields().iter().map(|s| s.to_string()).collect();
+    got_missing.sort();
+    if want_missing != got_missing {
+        return Err(format!(
+            "missing_fields: got {got_missing:?}, want {want_missing:?}"
+        ));
+    }
+    if let Some(want) = &want.value {
+        let want = canonical(expected_value(want)?.as_ref())?;
+        let got = canonical(got.value_ref())?;
+        if want != got {
+            return Err(format!("value: got {got}, want {want}"));
+        }
+    }
+    Ok(())
+}
+
+/// Decode a value in the vector shorthand: JSON scalars, arrays, and objects,
+/// with `{"$type": ...}` objects decoded as typed JSON.
+fn expected_value(json: &Json) -> Result<Value, String> {
+    Ok(match json {
+        Json::Null => Value::Null,
+        Json::Bool(b) => Value::Bool(*b),
+        Json::String(s) => Value::String(s.clone()),
+        Json::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Value::Int(i)
+            } else if let Some(u) = n.as_u64() {
+                Value::Uint(u)
+            } else {
+                Value::Float(n.as_f64().ok_or("bad number")?)
+            }
+        }
+        Json::Array(items) => {
+            Value::Array(items.iter().map(expected_value).collect::<Result<_, _>>()?)
+        }
+        Json::Object(map) if map.contains_key("$type") => {
+            let doc = serde_json::to_vec(&serde_json::json!({ "v": json })).expect("serialize");
+            let opts = JsonOptions {
+                typed_document: true,
+                ..Default::default()
+            };
+            let mut kv = rulekit::decode_json::<()>(&doc, opts)
+                .map_err(|err| format!("expected value: {err}"))?;
+            match kv.remove("v") {
+                Some(rulekit::KvEntry::Value(v)) => v,
+                _ => return Err("expected value: not a value".into()),
+            }
+        }
+        Json::Object(map) => Value::Object(
+            map.iter()
+                .map(|(k, v)| Ok((k.clone(), expected_value(v)?)))
+                .collect::<Result<_, String>>()?,
+        ),
+    })
+}
+
+/// A canonical typed form that keeps type distinctions.
+fn canonical(value: ValueRef<'_>) -> Result<Json, String> {
+    let typed = |t: &str, v: String| serde_json::json!({ "$type": t, "value": v });
+    Ok(match value {
+        ValueRef::Null => Json::Null,
+        ValueRef::Bool(b) => Json::Bool(b),
+        ValueRef::Str(s) => Json::String(s.to_owned()),
+        ValueRef::Int(n) => typed("int64", n.to_string()),
+        ValueRef::Uint(n) => typed("uint64", n.to_string()),
+        ValueRef::Float(n) => typed("float64", format!("{n:?}")),
+        ValueRef::Ip(_) | ValueRef::Cidr(_) | ValueRef::Mac(_) | ValueRef::Url(_) => typed(
+            value.type_name(),
+            value.text().expect("text form").to_string(),
+        ),
+        ValueRef::Bytes(b) => typed("bytes", b.iter().map(|b| format!("{b:02x}")).collect()),
+        ValueRef::Array(items) => serde_json::json!({
+            "$type": "array",
+            "value": items.iter().map(canonical).collect::<Result<Vec<_>, _>>()?,
+        }),
+        ValueRef::Object(ObjectRef::Map(map)) => {
+            let mut out = serde_json::Map::new();
+            for (k, v) in map {
+                out.insert(k.clone(), canonical(v.as_ref())?);
+            }
+            serde_json::json!({ "$type": "object", "value": out })
+        }
+        ValueRef::Query(_) | ValueRef::Regex(_) | ValueRef::Object(ObjectRef::Opaque) => {
+            return Err(format!("value has no vector representation: {value:?}"));
+        }
+    })
 }
 
 fn check_print(ast: &Ast, rule: &rulekit::Rule, want: &PrintExpect) -> Result<(), String> {

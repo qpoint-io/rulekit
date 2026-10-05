@@ -342,7 +342,7 @@ impl Rule {
     where I: Input<C> + ?Sized;
 }
 
-pub struct Opts<'e, C = ()> { pub trace: bool, pub env: &'e Env<C> }  // Copy; Default uses an empty Env
+pub struct Opts<'e, C = ()> { pub env: &'e Env<C> }   // Copy; Default (C = ()) uses an empty Env; `trace` arrives in Phase 3
 pub struct Env<C = ()> { functions: Map<Function<C>>, macros: Map<Macro> }
 pub struct EnvBuilder<C> { … }   // .function(name, f) .macro_(name, src) .build() -> Result<Env<C>, Error>
 ```
@@ -355,7 +355,7 @@ pub struct EnvBuilder<C> { … }   // .function(name, f) .macro_(name, src) .bui
 ```rust
 pub struct EvalResult<'a> {
     value: Val<'a>,                    // Null = no value (Go nil)
-    error: Option<Error>,
+    error: Option<Box<Error>>,         // boxed: keeps results small on the happy path
     missing: SmallVec<[&'a str; 2]>,   // borrowed path texts; order = Go's unionUnique order
     trace: Option<Box<Trace>>,
 }
@@ -431,15 +431,16 @@ impl<'a> Args<'_, 'a> {
 ## 10. JSON input (`json_input.rs`)
 
 `decode_json<C>(bytes, JsonOptions { annotated_keys, typed_document }) -> Result<Kv<C>, Error>`
-ports `json.go` exactly. Parsing uses `serde_json` with a small custom `Deserialize`
-visitor (not `serde_json::Value`) so numbers follow Go's `UseNumber` rules: integers that
-fit i64 → `Int`, else u64 → `Uint`, fraction/exponent → `Float`. This avoids enabling
-serde_json's `arbitrary_precision`, a feature that unifies into the user's whole
-dependency graph. Known gap: serde_json hands an integer literal beyond u64 to the visitor
-as f64, where Go errors ("invalid json number"); see QUESTIONS. Also ported: duplicate-key
-detection after suffix stripping, the suffix list order, typed-document rules, `hex` with
-colons stripped, base64 Std with Go's `\r`/`\n` skipping. `decode_json` lands in Phase 2
-because the eval vectors need it.
+ports `json.go` exactly. Phase 2 decision: a small hand-written JSON reader (no serde)
+mirrors Go's `encoding/json` decoder where it matters: numbers keep their source text (Go
+`UseNumber`, so `int64`/`uint64` typed values parse the text and an integer beyond u64 is an
+error), duplicate keys keep the last value, invalid UTF-8 and lone surrogates become U+FFFD,
+nesting is limited to 10000, and data after the first value is ignored (`Decoder.Decode`).
+Also ported: duplicate-key detection after suffix stripping, the suffix list order,
+annotated values normalized before conversion (so `"n.$int64": 1e3` is 1000), typed-document
+rules, `hex` with colons stripped, and base64 Std with `\r`/`\n` skipped. Known gap: Go's
+`ParseFloat` also accepts hexadecimal floats and `_` in typed `float64` strings; Rust rejects
+them.
 
 ## 11. Vectors (`tests/vectors.rs`)
 
