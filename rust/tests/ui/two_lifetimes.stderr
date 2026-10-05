@@ -1,0 +1,5 @@
+error: `Args` structs may have at most one lifetime parameter
+ --> tests/ui/two_lifetimes.rs:2:17
+  |
+2 | struct Args<'a, 'b> {
+  |                 ^^

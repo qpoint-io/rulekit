@@ -152,10 +152,13 @@ pub enum Error {
     ArgCount {
         /// The function name.
         function: String,
-        /// The number of declared parameters.
+        /// The number of declared parameters (before the rest parameter).
         expected: usize,
         /// The number of arguments passed.
         got: usize,
+        /// Whether the function takes more arguments (a rest parameter), so
+        /// `expected` is a minimum.
+        variadic: bool,
     },
     /// A macro called with arguments.
     MacroArgs {
@@ -208,10 +211,12 @@ impl fmt::Display for Error {
                 function,
                 expected,
                 got,
+                variadic,
             } => {
+                let at_least = if *variadic { "at least " } else { "" };
                 write!(
                     f,
-                    "function {function:?} expects {expected} arguments, got {got}"
+                    "function {function:?} expects {at_least}{expected} arguments, got {got}"
                 )
             }
             Error::MacroArgs { name, got } => {

@@ -12,8 +12,9 @@ pub(crate) mod trace;
 use smallvec::SmallVec;
 
 use crate::ast::{Ast, AstKind, LiteralKind, NodeData, NodeId, Operator, Segment};
-use crate::env::{CallFailure, Env};
+use crate::env::Env;
 use crate::error::{Error, ParseError};
+use crate::func::CallFailure;
 use crate::input::Input;
 use crate::literal::parse_literal;
 use crate::print::{canonical_all, path_string};
@@ -680,39 +681,20 @@ fn call<'a, S: Slot<'a>, C: ?Sized, I: Input<C> + ?Sized>(
                 Ok(trace) => trace,
                 Err(r) => return r,
             };
-            let r = match starts_with(&vals) {
-                Ok(b) => Res::bool(b),
-                Err(e) => Res::failed(e),
-            };
-            return r.with_trace(trace);
+            return call_result(crate::stdlib::call_starts_with(&vals)).with_trace(trace);
         }
         Call::Named(name) => name,
     };
     if let Some(function) = s.env.functions.get(&**name) {
-        if function.args().len() != args.len() {
-            return Res::failed(Error::ArgCount {
-                function: name.to_string(),
-                expected: function.args().len(),
-                got: args.len(),
-            });
+        if let Err(e) = function.check_arity(args.len()) {
+            return Res::failed(e);
         }
         let mut vals = Buf::<4>::new();
         let trace = match eval_items::<S, C, I, 4>(args, s, &mut vals) {
             Ok(trace) => trace,
             Err(r) => return r,
         };
-        let r = match function.call(name, s.ctx, &vals) {
-            Ok(v) => Res::of(v),
-            Err(CallFailure::Error(e)) => Res::failed(e),
-            Err(CallFailure::Missing(fields)) => Res {
-                problem: Some(Box::new(Problem {
-                    error: None,
-                    missing: fields,
-                })),
-                ..Res::of(Val::Ref(ValueRef::Null))
-            },
-        };
-        return r.with_trace(trace);
+        return call_result(function.call(s.ctx, &vals)).with_trace(trace);
     }
     if let Some(macro_) = s.env.macros.get(&**name) {
         if !args.is_empty() {
@@ -843,18 +825,21 @@ fn matches(value: ValueRef<'_>, regex: ValueRef<'_>) -> bool {
     }
 }
 
-/// The `starts_with(value, prefix)` standard library function: both
-/// arguments must be strings or have a text form.
-fn starts_with(vals: &[Val<'_>]) -> Result<bool, Error> {
-    let text = |i: usize, name: &str| {
-        let value = vals[i].as_ref();
-        value.text().ok_or_else(|| Error::InvalidArg {
-            name: name.to_owned(),
-            expected: "string".to_owned(),
-            got: value.type_name().to_owned(),
-        })
-    };
-    let value = text(0, "value")?;
-    let prefix = text(1, "prefix")?;
-    Ok(value.starts_with(&*prefix))
+/// A function call's result (Go: the function's `Result`).
+fn call_result<'a, S: Slot<'a>>(result: Result<Val<'a>, CallFailure>) -> Res<'a, S> {
+    match result {
+        Ok(v) => Res::of(v),
+        Err(CallFailure::Error(e)) => Res::failed(e),
+        Err(CallFailure::Failed(source)) => Res::failed(Error::Function {
+            name: String::new(),
+            source,
+        }),
+        Err(CallFailure::Missing(fields)) => Res {
+            problem: Some(Box::new(Problem {
+                error: None,
+                missing: fields,
+            })),
+            ..Res::of(Val::Ref(ValueRef::Null))
+        },
+    }
 }

@@ -1,0 +1,5 @@
+error: `Args` needs a struct with named fields: each field is one argument
+ --> tests/ui/tuple_struct.rs:2:8
+  |
+2 | struct Args(i64);
+  |        ^^^^

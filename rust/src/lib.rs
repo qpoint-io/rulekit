@@ -55,10 +55,14 @@
 
 #![warn(missing_docs)]
 
+// Lets `#[derive(Args)]` output (which names `::rulekit`) work in this crate's tests.
+extern crate self as rulekit;
+
 pub mod ast;
 mod env;
 mod error;
 pub(crate) mod eval;
+mod func;
 mod input;
 mod json_input;
 mod lex;
@@ -66,19 +70,27 @@ mod literal;
 mod parse;
 mod print;
 mod regex;
+mod stdlib;
 pub mod value;
 
 use std::fmt;
 use std::sync::{Arc, LazyLock};
 
 pub use ast::Ast;
-pub use env::{ArgSpec, Args, Env, EnvBuilder, FnError, FromArg, Function, Macro, Type};
+pub use env::{Env, EnvBuilder, Macro};
 pub use error::{BoxError, Error, ParseError};
 pub use eval::EvalResult;
 pub use eval::trace::{Diagnostic, DiagnosticCode, Trace, TraceStatus};
+#[doc(hidden)]
+pub use func::__private;
+pub use func::{Args, FnError, FromArg, FuncSchema, Function, Param, Rest, Returns};
 pub use input::{FnInput, Input, Kv, KvEntry, KvInput, Lazy, NoInput};
 pub use json_input::{JsonOptions, decode_json};
 pub use print::{Edit, PrintMode, format, rewrite};
+/// Derive [`Args`](trait@Args) for a struct of function arguments. See the
+/// trait for the rules.
+#[cfg(feature = "derive")]
+pub use rulekit_macros::Args;
 
 /// A compiled rule, ready to evaluate.
 ///
@@ -237,10 +249,7 @@ impl fmt::Display for Rule {
 
 /// Argument count of a standard library function, checked at parse time.
 pub(crate) fn stdlib_arity(name: &str) -> Option<usize> {
-    match name {
-        "starts_with" => Some(2),
-        _ => None,
-    }
+    stdlib::params(name).map(<[func::Param]>::len)
 }
 
 /// Internal hooks for the crate's benchmarks. Not part of the API.

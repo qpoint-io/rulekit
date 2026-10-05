@@ -1,420 +1,11 @@
-//! Functions, macros, and the validated evaluation environment.
+//! Macros and the validated evaluation environment.
 
-use std::borrow::Cow;
 use std::fmt;
-use std::sync::Arc;
 
-use crate::error::{BoxError, Error, ParseError};
-use crate::value::{Cidr, Ip, Mac, Map, Url, Val, ValueRef};
+use crate::error::{Error, ParseError};
+use crate::func::Function;
+use crate::value::Map;
 use crate::{Rule, stdlib_arity};
-
-/// A value type, used to declare function arguments and return types.
-///
-/// The names ([`Type::name`]) are the typed-JSON type names, the same names
-/// [`ValueRef::type_name`] returns.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Type {
-    /// `null`.
-    Null,
-    /// `bool`.
-    Bool,
-    /// `int64`: [`ValueRef::Int`].
-    Int64,
-    /// `uint64`: [`ValueRef::Uint`].
-    Uint64,
-    /// `float64`: [`ValueRef::Float`].
-    Float64,
-    /// `string`: [`ValueRef::Str`] and [`ValueRef::Query`].
-    String,
-    /// `bytes`, including hex literals.
-    Bytes,
-    /// `ip`.
-    Ip,
-    /// `cidr`.
-    Cidr,
-    /// `mac`.
-    Mac,
-    /// `url`.
-    Url,
-    /// `regex`.
-    Regex,
-    /// `array`.
-    Array,
-    /// `object`.
-    Object,
-}
-
-impl Type {
-    /// The type name: `null`, `bool`, `int64`, `uint64`, `float64`,
-    /// `string`, `bytes`, `ip`, `cidr`, `mac`, `url`, `regex`, `array`, or
-    /// `object`.
-    pub fn name(self) -> &'static str {
-        match self {
-            Type::Null => "null",
-            Type::Bool => "bool",
-            Type::Int64 => "int64",
-            Type::Uint64 => "uint64",
-            Type::Float64 => "float64",
-            Type::String => "string",
-            Type::Bytes => "bytes",
-            Type::Ip => "ip",
-            Type::Cidr => "cidr",
-            Type::Mac => "mac",
-            Type::Url => "url",
-            Type::Regex => "regex",
-            Type::Array => "array",
-            Type::Object => "object",
-        }
-    }
-
-    fn admits(self, value: ValueRef<'_>) -> bool {
-        value.type_name() == self.name()
-    }
-}
-
-/// A named positional parameter of a [`Function`], optionally typed.
-///
-/// A typed parameter is checked before the function runs; a mismatch is an
-/// [`Error::InvalidArg`].
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ArgSpec {
-    /// The parameter name, used by [`Args::by_name`] and in errors.
-    pub name: Cow<'static, str>,
-    /// The required type, or `None` to accept any value.
-    pub ty: Option<Type>,
-}
-
-impl ArgSpec {
-    /// An untyped parameter.
-    pub fn new(name: impl Into<Cow<'static, str>>) -> Self {
-        ArgSpec {
-            name: name.into(),
-            ty: None,
-        }
-    }
-
-    /// A parameter that must have type `ty`.
-    pub fn typed(name: impl Into<Cow<'static, str>>, ty: Type) -> Self {
-        ArgSpec {
-            name: name.into(),
-            ty: Some(ty),
-        }
-    }
-}
-
-type FunctionImpl<C> =
-    dyn for<'a> Fn(&'a C, Args<'_, 'a>) -> Result<Val<'a>, FnError> + Send + Sync;
-
-/// Why a custom [`Function`] produced no value.
-///
-/// `?` converts any error type into [`FnError::Error`], including the
-/// [`Error`]s from [`Args::index`] and [`Args::by_name`].
-#[derive(Debug)]
-pub enum FnError {
-    /// The function needs fields the input lacks: the rule result is unknown
-    /// with these fields missing (like a missing field in the rule itself).
-    Missing(Vec<String>),
-    /// The function failed: the rule result is an [`Error::Function`].
-    Error(BoxError),
-}
-
-impl FnError {
-    /// A [`FnError::Missing`] for the given field names.
-    pub fn missing(fields: impl IntoIterator<Item = impl Into<String>>) -> Self {
-        FnError::Missing(fields.into_iter().map(Into::into).collect())
-    }
-
-    /// A [`FnError::Error`] with a message.
-    pub fn msg(message: impl Into<String>) -> Self {
-        FnError::Error(message.into().into())
-    }
-}
-
-impl<E: std::error::Error + Send + Sync + 'static> From<E> for FnError {
-    fn from(error: E) -> Self {
-        FnError::Error(Box::new(error))
-    }
-}
-
-/// How a call failed, for the evaluator.
-pub(crate) enum CallFailure {
-    Error(Error),
-    Missing(Vec<String>),
-}
-
-/// A custom function callable from rules as `name(arg, ...)`.
-///
-/// The [`ArgSpec`]s name the positional parameters and fix their count; a
-/// call with another count is an [`Error::ArgCount`]. Arguments are
-/// evaluated first: if one is missing, the call is not made and the result
-/// is unknown. The implementation receives the evaluation context and the
-/// [`Args`], and returns a value, missing fields ([`FnError::Missing`]: the
-/// result is unknown), or an error ([`FnError::Error`], reported as
-/// [`Error::Function`]).
-///
-/// Register functions in an [`Env`] with [`EnvBuilder::function`].
-///
-/// ```rust
-/// use rulekit::value::{Val, Value, ValueRef};
-/// use rulekit::{ArgSpec, Env, Function, NoInput, Opts, Type};
-///
-/// struct Ctx {
-///     tenant: String,
-/// }
-///
-/// // A function reading its arguments.
-/// let clamp = Function::new(
-///     [ArgSpec::typed("n", Type::Int64), ArgSpec::typed("max", Type::Int64)],
-///     |_: &Ctx, args| {
-///         let n: i64 = args.index(0)?;
-///         let max: i64 = args.by_name("max")?;
-///         Ok(Val::Owned(Value::Int(n.min(max))))
-///     },
-/// )
-/// .returns(Type::Int64)
-/// .with_doc("The smaller of n and max.");
-///
-/// // A function returning data borrowed from the context.
-/// let tenant = Function::new([], |ctx: &Ctx, _| Ok(Val::Ref(ValueRef::Str(&ctx.tenant))));
-///
-/// let env = Env::builder()
-///     .function("clamp", clamp)
-///     .function("tenant", tenant)
-///     .build()?;
-///
-/// let rule = rulekit::parse(r#"clamp(150, 100) == 100 and tenant() == "acme""#)?;
-/// let ctx = Ctx { tenant: "acme".into() };
-/// assert!(rule.eval(&ctx, &NoInput, Opts::new(&env)).pass());
-/// # Ok::<(), Box<dyn std::error::Error>>(())
-/// ```
-pub struct Function<C: ?Sized = ()> {
-    args: Box<[ArgSpec]>,
-    ret: Option<Type>,
-    doc: Option<String>,
-    eval: Arc<FunctionImpl<C>>,
-}
-
-impl<C: ?Sized> Clone for Function<C> {
-    fn clone(&self) -> Self {
-        Function {
-            args: self.args.clone(),
-            ret: self.ret,
-            doc: self.doc.clone(),
-            eval: self.eval.clone(),
-        }
-    }
-}
-
-impl<C: ?Sized> fmt::Debug for Function<C> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Function")
-            .field("args", &self.args)
-            .field("ret", &self.ret)
-            .field("doc", &self.doc)
-            .finish()
-    }
-}
-
-impl<C: ?Sized> Function<C> {
-    /// A function with the given parameters and implementation.
-    ///
-    /// The result may borrow from the context (`&'a C`); values read from
-    /// [`Args`] are only borrowed for the call, so return them as
-    /// [`Val::Owned`] (for example with [`ValueRef::to_owned`]).
-    pub fn new<F>(args: impl IntoIterator<Item = ArgSpec>, eval: F) -> Self
-    where
-        F: for<'a> Fn(&'a C, Args<'_, 'a>) -> Result<Val<'a>, FnError> + Send + Sync + 'static,
-    {
-        Function {
-            args: args.into_iter().collect(),
-            ret: None,
-            doc: None,
-            eval: Arc::new(eval),
-        }
-    }
-
-    /// Declare the return type. Informational (for tools and
-    /// documentation); it is not checked.
-    pub fn returns(mut self, ty: Type) -> Self {
-        self.ret = Some(ty);
-        self
-    }
-
-    /// The same function with a description, for tools and documentation.
-    pub fn with_doc(mut self, doc: impl Into<String>) -> Self {
-        self.doc = Some(doc.into());
-        self
-    }
-
-    /// The declared parameters.
-    pub fn args(&self) -> &[ArgSpec] {
-        &self.args
-    }
-
-    /// The return type set with [`returns`](Self::returns).
-    pub fn return_type(&self) -> Option<Type> {
-        self.ret
-    }
-
-    /// The description set with [`with_doc`](Self::with_doc).
-    pub fn doc(&self) -> Option<&str> {
-        self.doc.as_deref()
-    }
-
-    /// Check argument types and run the function.
-    pub(crate) fn call<'a>(
-        &self,
-        name: &str,
-        ctx: &'a C,
-        vals: &[Val<'a>],
-    ) -> Result<Val<'a>, CallFailure> {
-        for (spec, val) in self.args.iter().zip(vals) {
-            if let Some(ty) = spec.ty
-                && !ty.admits(val.as_ref())
-            {
-                return Err(CallFailure::Error(Error::InvalidArg {
-                    name: spec.name.to_string(),
-                    expected: ty.name().to_owned(),
-                    got: val.as_ref().type_name().to_owned(),
-                }));
-            }
-        }
-        (self.eval)(
-            ctx,
-            Args {
-                specs: &self.args,
-                vals,
-            },
-        )
-        .map_err(|failure| match failure {
-            FnError::Missing(fields) => CallFailure::Missing(fields),
-            FnError::Error(source) => CallFailure::Error(Error::Function {
-                name: name.to_owned(),
-                source,
-            }),
-        })
-    }
-}
-
-/// The evaluated arguments of one [`Function`] call, read by position or by
-/// [`ArgSpec`] name.
-#[derive(Clone, Copy)]
-pub struct Args<'s, 'a> {
-    specs: &'s [ArgSpec],
-    vals: &'s [Val<'a>],
-}
-
-impl<'s, 'a> Args<'s, 'a> {
-    /// The number of arguments.
-    pub fn len(&self) -> usize {
-        self.vals.len()
-    }
-
-    /// Whether the call has no arguments.
-    pub fn is_empty(&self) -> bool {
-        self.vals.is_empty()
-    }
-
-    /// The argument at `index`.
-    pub fn get(&self, index: usize) -> Option<ValueRef<'s>> {
-        self.vals.get(index).map(Val::as_ref)
-    }
-
-    /// The argument whose spec has `name`.
-    pub fn named(&self, name: &str) -> Option<ValueRef<'s>> {
-        self.specs
-            .iter()
-            .position(|spec| spec.name == name)
-            .and_then(|i| self.get(i))
-    }
-
-    /// The argument at `index` as `T`.
-    ///
-    /// # Errors
-    ///
-    /// [`Error::InvalidArg`] if there is no such argument or it has another
-    /// type.
-    pub fn index<T: FromArg<'s>>(&self, index: usize) -> Result<T, Error> {
-        let name = self
-            .specs
-            .get(index)
-            .map_or_else(|| index.to_string(), |spec| spec.name.to_string());
-        let value = self.get(index).ok_or_else(|| Error::InvalidArg {
-            name: name.clone(),
-            expected: T::EXPECTED.to_owned(),
-            got: "nothing".to_owned(),
-        })?;
-        convert(name, value)
-    }
-
-    /// The argument named `name` as `T`.
-    ///
-    /// # Errors
-    ///
-    /// [`Error::UnknownArg`] if no [`ArgSpec`] has that name;
-    /// [`Error::InvalidArg`] if the argument has another type.
-    pub fn by_name<T: FromArg<'s>>(&self, name: &str) -> Result<T, Error> {
-        let value = self
-            .named(name)
-            .ok_or_else(|| Error::UnknownArg(name.to_owned()))?;
-        convert(name.to_owned(), value)
-    }
-}
-
-fn convert<'s, T: FromArg<'s>>(name: String, value: ValueRef<'s>) -> Result<T, Error> {
-    T::from_arg(value).ok_or_else(|| Error::InvalidArg {
-        name,
-        expected: T::EXPECTED.to_owned(),
-        got: value.type_name().to_owned(),
-    })
-}
-
-/// Types an argument can be read as with [`Args::index`] and
-/// [`Args::by_name`].
-///
-/// Implemented for `bool`, `i64`, `u64`, `f64`, `&str`, `&[u8]`, [`Ip`],
-/// [`Cidr`], [`Mac`], `&`[`Url`], `&regex::Regex`, and [`ValueRef`] (any
-/// value). Conversions are exact: an `int64` argument is not a `u64`, and a
-/// URL is not a `&str`.
-pub trait FromArg<'a>: Sized {
-    /// The type name used in [`Error::InvalidArg`] when conversion fails.
-    const EXPECTED: &'static str;
-    /// Convert `value`, or `None` if it has another type.
-    fn from_arg(value: ValueRef<'a>) -> Option<Self>;
-}
-
-macro_rules! from_arg {
-    ($ty:ty, $name:literal, $pat:pat => $out:expr) => {
-        impl<'a> FromArg<'a> for $ty {
-            const EXPECTED: &'static str = $name;
-            fn from_arg(value: ValueRef<'a>) -> Option<Self> {
-                match value {
-                    $pat => Some($out),
-                    _ => None,
-                }
-            }
-        }
-    };
-}
-
-from_arg!(bool, "bool", ValueRef::Bool(v) => v);
-from_arg!(i64, "int64", ValueRef::Int(v) => v);
-from_arg!(u64, "uint64", ValueRef::Uint(v) => v);
-from_arg!(f64, "float64", ValueRef::Float(v) => v);
-from_arg!(&'a str, "string", ValueRef::Str(v) => v);
-from_arg!(&'a [u8], "bytes", ValueRef::Bytes(v) => v);
-from_arg!(Ip, "ip", ValueRef::Ip(v) => v);
-from_arg!(Cidr, "cidr", ValueRef::Cidr(v) => v);
-from_arg!(Mac, "mac", ValueRef::Mac(v) => v);
-from_arg!(&'a Url, "url", ValueRef::Url(v) => v);
-from_arg!(&'a regex::Regex, "regex", ValueRef::Regex(v) => v);
-
-impl<'a> FromArg<'a> for ValueRef<'a> {
-    const EXPECTED: &'static str = "any";
-    fn from_arg(value: ValueRef<'a>) -> Option<Self> {
-        Some(value)
-    }
-}
 
 /// A named, zero-argument rule, expanded where it is called as `name()`.
 ///
@@ -520,6 +111,7 @@ impl<C: ?Sized> Env<C> {
     pub fn builder() -> EnvBuilder<C> {
         EnvBuilder {
             env: Env::default(),
+            duplicates: Vec::new(),
         }
     }
 
@@ -537,12 +129,16 @@ impl<C: ?Sized> Env<C> {
 /// Builds an [`Env`]; names are checked once in [`EnvBuilder::build`].
 pub struct EnvBuilder<C: ?Sized = ()> {
     env: Env<C>,
+    duplicates: Vec<String>,
 }
 
 impl<C: ?Sized> EnvBuilder<C> {
-    /// Add (or replace) a custom function.
-    pub fn function(mut self, name: impl Into<String>, function: Function<C>) -> Self {
-        self.env.functions.insert(name.into(), function);
+    /// Add a custom function under its schema name.
+    pub fn function(mut self, function: Function<C>) -> Self {
+        let name = function.name().to_owned();
+        if self.env.functions.insert(name.clone(), function).is_some() {
+            self.duplicates.push(name);
+        }
         self
     }
 
@@ -565,10 +161,15 @@ impl<C: ?Sized> EnvBuilder<C> {
     ///
     /// # Errors
     ///
-    /// [`Error::Env`] if a function or macro has the name of a standard
-    /// library function (such as `starts_with`), or a macro has the name of
-    /// a custom function.
+    /// [`Error::Env`] if two functions have the same name, a function or
+    /// macro has the name of a standard library function (such as
+    /// `starts_with`), or a macro has the name of a custom function.
     pub fn build(self) -> Result<Env<C>, Error> {
+        if let Some(name) = self.duplicates.first() {
+            return Err(Error::Env(format!(
+                "function {name:?}: defined more than once"
+            )));
+        }
         let mut names: Vec<&String> = self.env.functions.keys().collect();
         names.sort();
         for name in names {

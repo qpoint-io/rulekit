@@ -10,6 +10,7 @@ include = ["src/**", "Cargo.toml", "README.md"]
 readme = "README.md"
 
 [dependencies]
+rulekit-macros = { path = "macros", version = "0.1.0", optional = true }
 base64 = "0.23.1"
 fluent-uri = "0.4.1"
 foldhash = "0.2"
@@ -20,8 +21,17 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
 smallvec = { version = "1", features = ["const_generics", "union"] }
 
+[features]
+default = ["derive"]
+# `#[derive(rulekit::Args)]` for typed custom functions.
+derive = ["dep:rulekit-macros"]
+
+[workspace]
+members = ["macros"]
+
 [dev-dependencies]
 criterion = "0.8.2"
+trybuild = "1.0.121"
 
 [[bench]]
 name = "eval"
