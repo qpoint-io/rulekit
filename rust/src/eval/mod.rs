@@ -601,6 +601,9 @@ fn call<'a, const TRACE: bool, C: ?Sized, I: Input<C> + ?Sized>(
 /// `vals`, stopping at the first incomplete item, which is returned as the
 /// error. When tracing, the trace holds every item's trace, with the items
 /// after a stop marked pruned.
+// The error is a whole result by design: boxing it would allocate on the
+// missing-field path, which must stay allocation-free.
+#[allow(clippy::result_large_err)]
 fn eval_items<'a, const TRACE: bool, C: ?Sized, I: Input<C> + ?Sized, const N: usize>(
     items: &'a [Node],
     s: &Scope<'a, C, I>,
