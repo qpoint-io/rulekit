@@ -73,7 +73,9 @@ fn leaf<'a>(value: ValueRef<'a>, path: &[Segment]) -> Result<Option<Val<'a>>, Bo
     Ok(project(Val::Ref(value), path))
 }
 
-impl<C: ?Sized, T: InputValue<C> + ?Sized> InputValue<C> for &T {
+// Sized only: `&[T]` is its own impl so a slice field can hand out
+// `&&[T]` (sized) as `&dyn ListSource`. A `?Sized` blanket would overlap it.
+impl<C: ?Sized, T: InputValue<C>> InputValue<C> for &T {
     fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         InputValue::get(&**self, ctx, path)
     }
@@ -185,6 +187,12 @@ impl<C: ?Sized> InputValue<C> for str {
     }
 }
 
+impl<C: ?Sized> InputValue<C> for &str {
+    fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+        InputValue::get(*self, ctx, path)
+    }
+}
+
 impl<C: ?Sized> InputValue<C> for String {
     fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         InputValue::get(self.as_str(), ctx, path)
@@ -263,22 +271,24 @@ impl<C: ?Sized> InputValue<C> for Value {
     }
 }
 
-impl<T> ListSource for [T]
+fn view_item<T: InputValue<()>>(item: &T) -> ValueRef<'_> {
+    match InputValue::get(item, &(), &[]) {
+        Ok(Some(Val::Ref(value))) => value,
+        // A present item that cannot be borrowed is null, so list length holds.
+        _ => ValueRef::Null,
+    }
+}
+
+impl<T> ListSource for &[T]
 where
     T: InputValue<()>,
 {
     fn len(&self) -> usize {
-        <[T]>::len(self)
+        (*self).len()
     }
 
     fn get(&self, index: usize) -> Option<ValueRef<'_>> {
-        let item = <[T]>::get(self, index)?;
-        match InputValue::get(item, &(), &[]) {
-            Ok(Some(Val::Ref(value))) => Some(value),
-            // A present item that cannot be borrowed (or is missing) is null,
-            // so the list length does not change.
-            _ => Some(ValueRef::Null),
-        }
+        <[T]>::get(self, index).map(view_item)
     }
 }
 
@@ -291,7 +301,7 @@ where
     }
 
     fn get(&self, index: usize) -> Option<ValueRef<'_>> {
-        ListSource::get(self.as_slice(), index)
+        self.as_slice().get(index).map(view_item)
     }
 }
 
@@ -304,7 +314,7 @@ where
     }
 
     fn get(&self, index: usize) -> Option<ValueRef<'_>> {
-        ListSource::get(self.as_slice(), index)
+        self.as_slice().get(index).map(view_item)
     }
 }
 
@@ -317,11 +327,7 @@ where
     }
 
     fn get(&self, index: usize) -> Option<ValueRef<'_>> {
-        let item = VecDeque::get(self, index)?;
-        match InputValue::get(item, &(), &[]) {
-            Ok(Some(Val::Ref(value))) => Some(value),
-            _ => Some(ValueRef::Null),
-        }
+        VecDeque::get(self, index).map(view_item)
     }
 }
 
@@ -378,44 +384,15 @@ where
     }
 }
 
-fn read_slice<T: InputValue<()>>(
-    data: *const u8,
-    stride: usize,
-    index: usize,
-) -> Option<ValueRef<'static>> {
-    let ptr = unsafe { data.add(index.wrapping_mul(stride)).cast::<T>() };
-    // SAFETY: `data` points at a `[T]` and `index` is in range. The returned
-    // references are shortened to the slice lifetime by [`ErasedList::get`].
-    let item = unsafe { &*ptr };
-    let value = match InputValue::get(item, &(), &[]) {
-        Ok(Some(Val::Ref(value))) => value,
-        _ => ValueRef::Null,
-    };
-    Some(unsafe { std::mem::transmute::<ValueRef<'_>, ValueRef<'static>>(value) })
-}
-
-impl<C, T> InputValue<C> for [T]
+impl<C, T> InputValue<C> for &[T]
 where
     C: ?Sized,
     T: InputValue<C> + InputValue<()>,
 {
     fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
-        let Some((head, rest)) = path.split_first() else {
-            let list = crate::value::ErasedList::new(
-                self.as_ptr().cast(),
-                self.len(),
-                std::mem::size_of::<T>(),
-                read_slice::<T>,
-            );
-            return Ok(Some(Val::Ref(ValueRef::Array(ArrayRef::Erased(list)))));
-        };
-        match head {
-            Segment::Index(index) => match <[T]>::get(self, *index) {
-                Some(item) => InputValue::get(item, ctx, rest),
-                None => Ok(None),
-            },
-            Segment::Key { .. } => Ok(None),
-        }
+        // `self` is `&&[T]`: a reference to the caller's slice pointer, which
+        // is sized and implements [`ListSource`].
+        list_at(self, ctx, path, |items, index| <[T]>::get(items, index))
     }
 }
 

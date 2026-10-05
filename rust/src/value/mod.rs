@@ -221,51 +221,6 @@ pub enum ArrayRef<'a> {
     Vals(&'a [Val<'a>]),
     /// A user list. Only indexes the rule actually reads are touched.
     List(&'a dyn ListSource),
-    /// A `[T]` viewed without copying. The reader is a monomorphized function;
-    /// it does not capture a lifetime, so [`ValueRef`] stays covariant.
-    Erased(ErasedList<'a>),
-}
-
-/// Byte view of a `[T]`, indexed by a function that knows `T`.
-#[derive(Clone, Copy)]
-pub struct ErasedList<'a> {
-    data: *const u8,
-    len: usize,
-    stride: usize,
-    read: fn(*const u8, usize, usize) -> Option<ValueRef<'static>>,
-    _lt: std::marker::PhantomData<&'a [u8]>,
-}
-
-impl<'a> ErasedList<'a> {
-    pub(crate) fn new(
-        data: *const u8,
-        len: usize,
-        stride: usize,
-        read: fn(*const u8, usize, usize) -> Option<ValueRef<'static>>,
-    ) -> Self {
-        Self {
-            data,
-            len,
-            stride,
-            read,
-            _lt: std::marker::PhantomData,
-        }
-    }
-
-    fn len(self) -> usize {
-        self.len
-    }
-
-    fn get(self, index: usize) -> Option<ValueRef<'a>> {
-        if index >= self.len {
-            return None;
-        }
-        // SAFETY: `read` extends borrows of `data` to `'static`. The data is
-        // the `[T]` this list was built from, which lives for `'a`, and the
-        // result is shortened to that lifetime before it escapes.
-        let value = (self.read)(self.data, self.stride, index)?;
-        Some(unsafe { std::mem::transmute::<ValueRef<'static>, ValueRef<'a>>(value) })
-    }
 }
 
 impl fmt::Debug for ArrayRef<'_> {
@@ -274,7 +229,6 @@ impl fmt::Debug for ArrayRef<'_> {
             ArrayRef::Values(v) => f.debug_tuple("Values").field(v).finish(),
             ArrayRef::Vals(v) => f.debug_tuple("Vals").field(v).finish(),
             ArrayRef::List(v) => f.debug_struct("List").field("len", &v.len()).finish(),
-            ArrayRef::Erased(v) => f.debug_struct("Erased").field("len", &v.len()).finish(),
         }
     }
 }
@@ -286,7 +240,6 @@ impl<'a> ArrayRef<'a> {
             ArrayRef::Values(v) => v.len(),
             ArrayRef::Vals(v) => v.len(),
             ArrayRef::List(v) => v.len(),
-            ArrayRef::Erased(v) => v.len(),
         }
     }
 
@@ -302,7 +255,6 @@ impl<'a> ArrayRef<'a> {
             ArrayRef::Vals(v) => v.get(i).map(Val::as_ref),
             // `list` is already `&'a`, so the item borrows the list for `'a`.
             ArrayRef::List(list) => list.get(i),
-            ArrayRef::Erased(list) => list.get(i),
         }
     }
 

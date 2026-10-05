@@ -19,9 +19,10 @@ fn hashmap_borrows_strings() {
 #[test]
 fn vec_membership_and_index_do_not_copy() {
     let input = HashMap::from([("tags".to_owned(), vec!["db".to_owned(), "api".to_owned()])]);
-    let rule = rulekit::parse(r#""db" in tags and tags[0] == "db" and tags[1] == "api""#).unwrap();
+    let rule =
+        rulekit::parse(r#"tags contains "db" and tags[0] == "db" and tags[1] == "api""#).unwrap();
     assert!(rule.eval(&(), &input, Opts::default()).pass());
-    let missing = rulekit::parse(r#""nope" in tags"#).unwrap();
+    let missing = rulekit::parse(r#"tags contains "nope""#).unwrap();
     assert!(missing.eval(&(), &input, Opts::default()).fail());
 }
 
@@ -64,7 +65,7 @@ fn json_value_is_walked_lazily() {
         "headers": {"x-env": "prod"}
     });
     let rule = rulekit::parse(
-        r#"host == "api.acme.com" and port == 8443 and "db" in tags and headers["x-env"] == "prod""#,
+        r#"host == "api.acme.com" and port == 8443 and tags contains "db" and headers["x-env"] == "prod""#,
     )
     .unwrap();
     assert!(rule.eval(&(), &input, Opts::default()).pass());
@@ -73,6 +74,14 @@ fn json_value_is_walked_lazily() {
 #[test]
 fn vec_u8_is_a_list_of_numbers() {
     let input = HashMap::from([("bytes".to_owned(), vec![1u8, 2, 3])]);
-    let rule = rulekit::parse("bytes[0] == 1 and 2 in bytes").unwrap();
+    let rule = rulekit::parse("bytes[0] == 1 and bytes contains 2").unwrap();
+    assert!(rule.eval(&(), &input, Opts::default()).pass());
+}
+
+#[test]
+fn borrowed_slice_contains_without_copying() {
+    let tags = ["db".to_owned(), "api".to_owned()];
+    let input = HashMap::from([("tags".to_owned(), tags.as_slice())]);
+    let rule = rulekit::parse(r#"tags contains "api" and tags[1] == "api""#).unwrap();
     assert!(rule.eval(&(), &input, Opts::default()).pass());
 }
