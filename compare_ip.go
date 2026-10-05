@@ -27,7 +27,7 @@ func compareIP(left net.IP, op int, right any) compareOutcome {
 		return unsupportedOperator()
 	case string, *regexp.Regexp, urlQuery:
 		// ip ? string: compare the IP's text form
-		return compareString(left.String(), op, right)
+		return compareString(ipText(left), op, right)
 	}
 	return incomparable()
 }
@@ -45,7 +45,7 @@ func compareIPNet(left *net.IPNet, op int, right any) compareOutcome {
 		return unsupportedOperator()
 	case string, *regexp.Regexp, urlQuery:
 		// ipnet ? string: compare the CIDR's text form
-		return compareString(left.String(), op, right)
+		return compareString(cidrText(left), op, right)
 	}
 	return incomparable()
 }

@@ -118,6 +118,20 @@ The Result also provides additional helper methods:
 | **URL**                | FIELD        |                                                                | A URL from the input. Compares with strings by its text. Maps to Go type: `*url.URL`                                                                                                    |
 | **Regex**              | VALUE        | `/example\.com$/`, `/curl/i`, `\|a/b\|`                        | A regular expression in [RE2 syntax](https://github.com/google/re2/wiki/Syntax), surrounded by forward slashes or by `\|` (handy when the pattern contains `/`). May not be quoted with double quotes (otherwise it will be parsed as a string). Lowercase flags may follow the closing delimiter: `i` (ignore case), `m` (`^` and `$` match at line breaks), `s` (`.` matches newlines). `\d`, `\w`, and `\b` match ASCII only, and `\s` matches space, `\t`, `\n`, `\f`, and `\r`. Repetition counts go up to 1000. Not supported: `\Q...\E`, `\<` and `\>`, numeric escapes such as `\0` (use `\x{...}`), `{,n}` (use `{0,n}`), a `{` that does not start a repetition (use `\{`), `\p{^...}` (use `\P{...}`), nested classes, and `&&`, `--`, or `~~` inside a class. |
 
+### Text Forms
+
+When an IP address, CIDR, MAC address, or URL is compared with a string (with `==`, `!=`, `contains`, `matches`, or `in` a list of strings), it is compared by this text form:
+
+| Type | Text form | Example |
+| ---- | --------- | ------- |
+| IPv4 address | Dotted decimal | `10.0.0.1` |
+| IPv6 address | Lowercase, with the longest run of zero groups shortened to `::`. IPv4-mapped addresses (`::ffff:1.2.3.4`) print as IPv4 | `2001:db8::1`, `1.2.3.4` |
+| CIDR | Network address, `/`, prefix length | `10.0.0.0/8` |
+| MAC address | Lowercase hex pairs separated by `:` | `aa:bb:cc:dd:ee:ff` |
+| URL | As written, with the scheme and host in lowercase | `https://example.com:443/a%20b?q=1` |
+
+To compare by value instead, use an unquoted literal: `ip == 2001:DB8::1` matches however the address is written.
+
 ### Constructs
 
 | Type         | Used As | Example                        | Description                                                                                   |

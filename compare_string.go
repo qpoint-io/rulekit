@@ -20,13 +20,13 @@ func compareString(left string, op int, right any) compareOutcome {
 		return compareStringRegex(left, op, right)
 	case net.IP:
 		// string ? ip
-		return compareStringString(left, op, right.String())
+		return compareStringString(left, op, ipText(right))
 	case *net.IPNet:
 		// string ? ipnet
-		return compareStringString(left, op, right.String())
+		return compareStringString(left, op, cidrText(right))
 	case *url.URL:
 		// string ? url
-		return compareStringString(left, op, right.String())
+		return compareStringString(left, op, urlText(right))
 	case HexString:
 		// string ? hex
 		return compareBytesBytes([]byte(left), op, right.Bytes)
@@ -35,7 +35,7 @@ func compareString(left string, op int, right any) compareOutcome {
 		return compareBytesBytes([]byte(left), op, right)
 	case net.HardwareAddr:
 		// string ? mac
-		return compareStringString(left, op, right.String())
+		return compareStringString(left, op, macText(right))
 	}
 	return incomparable()
 }

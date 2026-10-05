@@ -8,7 +8,7 @@ runner is `vectors_test.go` in the repository root.
 Every `*.json` file in this directory is a vector file; any other entry except
 this README is an error. Files group cases by area (`eval`, `literals`, `paths`,
 `fields`, `regex`, `functions`, `macros`, `parse_errors`, `print`, `trace`,
-`json_input`, `ast_json`).
+`json_input`, `ast_json`, `text_forms`).
 
 ```json
 {
@@ -93,7 +93,24 @@ Run the steps in order; each applies only when its keys are present.
 Values are equal when their types and contents match: `1` (`int64`) does not
 equal `{"$type": "uint64", "value": "1"}`. Byte values compare by content
 regardless of the encoding used to write them. Compare network values by their
-canonical text form (`ip`, `cidr`, `mac`, `url`).
+text form (see below).
+
+## Text forms
+
+IP addresses, CIDRs, MAC addresses, and URLs compare with strings by a text
+form, so the text form is part of the language. Implementations must produce
+exactly these forms, whatever their platform libraries print:
+
+| Type | Text form |
+|---|---|
+| IPv4 address | Dotted decimal without leading zeros: `10.0.0.1`. |
+| IPv4-mapped IPv6 address (`::ffff:a.b.c.d`) | The IPv4 address in dotted decimal: `1.2.3.4`. |
+| Other IPv6 address | RFC 5952: lowercase hex, leading zeros dropped in each group, the longest run of two or more zero groups replaced by `::` (the first run on a tie), and a single zero group not compressed. No embedded dotted form: `::1.2.3.4` prints as `::102:304`. |
+| CIDR | The network address (host bits cleared) in the IP form above, `/`, and the prefix length in decimal. An IPv4-mapped network prints as IPv4 with the prefix reduced by 96: `::ffff:10.0.0.0/104` is `10.0.0.0/8`. |
+| MAC address | Lowercase hex pairs separated by `:`: `aa:bb:cc:dd:ee:ff` (6 or 8 bytes). |
+| URL | The URL as written, except the scheme and host are lowercase and characters that are not allowed in a URL are percent-encoded. Nothing is added or removed: no default port is dropped, no `/` is added for an empty path, dot segments stay, and an empty query (`http://h?`) keeps its `?`. User info is kept. |
+
+`text_forms.json` pins each rule.
 
 ## Traces
 

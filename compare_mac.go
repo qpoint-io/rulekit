@@ -18,7 +18,7 @@ func compareMac(left net.HardwareAddr, op int, right any) compareOutcome {
 		return compareBytesBytes(left, op, right)
 	case string, *regexp.Regexp, urlQuery:
 		// mac ? string: compare the MAC's text form
-		return compareString(left.String(), op, right)
+		return compareString(macText(left), op, right)
 	}
 	return incomparable()
 }

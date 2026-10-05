@@ -1,0 +1,32 @@
+{
+  "input_mode": "annotated_keys",
+  "cases": [
+    {"name": "ipv4: dotted decimal", "expr": "v == \"10.0.0.1\"", "input": {"v.$ip": "10.0.0.1"}, "expect": {"value": true}},
+    {"name": "ipv6: lowercase hex", "expr": "v == \"2001:db8::ff00:42:8329\"", "input": {"v.$ip": "2001:0DB8:0000:0000:0000:FF00:0042:8329"}, "expect": {"value": true}},
+    {"name": "ipv6: longest zero run is compressed", "expr": "v == \"1:0:0:2::3\"", "input": {"v.$ip": "1:0:0:2:0:0:0:3"}, "expect": {"value": true}},
+    {"name": "ipv6: first of equal zero runs is compressed", "expr": "v == \"2001:db8::1:0:0:1\"", "input": {"v.$ip": "2001:db8:0:0:1:0:0:1"}, "expect": {"value": true}},
+    {"name": "ipv6: a single zero group is not compressed", "expr": "v == \"2001:db8:0:1:1:1:1:1\"", "input": {"v.$ip": "2001:db8:0:1:1:1:1:1"}, "expect": {"value": true}},
+    {"name": "ipv6: all zeros", "expr": "v == \"::\"", "input": {"v.$ip": "0:0:0:0:0:0:0:0"}, "expect": {"value": true}},
+    {"name": "ipv6: loopback", "expr": "v == \"::1\"", "input": {"v.$ip": "::1"}, "expect": {"value": true}},
+    {"name": "ipv4-mapped ipv6 prints as ipv4", "expr": "v == \"1.2.3.4\"", "input": {"v.$ip": "::ffff:1.2.3.4"}, "expect": {"value": true}},
+    {"name": "ipv4-compatible ipv6 prints as hex", "expr": "v == \"::102:304\"", "input": {"v.$ip": "::1.2.3.4"}, "expect": {"value": true}},
+    {"name": "cidr: host bits are cleared", "expr": "v == \"10.0.0.0/8\"", "input": {"v.$cidr": "10.1.2.3/8"}, "expect": {"value": true}},
+    {"name": "cidr: ipv6 is lowercase and compressed", "expr": "v == \"2001:db8::/32\"", "input": {"v.$cidr": "2001:DB8::1/32"}, "expect": {"value": true}},
+    {"name": "cidr: ipv4-mapped prints as ipv4", "expr": "v == \"10.0.0.0/8\"", "input": {"v.$cidr": "::ffff:10.0.0.0/104"}, "expect": {"value": true}},
+    {"name": "cidr: default routes", "expr": "a == \"0.0.0.0/0\" and b == \"::/0\"", "input": {"a.$cidr": "0.0.0.0/0", "b.$cidr": "::/0"}, "expect": {"value": true}},
+    {"name": "mac: lowercase colon pairs", "expr": "v == \"aa:bb:cc:dd:ee:ff\"", "input": {"v.$mac": "AA-BB-CC-DD-EE-FF"}, "expect": {"value": true}},
+    {"name": "mac: eight bytes", "expr": "v == \"01:23:45:67:89:ab:cd:ef\"", "input": {"v.$mac": "0123.4567.89AB.CDEF"}, "expect": {"value": true}},
+    {
+      "name": "url: scheme and host are lowercase; the rest is as written",
+      "expr": "v == \"https://example.com:443/a%20b/../c?q=A+b&x=%41#Frag%20x\"",
+      "input": {"v.$url": "HTTPS://Example.COM:443/a%20b/../c?q=A+b&x=%41#Frag%20x"},
+      "expect": {"value": true}
+    },
+    {"name": "url: no path is added", "expr": "v == \"http://h\"", "input": {"v.$url": "http://h"}, "expect": {"value": true}},
+    {"name": "url: empty query is kept", "expr": "v == \"http://h?\"", "input": {"v.$url": "http://h?"}, "expect": {"value": true}},
+    {"name": "url: ipv6 host keeps brackets", "expr": "v == \"http://[::1]:80/p\"", "input": {"v.$url": "http://[::1]:80/p"}, "expect": {"value": true}},
+    {"name": "url: user info is kept", "expr": "v == \"http://user:pw@h\"", "input": {"v.$url": "http://user:pw@h"}, "expect": {"value": true}},
+    {"name": "url: opaque", "expr": "v == \"mailto:a@b.com\"", "input": {"v.$url": "mailto:a@b.com"}, "expect": {"value": true}},
+    {"name": "url: characters not allowed in a path are percent-encoded", "expr": "v == \"http://h/a%20b\"", "input": {"v.$url": "http://h/a b"}, "expect": {"value": true}}
+  ]
+}

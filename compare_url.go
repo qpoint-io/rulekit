@@ -9,10 +9,10 @@ func compareURL(left *url.URL, op int, right any) compareOutcome {
 	switch right := right.(type) {
 	case *url.URL:
 		// url ? url
-		return compareStringString(left.String(), op, right.String())
+		return compareStringString(urlText(left), op, urlText(right))
 	case string, *regexp.Regexp, urlQuery:
 		// url ? string: compare the URL's text form
-		return compareString(left.String(), op, right)
+		return compareString(urlText(left), op, right)
 	}
 	return incomparable()
 }
