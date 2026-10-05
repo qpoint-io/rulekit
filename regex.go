@@ -31,7 +31,7 @@ func checkRegexDialect(pattern string) error {
 				return fmt.Errorf(`\%c{^...} is not supported; use \P{...} to negate a Unicode class`, next)
 			}
 			end := i + 1
-			if (next == 'p' || next == 'P') && i+2 < len(pattern) && pattern[i+2] == '{' {
+			if (next == 'p' || next == 'P' || next == 'x') && i+2 < len(pattern) && pattern[i+2] == '{' {
 				if close := strings.IndexByte(pattern[i+2:], '}'); close >= 0 {
 					end = i + 2 + close
 				}
@@ -71,7 +71,22 @@ func checkRegexDialect(pattern string) error {
 			}
 		case c == '{' && i+1 < len(pattern) && pattern[i+1] == ',':
 			return fmt.Errorf(`{,n} is not supported; use {0,n}`)
+		case c == '{' && !isRepetition(pattern[i:]):
+			return fmt.Errorf(`{ must start a repetition such as {2} or {1,3}; escape a literal brace as \{`)
 		}
 	}
 	return nil
+}
+
+// isRepetition reports whether s starts with a counted repetition: {n},
+// {n,}, or {n,m}.
+func isRepetition(s string) bool {
+	i := skipDigits(s, 1)
+	if i == 1 {
+		return false
+	}
+	if i < len(s) && s[i] == ',' {
+		i = skipDigits(s, i+1)
+	}
+	return i < len(s) && s[i] == '}'
 }

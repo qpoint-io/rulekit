@@ -236,6 +236,11 @@ func parseRegex[T interface{ string | []byte }](data T) (*regexp.Regexp, error) 
 	end := strings.LastIndexByte(raw, raw[0])
 	pattern := raw[1:end]
 	if flags := raw[end+1:]; flags != "" {
+		for _, flag := range "ims" {
+			if strings.Count(flags, string(flag)) > 1 {
+				return nil, fmt.Errorf("duplicate regex flag %q", flag)
+			}
+		}
 		pattern = "(?" + flags + ")" + pattern
 	}
 	if err := checkRegexDialect(pattern); err != nil {

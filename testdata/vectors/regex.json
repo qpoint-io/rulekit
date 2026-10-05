@@ -58,6 +58,13 @@
     {"name": "accepted: /[a-]/", "expr": "x matches /[a-]/", "expect": {"parse_error": false}},
     {"name": "accepted: /[a&b~c-]/", "expr": "x matches /[a&b~c-]/", "expect": {"parse_error": false}},
     {"name": "accepted: /\\{,3\\}/", "expr": "x matches /\\{,3\\}/", "expect": {"parse_error": false}},
-    {"name": "accepted: /a{2}/", "expr": "x matches /a{2}/", "expect": {"parse_error": false}}
+    {"name": "accepted: /a{2}/", "expr": "x matches /a{2}/", "expect": {"parse_error": false}},
+    {"name": "accepted: /a{2,}/", "expr": "x matches /a{2,}/", "expect": {"parse_error": false}},
+    {"name": "accepted: /a\\{x\\}/", "expr": "x matches /a\\{x\\}/", "expect": {"parse_error": false}},
+    {"name": "accepted: /[{]/", "expr": "x matches /[{]/", "expect": {"parse_error": false}},
+    {"name": "rejected: duplicate flag", "expr": "x matches /a/ii", "expect": {"parse_error": true}},
+    {"name": "rejected: brace without a count", "expr": "x matches /a{x}/", "expect": {"parse_error": true}},
+    {"name": "rejected: unterminated count", "expr": "x matches /a{1,2/", "expect": {"parse_error": true}},
+    {"name": "rejected: lone brace", "expr": "x matches /{/", "expect": {"parse_error": true}}
   ]
 }
