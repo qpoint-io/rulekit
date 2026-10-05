@@ -208,8 +208,7 @@ impl Lexer<'_> {
         let start = self.pos;
         let mut token = self.scan_delimited(delim, TokenKind::Regex, leading, start)?;
         let mut end = self.pos;
-        // Go tests unicode.IsLetter(rune(byte)), i.e. the byte as a Latin-1 rune.
-        while end < self.bytes.len() && is_latin1_letter(self.bytes[end]) {
+        while end < self.bytes.len() && self.bytes[end].is_ascii_alphabetic() {
             end += 1;
         }
         let flags = &self.bytes[self.pos..end];
@@ -292,12 +291,6 @@ fn char_at(input: &str, pos: usize) -> String {
 /// Go `unicode.IsSpace` restricted to ASCII.
 fn is_go_ascii_space(b: u8) -> bool {
     matches!(b, b'\t' | b'\n' | 0x0b | 0x0c | b'\r' | b' ')
-}
-
-/// Go `unicode.IsLetter(rune(b))` for a single byte read as Latin-1.
-fn is_latin1_letter(b: u8) -> bool {
-    b.is_ascii_alphabetic()
-        || matches!(b, 0xaa | 0xb5 | 0xba | 0xc0..=0xd6 | 0xd8..=0xf6 | 0xf8..=0xff)
 }
 
 /// Field names: an ASCII letter or `_`, then letters, digits, `_`, `.`, or `-`.
