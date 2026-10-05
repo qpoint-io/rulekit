@@ -680,7 +680,8 @@
             "id": "root",
             "kind": "binary",
             "text": "x not in [1]",
-            "operator": "not_in",
+            "operator": "in",
+            "negated": true,
             "raw": "not in",
             "span": {"start": 0, "end": 12, "startLine": 1, "startColumn": 1, "endLine": 1, "endColumn": 13},
             "children": [

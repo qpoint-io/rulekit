@@ -55,9 +55,6 @@ const (
 	OperatorContains
 	OperatorMatches
 	OperatorIn
-	OperatorNotContains
-	OperatorNotMatches
-	OperatorNotIn
 )
 
 // ASTNode is the read-only public view of a parsed expression node.
@@ -150,6 +147,13 @@ func NodeRawOperator(node ASTNode) string {
 	}
 }
 
+// NodeNegated reports whether a binary node is negated, as in `not contains`,
+// `not matches`, or `not in`. NodeOperator returns the operator being negated.
+func NodeNegated(node ASTNode) bool {
+	n, ok := node.(*astBinary)
+	return ok && n.negated
+}
+
 // NodeLiteral returns the raw literal token for literal nodes.
 func NodeLiteral(node ASTNode) (raw string, ok bool) {
 	lit, ok := node.(*astLiteral)
@@ -215,12 +219,6 @@ func publicOperator(op astOperator) Operator {
 		return OperatorMatches
 	case astOpIn:
 		return OperatorIn
-	case astOpNotContains:
-		return OperatorNotContains
-	case astOpNotMatches:
-		return OperatorNotMatches
-	case astOpNotIn:
-		return OperatorNotIn
 	default:
 		return OperatorUnknown
 	}

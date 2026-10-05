@@ -361,8 +361,8 @@ func rewriteOperator(source string, node rulekit.ASTNode, next string) (string, 
 	return source[:start] + next + source[end:], nil
 }
 
-// operatorSpelling maps machine operator names from the AST JSON to the
-// spelling written into rule text.
+// operatorSpelling maps the operator names used by the demo's editor (the AST
+// JSON names, plus not_<op> for a negated operator) to rule text.
 var operatorSpelling = map[string]string{
 	"eq": "==", "ne": "!=", "gt": ">", "ge": ">=", "lt": "<", "le": "<=", "matches": "=~",
 	"not_contains": "not contains", "not_matches": "not =~", "not_in": "not in",

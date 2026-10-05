@@ -18,13 +18,16 @@ type JSONAST struct {
 // ID is the node's position in the tree: "root" for the root node and
 // "<parent id>.<child index>" for each child. Text is the compact canonical
 // expression for the node. Operator and Raw are set for unary and binary nodes
-// (normalized and source spelling); Raw is the literal token for literal nodes
-// and the function name for call nodes. Path is set for path nodes.
+// (normalized and source spelling); Negated is true for `not contains`,
+// `not matches`, and `not in`, whose Operator is the operator being negated.
+// Raw is the literal token for literal nodes and the function name for call
+// nodes. Path is set for path nodes.
 type JSONNode struct {
 	ID       string     `json:"id"`
 	Kind     string     `json:"kind"`
 	Text     string     `json:"text"`
 	Operator string     `json:"operator,omitempty"`
+	Negated  bool       `json:"negated,omitempty"`
 	Raw      string     `json:"raw,omitempty"`
 	Path     string     `json:"path,omitempty"`
 	Span     JSONSpan   `json:"span"`
@@ -126,12 +129,6 @@ func (o Operator) String() string {
 		return "matches"
 	case OperatorIn:
 		return "in"
-	case OperatorNotContains:
-		return "not_contains"
-	case OperatorNotMatches:
-		return "not_matches"
-	case OperatorNotIn:
-		return "not_in"
 	default:
 		return "unknown"
 	}
@@ -146,7 +143,7 @@ func jsonNode(lines lineIndex, node ASTNode, id string) *JSONNode {
 	case *astUnary:
 		out.Operator, out.Raw = publicOperator(n.op).String(), n.rawOp
 	case *astBinary:
-		out.Operator, out.Raw = publicOperator(n.op).String(), n.rawOp
+		out.Operator, out.Negated, out.Raw = publicOperator(n.op).String(), n.negated, n.rawOp
 	case *astLiteral:
 		out.Raw = n.raw
 	case *astPath:

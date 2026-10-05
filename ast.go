@@ -40,31 +40,7 @@ const (
 	astOpContains
 	astOpMatches
 	astOpIn
-	astOpNotContains
-	astOpNotMatches
-	astOpNotIn
 )
-
-// astNegatedBase maps a negated operator (not contains, not matches, not in)
-// to the operator it negates.
-var astNegatedBase = map[astOperator]astOperator{
-	astOpNotContains: astOpContains,
-	astOpNotMatches:  astOpMatches,
-	astOpNotIn:       astOpIn,
-}
-
-// astNegated returns the negated form of contains, matches, or in.
-func astNegated(op astOperator) (astOperator, bool) {
-	switch op {
-	case astOpContains:
-		return astOpNotContains, true
-	case astOpMatches:
-		return astOpNotMatches, true
-	case astOpIn:
-		return astOpNotIn, true
-	}
-	return astOpUnknown, false
-}
 
 func astOperatorFromToken(kind int) astOperator {
 	switch kind {
@@ -98,9 +74,6 @@ func astOperatorFromToken(kind int) astOperator {
 }
 
 func tokenKindFromASTOperator(op astOperator) int {
-	if base, ok := astNegatedBase[op]; ok {
-		op = base
-	}
 	switch op {
 	case astOpNot:
 		return op_NOT
@@ -210,6 +183,9 @@ type astBinary struct {
 	op    astOperator
 	rawOp string
 	right astNode
+	// negated marks `not contains`, `not matches`, and `not in`: the base
+	// operator with a negation applied on top.
+	negated bool
 }
 
 func (n *astBinary) astSpan() astSpan { return n.span }
@@ -278,10 +254,7 @@ func lowerAST(node astNode) (Rule, error) {
 		if err != nil {
 			return nil, err
 		}
-		op, negated := n.op, false
-		if base, ok := astNegatedBase[n.op]; ok {
-			op, negated = base, true
-		}
+		op := n.op
 		var r Rule
 		switch op {
 		case astOpAnd:
@@ -300,7 +273,7 @@ func lowerAST(node astNode) (Rule, error) {
 			}
 		}
 		if r != nil {
-			if negated {
+			if n.negated {
 				r = &nodeNot{right: r}
 			}
 			return withTrace(n, r), nil
@@ -362,7 +335,11 @@ func printASTWithParent(node astNode, parentPrec int, rightChild bool) string {
 			return "(" + out + ")"
 		}
 	case *astBinary:
-		out = printASTWithParent(n.left, prec, false) + " " + astOperatorString(n.op) + " " + printASTWithParent(n.right, prec, true)
+		operator := astOperatorString(n.op)
+		if n.negated {
+			operator = "not " + operator
+		}
+		out = printASTWithParent(n.left, prec, false) + " " + operator + " " + printASTWithParent(n.right, prec, true)
 	}
 
 	if prec > 0 && (prec < parentPrec || (rightChild && prec == parentPrec)) {
@@ -381,7 +358,7 @@ func astPrecedence(node astNode) int {
 			return 1
 		case astOpAnd:
 			return 2
-		case astOpEQ, astOpNE, astOpGT, astOpGE, astOpLT, astOpLE, astOpContains, astOpMatches, astOpIn, astOpNotContains, astOpNotMatches, astOpNotIn:
+		case astOpEQ, astOpNE, astOpGT, astOpGE, astOpLT, astOpLE, astOpContains, astOpMatches, astOpIn:
 			return 3
 		}
 	}
@@ -389,9 +366,6 @@ func astPrecedence(node astNode) int {
 }
 
 func astOperatorString(op astOperator) string {
-	if base, ok := astNegatedBase[op]; ok {
-		return "not " + astOperatorString(base)
-	}
 	switch op {
 	case astOpAnd:
 		return "and"

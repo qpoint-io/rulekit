@@ -121,7 +121,7 @@ watch(selectedNode, (node) => {
     draft.value = ''
     return
   }
-  if (node.kind === 'binary') draft.value = node.operator || ''
+  if (node.kind === 'binary') draft.value = node.operator ? `${node.negated ? 'not_' : ''}${node.operator}` : ''
   else if (node.kind === 'path') draft.value = node.path || node.text
   else if (node.kind === 'literal') draft.value = node.raw || node.text
   else draft.value = node.text

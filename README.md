@@ -257,7 +257,7 @@ data, err := json.Marshal(ast)
 }
 ```
 
-Node IDs are tree positions: `root`, then `<parent id>.<child index>`. `text` is the node's compact expression. Unary and binary nodes carry the normalized `operator` and its source spelling in `raw`; literals carry their source token in `raw`, calls their function name, and paths their rendered `path`. Spans are byte offsets with 1-based lines and byte columns. Token `role` is `id`, `str`, `num`, `kw`, or `pun`.
+Node IDs are tree positions: `root`, then `<parent id>.<child index>`. `text` is the node's compact expression. Unary and binary nodes carry the normalized `operator` and its source spelling in `raw`; `not contains`, `not matches`, and `not in` carry the operator being negated plus `"negated": true`. Literals carry their source token in `raw`, calls their function name, and paths their rendered `path`. Spans are byte offsets with 1-based lines and byte columns. Token `role` is `id`, `str`, `num`, `kw`, or `pun`.
 
 Use `Print` and `Format` for explicit output modes:
 

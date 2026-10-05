@@ -673,9 +673,6 @@ func (p *parser) parseExpr(minPrec int) (astNode, error) {
 			rawOp = p.input[tok.start:opTok.end]
 		}
 		op := astOperatorFromToken(kind)
-		if negated {
-			op, _ = astNegated(op)
-		}
 
 		switch kind {
 		case op_AND, op_OR:
@@ -692,7 +689,7 @@ func (p *parser) parseExpr(minPrec int) (astNode, error) {
 			if isInequality(kind) && (!astValidInequalityOperand(left) || !astValidInequalityOperand(right)) {
 				return nil, p.errorf(tok, "invalid operation")
 			}
-			left = &astBinary{span: joinSpan(left.astSpan(), right.astSpan()), left: left, op: op, rawOp: rawOp, right: right}
+			left = &astBinary{span: joinSpan(left.astSpan(), right.astSpan()), left: left, op: op, rawOp: rawOp, right: right, negated: negated}
 		case op_MATCHES:
 			rhs := p.peek()
 			if rhs.kind != token_REGEX {
@@ -706,7 +703,7 @@ func (p *parser) parseExpr(minPrec int) (astNode, error) {
 			if err != nil {
 				return nil, err
 			}
-			left = &astBinary{span: joinSpan(left.astSpan(), right.astSpan()), left: left, op: op, rawOp: rawOp, right: right}
+			left = &astBinary{span: joinSpan(left.astSpan(), right.astSpan()), left: left, op: op, rawOp: rawOp, right: right, negated: negated}
 		case op_IN:
 			right, err := p.parseExpr(prec + 1)
 			if err != nil {
@@ -717,7 +714,7 @@ func (p *parser) parseExpr(minPrec int) (astNode, error) {
 					return nil, p.errorf(tok, "in requires an array or CIDR value")
 				}
 			}
-			left = &astBinary{span: joinSpan(left.astSpan(), right.astSpan()), left: left, op: op, rawOp: rawOp, right: right}
+			left = &astBinary{span: joinSpan(left.astSpan(), right.astSpan()), left: left, op: op, rawOp: rawOp, right: right, negated: negated}
 		}
 	}
 	return left, nil
