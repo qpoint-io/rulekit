@@ -450,7 +450,7 @@ func (l *lexer) next() token {
 		return l.scanRegex(ch, leading)
 	}
 
-	if r, _ := utf8.DecodeRuneInString(l.input[l.pos:]); ch == '+' || ch == '-' || ch == ':' || isAtomStart(r) || unicode.IsDigit(r) {
+	if ch == '+' || ch == '-' || ch == ':' || isAtomStart(rune(ch)) || unicode.IsDigit(rune(ch)) {
 		return l.scanAtom(leading)
 	}
 
@@ -532,11 +532,11 @@ func (l *lexer) scanRegex(delim byte, leading string) token {
 func (l *lexer) scanAtom(leading string) token {
 	start := l.pos
 	for l.pos < len(l.input) {
-		r, size := utf8.DecodeRuneInString(l.input[l.pos:])
-		if unicode.IsSpace(r) || strings.ContainsRune("()[],<>=!&|\"'", r) {
+		ch := l.input[l.pos]
+		if unicode.IsSpace(rune(ch)) || strings.ContainsRune("()[],<>=!&|\"'", rune(ch)) {
 			break
 		}
-		l.pos += size
+		l.pos++
 	}
 	raw := l.input[start:l.pos]
 	lower := strings.ToLower(raw)
