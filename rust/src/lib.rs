@@ -9,7 +9,9 @@
 //! reference.
 
 pub mod ast;
+mod env;
 mod error;
+mod eval;
 mod input;
 mod json_input;
 mod lex;
@@ -20,20 +22,21 @@ mod regex;
 pub mod value;
 
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 pub use ast::Ast;
+pub use env::{ArgSpec, Args, Env, EnvBuilder, FromArg, Function, Macro, Type};
 pub use error::{BoxError, Error, ParseError};
+pub use eval::EvalResult;
 pub use input::{FnInput, Input, Kv, KvEntry, KvInput, NoInput};
 pub use json_input::{JsonOptions, decode_json};
 pub use print::{PrintMode, format};
-
-use ast::{NodeData, NodeId};
 
 /// A compiled rule.
 #[derive(Clone, Debug)]
 pub struct Rule {
     ast: Arc<Ast>,
+    pub(crate) root: eval::Node,
 }
 
 /// Parse and compile an expression (Go `Parse`).
@@ -45,30 +48,36 @@ pub fn parse(source: &str) -> Result<Rule, ParseError> {
 /// invalid literals (for example a malformed regex) are reported as parse
 /// errors at the literal.
 pub fn compile(ast: Arc<Ast>) -> Result<Rule, ParseError> {
-    check_literals(&ast, ast.root().id())?;
-    Ok(Rule { ast })
+    let root = eval::lower(&ast, ast.root().id())?;
+    Ok(Rule { ast, root })
 }
 
-/// Parse every literal in evaluation-lowering order; the first error wins.
-fn check_literals(ast: &Ast, id: NodeId) -> Result<(), ParseError> {
-    match ast.data(id) {
-        NodeData::Literal { span, kind } => {
-            literal::parse_literal(*kind, ast.text(*span))
-                .map_err(|err| ParseError::at(ast.source(), span.start, err))?;
-        }
-        NodeData::Path { .. } => {}
-        NodeData::Array { items: ids, .. } | NodeData::Call { args: ids, .. } => {
-            for &child in ids.iter() {
-                check_literals(ast, child)?;
-            }
-        }
-        NodeData::Unary { operand, .. } => check_literals(ast, *operand)?,
-        NodeData::Binary { lhs, rhs, .. } => {
-            check_literals(ast, *lhs)?;
-            check_literals(ast, *rhs)?;
-        }
+/// Evaluation options.
+pub struct Opts<'e, C: ?Sized = ()> {
+    /// Custom functions and macros.
+    pub env: &'e Env<C>,
+}
+
+impl<C: ?Sized> Clone for Opts<'_, C> {
+    fn clone(&self) -> Self {
+        *self
     }
-    Ok(())
+}
+
+impl<C: ?Sized> Copy for Opts<'_, C> {}
+
+impl<'e, C: ?Sized> Opts<'e, C> {
+    pub fn new(env: &'e Env<C>) -> Self {
+        Opts { env }
+    }
+}
+
+static EMPTY_ENV: LazyLock<Env> = LazyLock::new(Env::new);
+
+impl Default for Opts<'static> {
+    fn default() -> Self {
+        Opts { env: &EMPTY_ENV }
+    }
 }
 
 impl Rule {
@@ -80,6 +89,21 @@ impl Rule {
     /// Print the rule in the given mode.
     pub fn print(&self, mode: &PrintMode) -> String {
         format(&self.ast, mode)
+    }
+
+    /// Evaluate the rule against `input`. `ctx` is passed to inputs and
+    /// functions.
+    pub fn eval<'a, C: ?Sized, I: Input<C> + ?Sized>(
+        &'a self,
+        input: &'a I,
+        ctx: &'a C,
+        opts: Opts<'a, C>,
+    ) -> EvalResult<'a> {
+        self.root.eval(&eval::Scope {
+            input,
+            ctx,
+            env: opts.env,
+        })
     }
 }
 
