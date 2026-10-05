@@ -99,8 +99,8 @@ let ctx = Ctx { user: "alice".into() };
 assert!(rule.eval(&ctx, &input, Opts::new(&env)).pass());
 ```
 
-`#[rulekit(rename = "x")]` changes the name a rule sees; `#[rulekit(skip)]`
-omits a field. `#[rulekit(bytes)]` reads a `Vec<u8>`, `&[u8]`, `[u8; N]`,
+`#[rulekit(rename = "x")]` changes the name a rule sees. `#[rulekit(bytes)]`
+reads a `Vec<u8>`, `&[u8]`, `[u8; N]`,
 `Box<[u8]>`, or `Cow<[u8]>` field as a byte string instead of a list of
 numbers. `#[rulekit(context = Ctx)]` on the struct sets the context type when
 it is not `()`. An unknown field is missing. `None` is missing.

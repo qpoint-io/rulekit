@@ -188,7 +188,7 @@ impl VisitMut for StaticLifetime<'_> {
 ///
 /// The generated [`Input::get`](rulekit::Input::get) matches the first path
 /// segment against field names (`#[rulekit(rename = "...")]` to change one,
-/// `#[rulekit(skip)]` to omit one, `#[rulekit(bytes)]` to read a `Vec<u8>`,
+/// `#[rulekit(bytes)]` to read a `Vec<u8>`,
 /// `&[u8]`, `[u8; N]`, `Box<[u8]>`, or `Cow<[u8]>` as a byte string) and
 /// resolves the rest of the path on that field only. An unknown field is
 /// absent. Lifetimes and type parameters are kept; each field type must
@@ -233,8 +233,6 @@ fn expand_input(input: &DeriveInput) -> Result<TokenStream2, Error> {
     for field in fields {
         let ident = field.ident.clone().expect("named field");
         let mut name = ident.to_string();
-        let mut skip = false;
-        let mut renamed = false;
         let mut bytes = false;
         for attr in &field.attrs {
             if !attr.path().is_ident("rulekit") {
@@ -247,29 +245,16 @@ fn expand_input(input: &DeriveInput) -> Result<TokenStream2, Error> {
                         return Err(Error::new(lit.span(), "field name must not be empty"));
                     }
                     name = lit.value();
-                    renamed = true;
-                    Ok(())
-                } else if meta.path.is_ident("skip") {
-                    skip = true;
                     Ok(())
                 } else if meta.path.is_ident("bytes") {
                     bytes = true;
                     Ok(())
                 } else {
                     Err(meta.error(
-                        "unknown `rulekit` attribute; expected `rename = \"...\"`, `skip`, or `bytes`",
+                        "unknown `rulekit` attribute; expected `rename = \"...\"` or `bytes`",
                     ))
                 }
             })?;
-        }
-        if skip && renamed {
-            return Err(Error::new(
-                field.span(),
-                "`skip` and `rename` cannot be combined",
-            ));
-        }
-        if skip {
-            continue;
         }
         if !taken.insert(name.clone()) {
             return Err(Error::new(
