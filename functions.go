@@ -177,6 +177,13 @@ type Rest []any
 //	map[string]any        object
 //	any                   any value, unconverted (nil for null)
 //
+// A field may also have a named type defined over bool, int64, uint64,
+// float64, string, []byte, []any, or map[string]any, such as
+// `type Port uint64`; it takes the arguments its underlying type takes.
+// (A type defined over net.IP or net.HardwareAddr has underlying type
+// []byte, so it is a bytes parameter.) Named types over the struct and
+// pointer types above are not supported.
+//
 // The last field may have type [Rest] to accept any number of further
 // arguments.
 //
@@ -187,8 +194,9 @@ type Rest []any
 // not called.
 //
 // The result type R is any of the field types above other than Rest. A
-// handler error makes the rule result an error wrapping it; return
-// [ErrMissing] to make the result unknown instead.
+// result of a named type is converted to its underlying type, so a Port
+// result is a uint64 value. A handler error makes the rule result an error
+// wrapping it; return [ErrMissing] to make the result unknown instead.
 //
 // ctx is the context passed to [Rule.Eval]. A function receives only its
 // arguments, not the rule input: to apply logic to input values, pass them
@@ -212,10 +220,12 @@ func Func[A, R any](schema FuncSchema, handler func(context.Context, A) (R, erro
 		fail("handler must not be nil")
 	}
 	spec, params := newArgSpec(reflect.TypeFor[A](), fail)
-	returns, ok := valueKinds[reflect.TypeFor[R]()]
-	if !ok {
-		fail("unsupported return type %s; supported: %s", reflect.TypeFor[R](), supportedTypes)
+	rt := reflect.TypeFor[R]()
+	returns, ok := kindOf(rt)
+	if !ok || rt == reflect.TypeFor[Rest]() {
+		fail("unsupported return type %s; supported: %s", rt, supportedTypes)
 	}
+	_, exact := valueKinds[rt]
 	fn := &Function{
 		Name:       schema.Name,
 		Doc:        schema.Doc,
@@ -223,7 +233,7 @@ func Func[A, R any](schema FuncSchema, handler func(context.Context, A) (R, erro
 		Returns:    kindNames[returns],
 		positional: len(spec.fields),
 		rest:       spec.rest,
-		call:       newCall(schema.Name, spec, handler),
+		call:       newCall(schema.Name, spec, handler, returns, exact),
 	}
 	return fn
 }
@@ -338,7 +348,41 @@ var valueKinds = map[reflect.Type]argKind{
 	reflect.TypeFor[map[string]any]():   kindObject,
 }
 
-const supportedTypes = "bool, int64, uint64, float64, string, []byte, net.IP, *net.IPNet, net.HardwareAddr, rulekit.URL, *regexp.Regexp, []any, map[string]any, any"
+const supportedTypes = "bool, int64, uint64, float64, string, []byte, net.IP, *net.IPNet, net.HardwareAddr, rulekit.URL, *regexp.Regexp, []any, map[string]any, any, or a named type over bool, int64, uint64, float64, string, []byte, []any, or map[string]any"
+
+// kindOf returns the kind of a supported parameter or result type: one of
+// valueKinds, or a named type whose underlying type is one of the
+// non-struct, non-pointer types there. Values of such a named type have the
+// same layout as its underlying type, so they are read and written as it.
+func kindOf(t reflect.Type) (argKind, bool) {
+	if kind, ok := valueKinds[t]; ok {
+		return kind, true
+	}
+	switch t.Kind() {
+	case reflect.Bool:
+		return kindBool, true
+	case reflect.Int64:
+		return kindInt64, true
+	case reflect.Uint64:
+		return kindUint64, true
+	case reflect.Float64:
+		return kindFloat64, true
+	case reflect.String:
+		return kindString, true
+	case reflect.Slice:
+		switch t.Elem() {
+		case reflect.TypeFor[byte]():
+			return kindBytes, true
+		case reflect.TypeFor[any]():
+			return kindArray, true
+		}
+	case reflect.Map:
+		if t.Key() == reflect.TypeFor[string]() && t.Elem() == reflect.TypeFor[any]() {
+			return kindObject, true
+		}
+	}
+	return 0, false
+}
 
 // argSpec says where each argument of a call is stored in the argument
 // struct.
@@ -390,7 +434,7 @@ func newArgSpec(t reflect.Type, fail func(string, ...any)) (*argSpec, []Param) {
 			params = append(params, Param{Name: name, Type: kindNames[kindAny], Rest: true})
 			continue
 		}
-		kind, ok := valueKinds[f.Type]
+		kind, ok := kindOf(f.Type)
 		if !ok {
 			fail("%s has unsupported type %s; supported: %s, or rulekit.Rest as the last field", where, f.Type, supportedTypes)
 		}

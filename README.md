@@ -391,7 +391,7 @@ Parameter (field) and result types, and the rule values they accept:
 | `map[string]any`   | object                                        |
 | `any`              | any value, unconverted                        |
 
-Conversions are exact: an `int64` parameter does not accept a `uint64` or `float64` argument. The last field may have type `rulekit.Rest` to accept any number of further arguments, unconverted.
+Conversions are exact: an `int64` parameter does not accept a `uint64` or `float64` argument. A named type over `bool`, `int64`, `uint64`, `float64`, `string`, `[]byte`, `[]any`, or `map[string]any` (such as `type Port uint64`) works like its underlying type, both as a parameter and as a result. The last field may have type `rulekit.Rest` to accept any number of further arguments, unconverted.
 
 - An argument of the wrong type, or the wrong number of arguments, makes the result an error (`*rulekit.ErrInvalidFunctionArg` for a type), without calling the handler.
 - If an argument is missing from the input, the result is unknown and the handler is not called.

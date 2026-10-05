@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/url"
 	"regexp"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -248,6 +249,67 @@ func TestFuncTypes(t *testing.T) {
 	}
 }
 
+type (
+	testPort   uint64
+	testHost   string
+	testFlag   bool
+	testCount  int64
+	testRatio  float64
+	testRaw    []byte
+	testList   []any
+	testObject map[string]any
+	testIP     net.IP
+)
+
+// TestFuncNamedTypes covers named types over supported types: arguments
+// convert as their underlying type, and results are their underlying type.
+func TestFuncNamedTypes(t *testing.T) {
+	tcs := []struct {
+		name  string
+		fn    *Function
+		in    any
+		want  any
+		param string
+	}{
+		{"uint64", identity[testPort](), uint64(443), uint64(443), "uint64"},
+		{"string", identity[testHost](), "example.com", "example.com", "string"},
+		{"bool", identity[testFlag](), true, true, "bool"},
+		{"int64", identity[testCount](), int64(-2), int64(-2), "int64"},
+		{"float64", identity[testRatio](), 0.5, 0.5, "float64"},
+		{"bytes", identity[testRaw](), []byte("ab"), []byte("ab"), "bytes"},
+		{"array", identity[testList](), []any{"a"}, []any{"a"}, "array"},
+		{"object", identity[testObject](), KV{"a": "b"}, KV{"a": "b"}, "object"},
+		// A type over net.IP has underlying type []byte.
+		{"bytes from type over net.IP", identity[testIP](), []byte{10, 0, 0, 1}, []byte{10, 0, 0, 1}, "bytes"},
+	}
+	for _, tc := range tcs {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.param, tc.fn.Params[0].Type)
+			assert.Equal(t, tc.param, tc.fn.Returns)
+			res := evalRule(MustParse(`id(v)`), &ctx{KV: KV{"v": tc.in}, Functions: NewFunctionSet(tc.fn)})
+			require.NoError(t, res.Error)
+			assert.Equal(t, tc.want, res.Value)
+		})
+	}
+
+	// Conversions stay exact.
+	res := evalRule(MustParse(`id(v)`), &ctx{KV: KV{"v": int64(443)}, Functions: NewFunctionSet(identity[testPort]())})
+	var argErr *ErrInvalidFunctionArg
+	require.ErrorAs(t, res.Error, &argErr)
+	assert.Equal(t, ErrInvalidFunctionArg{Name: "v", Expected: "uint64", Got: "int64"}, *argErr)
+
+	// Named types work with other fields at their offsets. (Integer
+	// literals are int64.)
+	type args struct {
+		Host testHost
+		Port testCount
+	}
+	addr := Func(FuncSchema{Name: "addr"}, func(_ context.Context, a args) (testHost, error) {
+		return a.Host + ":" + testHost(strconv.FormatInt(int64(a.Port), 10)), nil
+	})
+	assertRulep(t, `addr("example.com", 443) == "example.com:443"`, &ctx{Functions: NewFunctionSet(addr)}).Pass()
+}
+
 func TestFuncPanics(t *testing.T) {
 	type embedded struct{ A int64 }
 	ok := func(context.Context, struct{ A int64 }) (bool, error) { return true, nil }
@@ -272,6 +334,25 @@ func TestFuncPanics(t *testing.T) {
 		{"unsupported field type", "Count", func() {
 			type args struct{ Count int }
 			Func(FuncSchema{Name: "fn"}, func(context.Context, args) (bool, error) { return true, nil })
+		}},
+		{"named type over int", "Count", func() {
+			type count int
+			type args struct{ Count count }
+			Func(FuncSchema{Name: "fn"}, func(context.Context, args) (bool, error) { return true, nil })
+		}},
+		{"named type over a struct type", "Link", func() {
+			type link URL
+			type args struct{ Link link }
+			Func(FuncSchema{Name: "fn"}, func(context.Context, args) (bool, error) { return true, nil })
+		}},
+		{"named type over a pointer type", "Pattern", func() {
+			type pattern *regexp.Regexp
+			type args struct{ Pattern pattern }
+			Func(FuncSchema{Name: "fn"}, func(context.Context, args) (bool, error) { return true, nil })
+		}},
+		{"named return type over a pointer type", "network", func() {
+			type network *net.IPNet
+			Func(FuncSchema{Name: "fn"}, func(context.Context, struct{}) (network, error) { return nil, nil })
 		}},
 		{"rest not last", "More", func() {
 			type args struct {
