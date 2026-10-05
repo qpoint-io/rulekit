@@ -516,4 +516,19 @@ pub mod __private {
     {
         crate::InputValue::get(value, ctx, path)
     }
+
+    /// Read a `#[rulekit(bytes)]` field as a byte string. `T` is spanned at
+    /// the field type so a non-byte field fails there.
+    #[inline(always)]
+    pub fn bytes_field<'a, C, T>(
+        value: &'a T,
+        _ctx: &'a C,
+        path: &[crate::ast::Segment],
+    ) -> Result<Option<crate::value::Val<'a>>, crate::error::BoxError>
+    where
+        C: ?Sized,
+        T: crate::ByteStr,
+    {
+        crate::bytes_input::bytes_value(value, path)
+    }
 }

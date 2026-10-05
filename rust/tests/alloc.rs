@@ -264,6 +264,29 @@ fn derived_struct_eval_does_not_allocate() {
 }
 
 #[test]
+fn bytes_field_does_not_allocate() {
+    #[derive(rulekit::Input)]
+    struct Row<'a> {
+        #[rulekit(bytes)]
+        body: &'a [u8],
+        #[rulekit(bytes)]
+        owned: Vec<u8>,
+        raw: bytes::Bytes,
+    }
+    let row = Row {
+        body: b"POST",
+        owned: b"POST".to_vec(),
+        raw: bytes::Bytes::from_static(b"POST"),
+    };
+    let rule =
+        rulekit::parse(r#"body == "POST" and owned contains "OS" and raw == "POST""#).unwrap();
+    drop(rule.eval(&(), &row, Opts::default()));
+    let before = allocations();
+    assert!(rule.eval(&(), &row, Opts::default()).pass());
+    assert_eq!(allocations(), before);
+}
+
+#[test]
 fn derived_url_field_access_does_not_allocate() {
     #[derive(rulekit::Input)]
     struct Row {

@@ -22,17 +22,23 @@ regex-syntax = "0.8.11"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
 smallvec = { version = "1", features = ["const_generics", "union"] }
+bytes = { version = "1", optional = true }
 http = { version = "1", optional = true }
+serde_bytes = { version = "0.11", optional = true }
 url = { version = "2", optional = true }
 
 [features]
-default = ["derive", "url", "http"]
+default = ["derive", "url", "http", "bytes", "serde_bytes"]
 # `#[derive(rulekit::Args)]` and `#[derive(rulekit::Input)]`.
 derive = ["dep:rulekit-macros"]
 # `url::Url` fields: host, path, query, and string comparison of `as_str()`.
 url = ["dep:url"]
 # `http::Uri` fields. The whole-URI text form allocates; field access does not.
 http = ["dep:http"]
+# `bytes::Bytes` and `BytesMut` as byte strings.
+bytes = ["dep:bytes"]
+# `serde_bytes::{ByteBuf, Bytes, ByteArray}` as byte strings.
+serde_bytes = ["dep:serde_bytes"]
 
 [workspace]
 members = ["macros"]

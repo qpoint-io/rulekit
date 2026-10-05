@@ -59,6 +59,7 @@
 extern crate self as rulekit;
 
 pub mod ast;
+mod bytes_input;
 mod env;
 mod error;
 pub(crate) mod eval;
@@ -80,6 +81,7 @@ use std::fmt;
 use std::sync::{Arc, LazyLock};
 
 pub use ast::Ast;
+pub use bytes_input::{ByteStr, Bytes, bytes};
 pub use env::{Env, EnvBuilder, Macro};
 pub use error::{BoxError, Error, ParseError};
 pub use eval::EvalResult;

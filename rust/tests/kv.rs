@@ -117,3 +117,17 @@ fn lazy_returns_owned_value() {
     assert!(rule.eval(&ctx, &input, Opts::new(&env)).pass());
     let _ = Value::Null;
 }
+
+#[test]
+fn kv_bytes_wrapper_is_not_a_list() {
+    let buf = b"POST";
+    let input = kv! {
+        "body" => rulekit::bytes(buf),
+        "nums" => buf.to_vec(),
+        "raw" => bytes::Bytes::from_static(buf),
+    };
+    let rule = rulekit::parse(r#"body == "POST" and raw == "POST" and nums[0] == 80"#).unwrap();
+    assert!(rule.eval(&(), &input, Opts::default()).pass());
+    let as_text = rulekit::parse(r#"nums == "POST""#).unwrap();
+    assert!(!as_text.eval(&(), &input, Opts::default()).pass());
+}

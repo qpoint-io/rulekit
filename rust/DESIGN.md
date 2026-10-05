@@ -21,8 +21,11 @@ in order and returns strings with a lifetime that ends when the serializer
 call returns, so strings would be copied and unread fields would still be
 visited.
 
-`Vec<u8>` and `&[u8]` are lists of numbers. A blanket list impl cannot also
-treat them as byte strings. Bytes stay `Value::Bytes`.
+`Vec<u8>`, `&[u8]`, `[u8; N]`, `Box<[u8]>`, and `Cow<[u8]>` are lists of
+numbers unless the field is `#[rulekit(bytes)]` (borrowed `ValueRef::Bytes`).
+`kv!` uses `rulekit::bytes(&buf)`. `bytes::Bytes` / `BytesMut` and
+`serde_bytes::{ByteBuf, Bytes, ByteArray}` are byte strings automatically
+(default features `bytes` and `serde_bytes`).
 
 The `url` and `http` features are on by default. `url::Url` and `http::Uri`
 behave as rulekit's URL parsed from `as_str()` / the display form after those

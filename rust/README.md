@@ -100,8 +100,10 @@ assert!(rule.eval(&ctx, &input, Opts::new(&env)).pass());
 ```
 
 `#[rulekit(rename = "x")]` changes the name a rule sees; `#[rulekit(skip)]`
-omits a field. `#[rulekit(context = Ctx)]` on the struct sets the context
-type when it is not `()`. An unknown field is missing. `None` is missing.
+omits a field. `#[rulekit(bytes)]` reads a `Vec<u8>`, `&[u8]`, `[u8; N]`,
+`Box<[u8]>`, or `Cow<[u8]>` field as a byte string instead of a list of
+numbers. `#[rulekit(context = Ctx)]` on the struct sets the context type when
+it is not `()`. An unknown field is missing. `None` is missing.
 
 `kv!` is the ad-hoc form. A nested `{ ... }` is another map. [`lazy`] runs the first time the field is read, then reuses that owned
 value (a borrow of `ctx` is copied into the memo):
@@ -119,9 +121,12 @@ assert!(rule.eval(&(), &input, Opts::default()).pass());
 ```
 
 List membership is `tags contains "db"` (`in` takes an array or CIDR literal,
-as in Go). `Vec<u8>` and `&[u8]` are lists of numbers, not byte strings; use
-`Value::Bytes` for bytes. `url::Url` and `http::Uri` fields (`host`, `path`,
-`query.env`, ...) work with the default `url` and `http` features.
+as in Go). A bare `Vec<u8>` or `&[u8]` is a list of numbers. Mark a field
+`#[rulekit(bytes)]`, or wrap a slice with `rulekit::bytes`, when the rule
+should see a byte string. `bytes::Bytes`, `BytesMut`, and
+`serde_bytes::{ByteBuf, Bytes, ByteArray}` are byte strings automatically.
+`url::Url` and `http::Uri` fields (`host`, `path`, `query.env`, ...) work
+with the default `url` and `http` features.
 Those crates normalize before rulekit sees the text, so a value behaves as rulekit's own URL parsed from `url.as_str()` or `uri`'s display form (scheme and host lowercased); the original spelling is not recoverable.
 
 `FnInput` wraps a closure that resolves a path. `NoInput` has no fields.

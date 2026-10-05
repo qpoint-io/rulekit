@@ -79,3 +79,64 @@ fn derived_slice_field_is_a_list() {
     let rule = rulekit::parse(r#"tags contains "api" and tags[0] == "db""#).unwrap();
     assert!(rule.eval(&(), &row, Opts::default()).pass());
 }
+
+#[test]
+fn bytes_attribute_is_a_byte_string() {
+    use std::borrow::Cow;
+
+    #[derive(rulekit::Input)]
+    struct Row<'a> {
+        #[rulekit(bytes)]
+        body: &'a [u8],
+        #[rulekit(bytes)]
+        owned: Vec<u8>,
+        #[rulekit(bytes)]
+        fixed: [u8; 4],
+        #[rulekit(bytes)]
+        boxed: Box<[u8]>,
+        #[rulekit(bytes)]
+        cow: Cow<'a, [u8]>,
+        nums: Vec<u8>,
+        raw: bytes::Bytes,
+        buf: serde_bytes::ByteBuf,
+        view: &'a serde_bytes::Bytes,
+        array: serde_bytes::ByteArray<4>,
+    }
+
+    let view = serde_bytes::Bytes::new(b"POST");
+    let row = Row {
+        body: b"POST",
+        owned: b"POST".to_vec(),
+        fixed: *b"POST",
+        boxed: b"POST".to_vec().into_boxed_slice(),
+        cow: Cow::Borrowed(b"POST"),
+        nums: b"POST".to_vec(),
+        raw: bytes::Bytes::from_static(b"POST"),
+        buf: serde_bytes::ByteBuf::from(b"POST".to_vec()),
+        view,
+        array: serde_bytes::ByteArray::new(*b"POST"),
+    };
+    let rule = rulekit::parse(
+        r#"body == "POST" and owned == "POST" and fixed == "POST" and boxed == "POST" and cow == "POST" and raw == "POST" and buf == "POST" and view == "POST" and array == "POST" and nums[0] == 80"#,
+    )
+    .unwrap();
+    assert!(rule.eval(&(), &row, Opts::default()).pass());
+
+    let indexed = rulekit::parse("body[0] == 80").unwrap();
+    assert!(indexed.eval(&(), &row, Opts::default()).unknown());
+    let as_text = rulekit::parse(r#"nums == "POST""#).unwrap();
+    assert!(!as_text.eval(&(), &row, Opts::default()).pass());
+}
+
+#[test]
+fn bytes_mut_is_a_byte_string() {
+    #[derive(rulekit::Input)]
+    struct Row {
+        raw: bytes::BytesMut,
+    }
+    let row = Row {
+        raw: bytes::BytesMut::from(&b"POST"[..]),
+    };
+    let rule = rulekit::parse(r#"raw == "POST""#).unwrap();
+    assert!(rule.eval(&(), &row, Opts::default()).pass());
+}

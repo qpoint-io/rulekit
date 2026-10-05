@@ -188,9 +188,11 @@ impl VisitMut for StaticLifetime<'_> {
 ///
 /// The generated [`Input::get`](rulekit::Input::get) matches the first path
 /// segment against field names (`#[rulekit(rename = "...")]` to change one,
-/// `#[rulekit(skip)]` to omit one) and resolves the rest of the path on that
-/// field only. An unknown field is absent. Lifetimes and type parameters are
-/// kept; each field type must implement `rulekit::InputValue`.
+/// `#[rulekit(skip)]` to omit one, `#[rulekit(bytes)]` to read a `Vec<u8>`,
+/// `&[u8]`, `[u8; N]`, `Box<[u8]>`, or `Cow<[u8]>` as a byte string) and
+/// resolves the rest of the path on that field only. An unknown field is
+/// absent. Lifetimes and type parameters are kept; each field type must
+/// implement `rulekit::InputValue`, or `rulekit::ByteStr` when marked `bytes`.
 #[proc_macro_derive(Input, attributes(rulekit))]
 pub fn derive_input(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -203,6 +205,7 @@ struct InputField {
     ident: syn::Ident,
     name: String,
     ty: Type,
+    bytes: bool,
 }
 
 fn expand_input(input: &DeriveInput) -> Result<TokenStream2, Error> {
@@ -232,6 +235,7 @@ fn expand_input(input: &DeriveInput) -> Result<TokenStream2, Error> {
         let mut name = ident.to_string();
         let mut skip = false;
         let mut renamed = false;
+        let mut bytes = false;
         for attr in &field.attrs {
             if !attr.path().is_ident("rulekit") {
                 continue;
@@ -248,9 +252,12 @@ fn expand_input(input: &DeriveInput) -> Result<TokenStream2, Error> {
                 } else if meta.path.is_ident("skip") {
                     skip = true;
                     Ok(())
+                } else if meta.path.is_ident("bytes") {
+                    bytes = true;
+                    Ok(())
                 } else {
                     Err(meta.error(
-                        "unknown `rulekit` attribute; expected `rename = \"...\"` or `skip`",
+                        "unknown `rulekit` attribute; expected `rename = \"...\"`, `skip`, or `bytes`",
                     ))
                 }
             })?;
@@ -274,6 +281,7 @@ fn expand_input(input: &DeriveInput) -> Result<TokenStream2, Error> {
             ident,
             name,
             ty: field.ty.clone(),
+            bytes,
         });
     }
 
@@ -282,8 +290,14 @@ fn expand_input(input: &DeriveInput) -> Result<TokenStream2, Error> {
 
     let arms = parsed.iter().map(|f| {
         let (name, ident, ty) = (&f.name, &f.ident, &f.ty);
-        quote_spanned! {ty.span()=>
-            #name => ::rulekit::__private::field::<#ctx, #ty>(&self.#ident, ctx, rest),
+        if f.bytes {
+            quote_spanned! {ty.span()=>
+                #name => ::rulekit::__private::bytes_field::<#ctx, #ty>(&self.#ident, ctx, rest),
+            }
+        } else {
+            quote_spanned! {ty.span()=>
+                #name => ::rulekit::__private::field::<#ctx, #ty>(&self.#ident, ctx, rest),
+            }
         }
     });
     let type_params: Vec<String> = input
@@ -299,7 +313,11 @@ fn expand_input(input: &DeriveInput) -> Result<TokenStream2, Error> {
         .filter(|f| mentions_type_param(&f.ty, &type_params))
         .map(|f| {
             let ty = &f.ty;
-            quote_spanned!(ty.span() => #ty: ::rulekit::InputValue<#ctx>)
+            if f.bytes {
+                quote_spanned!(ty.span() => #ty: ::rulekit::ByteStr)
+            } else {
+                quote_spanned!(ty.span() => #ty: ::rulekit::InputValue<#ctx>)
+            }
         })
         .collect();
     let orig_where = input.generics.where_clause.as_ref().map(|clause| {

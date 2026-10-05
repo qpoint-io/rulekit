@@ -26,9 +26,11 @@ use crate::value::{
 ///
 /// # Bytes
 ///
-/// `Vec<u8>`, `&[u8]`, and `[u8; N]` are lists of numbers, not byte strings.
-/// A byte string and a list of `u8` are the same Rust type, so the list impl
-/// wins. Pass [`Value::Bytes`] when the rule should see bytes.
+/// `Vec<u8>`, `&[u8]`, `[u8; N]`, `Box<[u8]>`, and `Cow<[u8]>` are lists of
+/// numbers. Mark a derived field `#[rulekit(bytes)]`, or pass [`crate::bytes`],
+/// to read them as a byte string. `bytes::Bytes`, `bytes::BytesMut`, and
+/// `serde_bytes::{ByteBuf, Bytes, ByteArray}` are byte strings without the
+/// attribute (default features `bytes` and `serde_bytes`).
 ///
 /// # Errors
 ///
