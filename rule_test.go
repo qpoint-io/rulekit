@@ -400,11 +400,12 @@ func TestFilterParseIP(t *testing.T) {
 	}
 }
 
-func TestFilterParseMac(t *testing.T) {
-	_, err := Parse("f_mac == 01:23:45:67:89:ab:cd:ef --or f_mac == 0123.4567.89ab.cdef")
-	if err != nil {
-		t.Error(err)
-	}
+func TestFilterParseHexAndMac(t *testing.T) {
+	mac, err := net.ParseMAC("01:23:45:67:89:ab")
+	require.NoError(t, err)
+	assertRulep(t, `f_mac == 01:23:45:67:89:ab`, kv{"f_mac": mac}).Ok().DoesPass(true)
+	assertRulep(t, `f_mac == "01:23:45:67:89:ab"`, kv{"f_mac": mac}).Ok().DoesPass(true)
+	assertRulep(t, `f_bytes == 50:4f:53:54`, kv{"f_bytes": "POST"}).Ok().DoesPass(true)
 }
 
 func TestFilterParseBool(t *testing.T) {
@@ -1207,4 +1208,15 @@ func TestFieldNames(t *testing.T) {
 func TestNot(t *testing.T) {
 	assertRulep(t, `not (a == 1)`, kv(map[string]any{"a": 1})).Ok().DoesPass(false)
 	assertRulep(t, `not (a == 1)`, kv(map[string]any{"a": 2})).Ok().DoesPass(true)
+}
+
+func TestHexLikeFieldNames(t *testing.T) {
+	// A lone byte pair made of letters is a field name, not a hex literal.
+	assertRulep(t, `ab == 1`, kv{"ab": 1}).Ok().DoesPass(true)
+	assertRulep(t, `fe == "x"`, kv{"fe": "x"}).Ok().DoesPass(true)
+	assertRulep(t, `ad`, kv{"ad": true}).Ok().DoesPass(true)
+	assertRulep(t, `ad`, kv{}).MissingFields("ad")
+	// Byte pairs that cannot be field names remain hex literals.
+	assertRulep(t, `x == 0a`, kv{"x": "\n"}).Ok().DoesPass(true)
+	assertRulep(t, `x == ab:cd`, kv{"x": "\xab\xcd"}).Ok().DoesPass(true)
 }

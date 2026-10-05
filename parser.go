@@ -431,7 +431,8 @@ func (l *lexer) scanAtom(leading string) token {
 	if isFloat(raw) {
 		return token{kind: token_FLOAT, raw: raw, start: start, end: l.pos, leadingTrivia: leading}
 	}
-	if isHexString(raw) {
+	// A lone pair such as "ab" is also a valid field name; the field wins.
+	if isHexString(raw) && (strings.IndexByte(raw, ':') >= 0 || !isField(raw)) {
 		return token{kind: token_HEX_STRING, raw: raw, start: start, end: l.pos, leadingTrivia: leading}
 	}
 	if isField(raw) {
