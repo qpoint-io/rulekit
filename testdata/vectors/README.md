@@ -114,6 +114,19 @@ exactly these forms, whatever their platform libraries print:
 
 ## Other shared rules
 
+- **Regexes** use a dialect both Go's `regexp` and Rust's `regex` read the
+  same way; `checkRegexDialect` (Go) and the Rust dialect check reject the
+  rest. Unicode classes (`\pX`, `\p{...}`) accept only the 249 names both
+  engines define identically (general categories and their long names,
+  scripts, `Any`, `ASCII`, `Assigned`; not `LC`/`Cased_Letter`,
+  `Cs`/`Surrogate`, or Unicode 17 scripts), spelled with Go's rules (case,
+  spaces, `_`, and `-` ignored). Class membership and case folding follow
+  each engine's Unicode version (Go 1.27: Unicode 17; Rust `regex`: Unicode
+  16), so vectors avoid code points those versions disagree on. Compiled
+  program size limits are implementation-defined: both reject very large
+  programs, but not at the same point, so vectors stay well below them
+  (at most one `\pL{1000}`).
+
 - **URLs** (`$url` input) are RFC 3986 URI references written in ASCII, with
   no `%` escapes in the host, no IPvFuture literal (`[v1.x]`), no IPv6 zone,
   and at most one `@`; anything else is invalid input. Fields: `scheme` and
