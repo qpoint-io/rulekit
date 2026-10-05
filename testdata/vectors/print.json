@@ -1,0 +1,119 @@
+{
+  "cases": [
+    {
+      "name": "compact: field == \"value\" and other != 1",
+      "expr": "field == \"value\" and other != 1",
+      "expect": {"print": {"compact": "field == \"value\" and other != 1"}}
+    },
+    {
+      "name": "compact: domain matches /example\\.com$/ OR tags == \"x\"",
+      "expr": "domain matches /example\\.com$/ OR tags == \"x\"",
+      "expect": {"print": {"compact": "domain =~ /example\\.com$/ or tags == \"x\""}}
+    },
+    {"name": "compact: a or (b and c)", "expr": "a or (b and c)", "expect": {"print": {"compact": "a or b and c"}}},
+    {"name": "compact: (a or b) and c", "expr": "(a or b) and c", "expect": {"print": {"compact": "(a or b) and c"}}},
+    {
+      "name": "compact: request.headers[\"user-agent\"] == \"curl\"",
+      "expr": "request.headers[\"user-agent\"] == \"curl\"",
+      "expect": {"print": {"compact": "request.headers[\"user-agent\"] == \"curl\""}}
+    },
+    {
+      "name": "compact: items[0].name in [\"first\", \"second\"]",
+      "expr": "items[0].name in [\"first\", \"second\"]",
+      "expect": {"print": {"compact": "items[0].name in [\"first\", \"second\"]"}}
+    },
+    {
+      "name": "compact: starts_with(path, \"/api\")",
+      "expr": "starts_with(path, \"/api\")",
+      "expect": {"print": {"compact": "starts_with(path, \"/api\")"}}
+    },
+    {
+      "name": "compact: not (a == 1 or b == 2)",
+      "expr": "not (a == 1 or b == 2)",
+      "expect": {"print": {"compact": "not (a == 1 or b == 2)"}}
+    },
+    {
+      "name": "compact: ip in 192.168.0.0/16",
+      "expr": "ip in 192.168.0.0/16",
+      "expect": {"print": {"compact": "ip in 192.168.0.0/16"}}
+    },
+    {
+      "name": "format: compact, source, multiline",
+      "expr": "(a == 1 or b == 2) and c == 3 and request.headers[\"user-agent\"] == \"curl\"",
+      "expect": {
+        "print": {
+          "compact": "(a == 1 or b == 2) and c == 3 and request.headers[\"user-agent\"] == \"curl\"",
+          "source": "(a == 1 or b == 2) and c == 3 and request.headers[\"user-agent\"] == \"curl\"",
+          "multiline_4sp": "(\n    a == 1\n    or b == 2\n)\nand c == 3\nand request.headers[\"user-agent\"] == \"curl\""
+        }
+      }
+    },
+    {
+      "name": "format: comments become block comments in compact",
+      "expr": "-- top\na==1 -- explain\n and b matches /x/",
+      "expect": {
+        "print": {
+          "string": "a == 1 and b =~ /x/",
+          "compact": "/* top */ a == 1 /* explain */ and b =~ /x/",
+          "multiline_2sp": "-- top\na == 1 -- explain\nand b =~ /x/"
+        }
+      }
+    },
+    {
+      "name": "format: compact keeps line comments containing */",
+      "expr": "a == 1 -- has */ inside\nand /* multi\n   line */ b == 2",
+      "expect": {"print": {"compact": "a == 1 -- has */ inside\nand /* multi line */ b == 2"}}
+    },
+    {
+      "name": "format: compact with comments keeps canonical spacing",
+      "expr": "(a == 1) -- x\nand f(x, 1) and items[0].name == 'n'",
+      "expect": {"print": {"compact": "(a == 1) /* x */ and f(x, 1) and items[0].name == 'n'"}}
+    },
+    {
+      "name": "format: multiline with comments",
+      "expr": "(a == 1 or b == 2) -- c\nand f(x, 1) and x in [1, 2]",
+      "expect": {"print": {"multiline_2sp": "(\n  a == 1\n  or b == 2\n) -- c\nand f(x, 1)\nand x in [1, 2]"}}
+    },
+    {
+      "name": "string: field == [1, \"str\", 3]",
+      "expr": "field == [1, \"str\", 3]",
+      "expect": {"print": {"string": "field == [1, \"str\", 3]"}}
+    },
+    {
+      "name": "string: field contains [1, \"str\", 3]",
+      "expr": "field contains [1, \"str\", 3]",
+      "expect": {"print": {"string": "field contains [1, \"str\", 3]"}}
+    },
+    {
+      "name": "string: field contains \"str\"",
+      "expr": "field contains \"str\"",
+      "expect": {"print": {"string": "field contains \"str\""}}
+    },
+    {
+      "name": "string: field in [1, \"str\", 3]",
+      "expr": "field in [1, \"str\", 3]",
+      "expect": {"print": {"string": "field in [1, \"str\", 3]"}}
+    },
+    {
+      "name": "string: [\"destination.ip\"] == 1.1.1.1",
+      "expr": "[\"destination.ip\"] == 1.1.1.1",
+      "expect": {"print": {"string": "[\"destination.ip\"] == 1.1.1.1"}}
+    },
+    {"name": "string: x == x\"0a\"", "expr": "x == x\"0a\"", "expect": {"print": {"string": "x == x\"0a\""}}},
+    {
+      "name": "string: request.headers bracket path",
+      "expr": "request.headers[\"user-agent\"] == \"curl\"",
+      "expect": {"print": {"string": "request.headers[\"user-agent\"] == \"curl\""}}
+    },
+    {
+      "name": "string: multi-line call arguments",
+      "expr": "func_name(\n\t\tfieldarg,\n\t\t192.168.0.0,\n\t\t[1, 2, 3],\n\t\tnested_func(true)\n\t)",
+      "expect": {"print": {"string": "func_name(fieldarg, 192.168.0.0, [1, 2, 3], nested_func(true))"}}
+    },
+    {
+      "name": "string: matches prints as =~ with flags",
+      "expr": "ua matches /curl/i",
+      "expect": {"print": {"string": "ua =~ /curl/i"}}
+    }
+  ]
+}

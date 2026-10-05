@@ -1,0 +1,232 @@
+{
+  "cases": [
+    {
+      "name": "annotated keys: src",
+      "expr": "src",
+      "input_mode": "annotated_keys",
+      "input": {
+        "src.$ip": "1.2.3.4",
+        "dst.$cidr": "10.0.0.0/8",
+        "payload.$hex": "474554",
+        "name.$string": "api",
+        "enabled.$bool": true,
+        "max.$uint64": "18446744073709551615",
+        "nested": {"count.$int64": "42"}
+      },
+      "expect": {"value": {"$type": "ip", "value": "1.2.3.4"}}
+    },
+    {
+      "name": "annotated keys: dst",
+      "expr": "dst",
+      "input_mode": "annotated_keys",
+      "input": {
+        "src.$ip": "1.2.3.4",
+        "dst.$cidr": "10.0.0.0/8",
+        "payload.$hex": "474554",
+        "name.$string": "api",
+        "enabled.$bool": true,
+        "max.$uint64": "18446744073709551615",
+        "nested": {"count.$int64": "42"}
+      },
+      "expect": {"value": {"$type": "cidr", "value": "10.0.0.0/8"}}
+    },
+    {
+      "name": "annotated keys: payload",
+      "expr": "payload",
+      "input_mode": "annotated_keys",
+      "input": {
+        "src.$ip": "1.2.3.4",
+        "dst.$cidr": "10.0.0.0/8",
+        "payload.$hex": "474554",
+        "name.$string": "api",
+        "enabled.$bool": true,
+        "max.$uint64": "18446744073709551615",
+        "nested": {"count.$int64": "42"}
+      },
+      "expect": {"value": {"$type": "bytes", "encoding": "hex", "value": "474554"}}
+    },
+    {
+      "name": "annotated keys: name",
+      "expr": "name",
+      "input_mode": "annotated_keys",
+      "input": {
+        "src.$ip": "1.2.3.4",
+        "dst.$cidr": "10.0.0.0/8",
+        "payload.$hex": "474554",
+        "name.$string": "api",
+        "enabled.$bool": true,
+        "max.$uint64": "18446744073709551615",
+        "nested": {"count.$int64": "42"}
+      },
+      "expect": {"value": "api"}
+    },
+    {
+      "name": "annotated keys: enabled",
+      "expr": "enabled",
+      "input_mode": "annotated_keys",
+      "input": {
+        "src.$ip": "1.2.3.4",
+        "dst.$cidr": "10.0.0.0/8",
+        "payload.$hex": "474554",
+        "name.$string": "api",
+        "enabled.$bool": true,
+        "max.$uint64": "18446744073709551615",
+        "nested": {"count.$int64": "42"}
+      },
+      "expect": {"value": true}
+    },
+    {
+      "name": "annotated keys: max",
+      "expr": "max",
+      "input_mode": "annotated_keys",
+      "input": {
+        "src.$ip": "1.2.3.4",
+        "dst.$cidr": "10.0.0.0/8",
+        "payload.$hex": "474554",
+        "name.$string": "api",
+        "enabled.$bool": true,
+        "max.$uint64": "18446744073709551615",
+        "nested": {"count.$int64": "42"}
+      },
+      "expect": {"value": {"$type": "uint64", "value": "18446744073709551615"}}
+    },
+    {
+      "name": "annotated keys: nested.count",
+      "expr": "nested.count",
+      "input_mode": "annotated_keys",
+      "input": {
+        "src.$ip": "1.2.3.4",
+        "dst.$cidr": "10.0.0.0/8",
+        "payload.$hex": "474554",
+        "name.$string": "api",
+        "enabled.$bool": true,
+        "max.$uint64": "18446744073709551615",
+        "nested": {"count.$int64": "42"}
+      },
+      "expect": {"value": {"$type": "int64", "value": "42"}}
+    },
+    {
+      "name": "typed document: src",
+      "expr": "src",
+      "input_mode": "typed_document",
+      "input": {
+        "src": {"$type": "ip", "value": "1.2.3.4"},
+        "payload": {"$type": "bytes", "encoding": "base64", "value": "R0VU"},
+        "u64": {"$type": "uint64", "value": "18446744073709551615"},
+        "nested": {"$type": "object", "value": {"enabled": {"$type": "bool", "value": true}}},
+        "items": {"$type": "array", "value": [{"$type": "string", "value": "first"}]}
+      },
+      "expect": {"value": {"$type": "ip", "value": "1.2.3.4"}}
+    },
+    {
+      "name": "typed document: payload",
+      "expr": "payload",
+      "input_mode": "typed_document",
+      "input": {
+        "src": {"$type": "ip", "value": "1.2.3.4"},
+        "payload": {"$type": "bytes", "encoding": "base64", "value": "R0VU"},
+        "u64": {"$type": "uint64", "value": "18446744073709551615"},
+        "nested": {"$type": "object", "value": {"enabled": {"$type": "bool", "value": true}}},
+        "items": {"$type": "array", "value": [{"$type": "string", "value": "first"}]}
+      },
+      "expect": {"value": {"$type": "bytes", "encoding": "base64", "value": "R0VU"}}
+    },
+    {
+      "name": "typed document: u64",
+      "expr": "u64",
+      "input_mode": "typed_document",
+      "input": {
+        "src": {"$type": "ip", "value": "1.2.3.4"},
+        "payload": {"$type": "bytes", "encoding": "base64", "value": "R0VU"},
+        "u64": {"$type": "uint64", "value": "18446744073709551615"},
+        "nested": {"$type": "object", "value": {"enabled": {"$type": "bool", "value": true}}},
+        "items": {"$type": "array", "value": [{"$type": "string", "value": "first"}]}
+      },
+      "expect": {"value": {"$type": "uint64", "value": "18446744073709551615"}}
+    },
+    {
+      "name": "typed document: nested.enabled",
+      "expr": "nested.enabled",
+      "input_mode": "typed_document",
+      "input": {
+        "src": {"$type": "ip", "value": "1.2.3.4"},
+        "payload": {"$type": "bytes", "encoding": "base64", "value": "R0VU"},
+        "u64": {"$type": "uint64", "value": "18446744073709551615"},
+        "nested": {"$type": "object", "value": {"enabled": {"$type": "bool", "value": true}}},
+        "items": {"$type": "array", "value": [{"$type": "string", "value": "first"}]}
+      },
+      "expect": {"value": true}
+    },
+    {
+      "name": "typed document: items",
+      "expr": "items",
+      "input_mode": "typed_document",
+      "input": {
+        "src": {"$type": "ip", "value": "1.2.3.4"},
+        "payload": {"$type": "bytes", "encoding": "base64", "value": "R0VU"},
+        "u64": {"$type": "uint64", "value": "18446744073709551615"},
+        "nested": {"$type": "object", "value": {"enabled": {"$type": "bool", "value": true}}},
+        "items": {"$type": "array", "value": [{"$type": "string", "value": "first"}]}
+      },
+      "expect": {"value": ["first"]}
+    },
+    {
+      "name": "plain mode keeps annotated key names",
+      "expr": "[\"src.$ip\"] == \"1.2.3.4\"",
+      "input_mode": "plain",
+      "input": {"src.$ip": "1.2.3.4", "src": {"$type": "ip", "value": "1.2.3.4"}},
+      "expect": {"value": true}
+    },
+    {
+      "name": "plain mode keeps typed objects as objects",
+      "expr": "src",
+      "input_mode": "plain",
+      "input": {"src.$ip": "1.2.3.4", "src": {"$type": "ip", "value": "1.2.3.4"}},
+      "expect": {
+        "value": {
+          "$type": "object",
+          "value": {"$type": {"$type": "string", "value": "ip"}, "value": {"$type": "string", "value": "1.2.3.4"}}
+        }
+      }
+    },
+    {
+      "name": "annotated keys: duplicate normalized key",
+      "input_mode": "annotated_keys",
+      "input": {"src": "plain", "src.$ip": "1.2.3.4"},
+      "expect": {"decode_error": true}
+    },
+    {
+      "name": "typed document: annotated key rejected",
+      "input_mode": "typed_document",
+      "input": {"src.$ip": {"$type": "ip", "value": "1.2.3.4"}},
+      "expect": {"decode_error": true}
+    },
+    {
+      "name": "typed document: plain value rejected",
+      "input_mode": "typed_document",
+      "input": {"src": "1.2.3.4"},
+      "expect": {"decode_error": true}
+    },
+    {
+      "name": "annotated keys: eval with ip and array index",
+      "expr": "src == 1.2.3.4 and items[0].name == \"first\"",
+      "input_mode": "annotated_keys",
+      "input": {"src.$ip": "1.2.3.4", "items": [{"name": "first"}]},
+      "expect": {"value": true}
+    },
+    {
+      "name": "annotated keys: url",
+      "expr": "a.port == 8443 and a.host == \"example.com\"",
+      "input_mode": "annotated_keys",
+      "input": {"a.$url": "https://example.com:8443/x"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "typed document: url",
+      "expr": "a.path == \"/x\"",
+      "input_mode": "typed_document",
+      "input": {"a": {"$type": "url", "value": "https://example.com/x"}},
+      "expect": {"value": true}
+    }
+  ]
+}

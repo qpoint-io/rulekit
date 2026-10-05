@@ -2,165 +2,67 @@ package rulekit
 
 import (
 	"net"
-	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
-func TestEngineExample(t *testing.T) {
-	filter, err := Parse(`
+// TestGoInputTypes covers Go input values that the JSON test vectors in
+// testdata/vectors cannot express: typed slices, unsigned Go integers, and
+// strings holding non-UTF-8 bytes. Their JSON-expressible equivalents are vectors.
+func TestGoInputTypes(t *testing.T) {
+	engine := `
 		tags == 'db-svc'
 		OR domain matches /example\.com$/ -- any domain or subdomain of example.com
 		OR src.process.path matches |^/usr/bin/| -- patterns can be enclosed in |...| or /.../
 		OR (process.uid != 0 AND tags contains 'internal-svc') 
 		/* connections to LAN addresses over privileged ports */
 		OR (destination.port <= 1023 AND destination.ip == 192.168.0.0/16)
-	`)
-	require.NoError(t, err)
-
-	assertRule(t, filter, kv{
-		"tags":   []string{"db-svc", "internal-vlan", "unprivileged-user"},
-		"domain": "example.com",
-		"process": KV{
-			"uid":  1000,
-			"path": "/usr/bin/some-other-process",
-		},
-		"port": 8080,
-	}).Ok().Value(true)
-
-	assertRule(t, filter, kv{
-		"destination": KV{
-			"ip":   net.ParseIP("192.168.2.37"),
-			"port": 22,
-		},
-	}).Ok().Pass()
-
-	assertRule(t, filter, kv{
-		"destination.ip":   net.ParseIP("1.1.1.1"),
-		"destination.port": 22,
-	}).NotOk().Value(nil)
-
-	assertRule(t, filter, kv{
-		"src": KV{
-			"process": KV{
-				"path": "/usr/bin/some-other-process",
-			},
-		},
-	}).Ok().Pass()
-
-	assertRule(t, filter, kv{
-		"src": KV{
-			"process": KV{
-				"path": "/opt/go",
-			},
-		},
-	}).NotOk().Value(nil)
-}
-
-func TestEval(t *testing.T) {
-	tcs := []struct {
-		filter string
-		tests  map[*map[string]any]TestResult
+	`
+	tests := []struct {
+		name  string
+		rule  string
+		input kv
+		pass  bool
 	}{
 		{
-			filter: `tls_version == 1.2`,
-			tests: map[*map[string]any]TestResult{
-				{"tls_version": 1.2}: {
-					Value: true,
-				},
-				{"tls_version": 1.1}: {
-					Value: false,
-				},
-				{}: {
-					MissingFields: []string{"tls_version"},
-				},
+			name: "[]string in engine example",
+			rule: engine,
+			input: kv{
+				"tags":    []string{"db-svc", "internal-vlan", "unprivileged-user"},
+				"domain":  "example.com",
+				"process": KV{"uid": 1000, "path": "/usr/bin/some-other-process"},
+				"port":    8080,
 			},
+			pass: true,
 		},
-		{
-			filter: `tls_version != 5`,
-			tests: map[*map[string]any]TestResult{
-				{}: {
-					MissingFields: []string{"tls_version"},
-				},
-			},
-		},
-		{
-			filter: `!tls_version`,
-			tests: map[*map[string]any]TestResult{
-				{}: {
-					MissingFields: []string{"tls_version"},
-				},
-			},
-		},
-		{
-			filter: `domain matches /example\.com$/ OR tags == "db-svc"`,
-			tests: map[*map[string]any]TestResult{
-				{"domain": "example.com"}: {
-					Value: true,
-				},
-				{"tags": "db-svc"}: {
-					Value: true,
-				},
-				{"domain": "other.com"}: {
-					MissingFields: []string{"tags"},
-				},
-			},
-		},
-		{
-			filter: `domain == "example.com" AND tags == "db-svc"`,
-			tests: map[*map[string]any]TestResult{
-				{"domain": "example.com"}: {
-					MissingFields: []string{"tags"},
-				},
-				{"tags": "db-svc"}: {
-					MissingFields: []string{"domain"},
-				},
-				{"domain": "example.com", "tags": []string{"test", "db-svc"}}: {
-					Value: true,
-				},
-				{"domain": "qpoint.io"}: {
-					Value: false,
-				},
-				{"tags": []string{}}: {
-					Value: false,
-				},
-			},
-		},
-		{
-			filter: `
-				dst.ip == 8.8.8.8
-				or (
-					dst.ip == 1.1.1.1
-					and (
-						dst.port == 53
-						or (dst.port == 443 and tls.enabled)
-					)
-				)`,
-			tests: map[*map[string]any]TestResult{
-				{
-					"tls": KV{"enabled": true},
-					"dst": KV{
-						"ip":   net.ParseIP("1.1.1.1"),
-						"port": 443,
-					},
-				}: {
-					Value: true,
-				},
-			},
-		},
+		{"[]string == element", `domain == "example.com" AND tags == "db-svc"`, kv{"domain": "example.com", "tags": []string{"test", "db-svc"}}, true},
+		{"empty []string == element", `domain == "example.com" AND tags == "db-svc"`, kv{"tags": []string{}}, false},
+		{"uint equality", `f_int == 1 and f_uint == 13`, kv{"f_int": 1, "f_uint": uint(13)}, true},
+		{"uint inequality", `f_int == 1 and f_uint == 13`, kv{"f_int": 1, "f_uint": uint(14)}, false},
+		{"[]int != with no equal element", `f_int != 2`, kv{"f_int": []int{1, 3, 4}}, true},
+		{"[]int != with an equal element", `f_int != 2`, kv{"f_int": []int{1, 2, 3, 4}}, false},
+		{"[]string index", `items[1] == "second"`, kv{"items": []string{"first", "second"}}, true},
+		{"[]string in array matches", `client in ["alice", "bob"]`, kv{"client": []string{"nobody", "bob"}}, true},
+		{"[]string in array no match", `client in ["alice", "bob"]`, kv{"client": []string{"nobody", "somebody"}}, false},
+		{"empty []string in array", `client in ["alice"]`, kv{"client": []string{}}, false},
+		{"[]int in array matches", `ports in [80, 443]`, kv{"ports": []int{22, 443}}, true},
+		{"[]int in array no match", `ports in [80, 443]`, kv{"ports": []int{22, 8080}}, false},
+		{"[]int64 in array matches", `ports in [80, 443]`, kv{"ports": []int64{22, 80}}, true},
+		{"[]net.IP in CIDR matches", `ips in 192.168.0.0/16`, kv{"ips": []net.IP{net.ParseIP("1.1.1.1"), net.ParseIP("192.168.0.1")}}, true},
+		{"[]net.IP in CIDR no match", `ips in 192.168.0.0/16`, kv{"ips": []net.IP{net.ParseIP("1.1.1.1"), net.ParseIP("8.8.8.8")}}, false},
+		{"[]net.IP in array matches", `ips in [1.0.0.0/8, 8.8.8.8]`, kv{"ips": []net.IP{net.ParseIP("192.168.0.1"), net.ParseIP("8.8.8.8")}}, true},
+		{"not ([]string in array) when no element matches", `not (client in ["alice", "bob"])`, kv{"client": []string{"nobody", "somebody"}}, true},
+		{"not ([]string in array) when an element matches", `not (client in ["alice", "bob"])`, kv{"client": []string{"nobody", "bob"}}, false},
+		{"non-UTF-8 string equals nine hex pairs", `s == 01:23:45:67:89:ab:AB:cd:ef`, kv{"s": "\x01\x23\x45\x67\x89\xab\xab\xcd\xef"}, true},
+		{"non-UTF-8 string equals two hex pairs", `x == ab:cd`, kv{"x": "\xab\xcd"}, true},
+		{"non-UTF-8 string equals x-quoted hex", `x == x"0123456789abcdef"`, kv{"x": "\x01\x23\x45\x67\x89\xab\xcd\xef"}, true},
 	}
 
-	for _, tc := range tcs {
-		p, err := Parse(tc.filter)
-		require.NoError(t, err)
-
-		for input, want := range tc.tests {
-			got := toTestResult(evalRule(p, kv(*input)))
-			if !reflect.DeepEqual(got, want) {
-				t.Errorf("Filter: %s\nInput: %+v\nGot:  %+v\nWant: %+v", tc.filter, *input, got, want)
-			}
-		}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assertRulep(t, tc.rule, tc.input).Ok().Value(tc.pass)
+		})
 	}
 }
 
@@ -336,257 +238,6 @@ func BenchmarkEvalTrace(b *testing.B) {
 
 var benchmarkResult Result
 
-func TestFilterParseUint(t *testing.T) {
-	_, err := Parse("f_uint==4294967295 && f_uint64==18446744073709551615")
-	if err != nil {
-		t.Error(err)
-	}
-	_, err = Parse("f_uint==0 && f_uint64==0")
-	if err != nil {
-		t.Error(err)
-	}
-}
-
-func TestFilterParseInt(t *testing.T) {
-	_, err := Parse("f_int==2147483647 && f_int64==9223372036854775807")
-	if err != nil {
-		t.Error(err)
-	}
-	_, err = Parse("f_int==-2147483648 && f_int64==-9223372036854775808")
-	if err != nil {
-		t.Error(err)
-	}
-}
-
-func TestStringLiterals(t *testing.T) {
-	for expr, want := range map[string]string{
-		`s == "text"`:        `text`,
-		`s == "te\"x't"`:     `te"x't`,
-		`s == 'test'`:        `test`,
-		`s == 'te"s\'t'`:     `te"s't`,
-		`s == 'bad qu\"ote'`: `bad qu"ote`,
-		`s == "tab\there"`:   "tab\there",
-		`s == 'tab\there'`:   "tab\there",
-	} {
-		assertRulep(t, expr, kv{"s": want}).Ok().DoesPass(true)
-	}
-	// Nine colon-separated pairs (not an IPv6 address) are hex bytes; case is ignored.
-	assertRulep(t, `s == 01:23:45:67:89:ab:AB:cd:ef`, kv{"s": "\x01\x23\x45\x67\x89\xab\xab\xcd\xef"}).Ok().DoesPass(true)
-}
-
-func TestFilterParseRegexp(t *testing.T) {
-	_, err := Parse("f_string matches /gl=se$/ and str matches |some/path/here|")
-	if err != nil {
-		t.Error(err)
-	}
-}
-
-func TestFilterParseIP(t *testing.T) {
-	_, err := Parse("f_ipv4 == 192.168.1.1 or f_ipv6==::1 or f_ipv6==2001:db8::1")
-	if err != nil {
-		t.Error(err)
-	}
-}
-
-func TestFilterParseHexAndMac(t *testing.T) {
-	mac, err := net.ParseMAC("01:23:45:67:89:ab")
-	require.NoError(t, err)
-	assertRulep(t, `f_mac == 01:23:45:67:89:ab`, kv{"f_mac": mac}).Ok().DoesPass(true)
-	assertRulep(t, `f_mac == "01:23:45:67:89:ab"`, kv{"f_mac": mac}).Ok().DoesPass(true)
-	assertRulep(t, `f_bytes == 50:4f:53:54`, kv{"f_bytes": "POST"}).Ok().DoesPass(true)
-}
-
-func TestFilterParseBool(t *testing.T) {
-	_, err := Parse("f_bool.1 == true or f_bool.2 != false")
-	if err != nil {
-		t.Error(err)
-	}
-}
-
-func TestFilterParseFloat(t *testing.T) {
-	_, err := Parse("f_float32 == 123.345 or f_float64 != 74123412341234.123412341243")
-	if err != nil {
-		t.Error(err)
-	}
-}
-
-// Test filters
-func TestFilterMatchIntUint(t *testing.T) {
-	f, err := Parse("f_int == 1 and f_uint == 13")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if !evalRule(f, kv{"f_int": 1, "f_uint": uint(13)}).Pass() {
-		t.Error("Packet must pass")
-	}
-
-	if evalRule(f, kv{"f_int": 1, "f_uint": uint(14)}).Pass() {
-		t.Error("Packet must not pass")
-	}
-
-	// field with multiple values
-	f2, err := Parse("f_int != 2")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !evalRule(f2, kv{"f_int": []int{1, 3, 4}}).Pass() {
-		t.Error("Packet must pass")
-	}
-
-	if evalRule(f2, kv{"f_int": []int{1, 2, 3, 4}}).Pass() {
-		t.Error("Packet must not pass")
-	}
-}
-
-func TestFilterMatchString(t *testing.T) {
-	f, err := Parse("f_string.1 == \"1\" and f_string.2 == 47:45:54  and f_string.3 == \"abc123\"")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !evalRule(f, kv{"f_string": KV{"1": "1", "2": "GET", "3": "abc123"}}).Pass() {
-		t.Error("Packet must pass")
-	}
-
-	if evalRule(f, kv{"f_string": KV{"1": "2", "2": "GET", "3": "abc123"}}).Pass() {
-		t.Error("Packet must not pass")
-	}
-
-	f2, err := Parse("f_string.1 contains \"1\" and f_string.2 contains 47:45:54  and f_string.3 contains \"abc123\"")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !evalRule(f2, kv{"f_string": KV{"1": "asdf1asdf", "2": "text - GET ---", "3": "asf fffabc123"}}).Pass() {
-		t.Error("Packet must pass")
-	}
-
-	if evalRule(f2, kv{"f_string": KV{"1": "test234test", "2": "xxxxETyyy", "3": "abc125"}}).Pass() {
-		t.Error("Packet must not pass")
-	}
-}
-
-func TestFilterMatchIP(t *testing.T) {
-	f, err := Parse("ip.src==192.168.1.1 and ip.dst==192.168.1.1")
-	require.NoError(t, err)
-
-	cases := map[*map[string]any]TestResult{
-		{
-			"ip": KV{
-				"src": net.ParseIP("192.168.1.1"),
-				"dst": net.ParseIP("192.168.1.1"),
-			},
-		}: {
-			Value: true,
-		},
-		{
-			"ip": KV{
-				"src": net.ParseIP("192.168.1.2"),
-				"dst": net.ParseIP("192.168.1.1"),
-			},
-		}: {
-			Value: false,
-		},
-		{}: {
-			MissingFields: []string{"ip.dst", "ip.src"},
-		},
-	}
-
-	for input, want := range cases {
-		got := toTestResult(evalRule(f, kv(*input)))
-		require.Equalf(t, want, got, "filter: %s, values: %+v", f.String(), input)
-	}
-
-	// CIDR test cases
-	f4, err := Parse("ip.src == 192.168.0.0/16")
-	require.NoError(t, err)
-
-	cidrCases := map[*map[string]any]TestResult{
-		{
-			"ip": KV{
-				"src": net.ParseIP("192.168.100.1"),
-				"dst": net.ParseIP("192.168.1.1"),
-			},
-		}: {
-			Value: true,
-		},
-		{
-			"ip": KV{
-				"src": net.ParseIP("172.16.0.1"),
-				"dst": net.ParseIP("10.0.0.1"),
-			},
-		}: {
-			Value: false,
-		},
-		{}: {
-			MissingFields: []string{"ip.src"},
-		},
-	}
-
-	for input, want := range cidrCases {
-		got := toTestResult(evalRule(f4, kv(*input)))
-		require.Equalf(t, want, got, "filter: %s, values: %+v", f4.String(), input)
-	}
-}
-
-func TestFilterMatchMac(t *testing.T) {
-	f, err := Parse("f_mac == ab:3b:06:07:b2:ef")
-	require.NoError(t, err)
-
-	h1, _ := net.ParseMAC("ab:3b:06:07:b2:ef")
-	h2, _ := net.ParseMAC("aa:bb:cc:dd:ee:ff")
-
-	cases := map[*map[string]any]TestResult{
-		{
-			"f_mac": h1,
-		}: {
-			Value: true,
-			// EvaluatedRule: "f_mac == ab:3b:06:07:b2:ef",
-		},
-		{
-			"f_mac": h2,
-		}: {
-			Value: false,
-			// EvaluatedRule: "f_mac == ab:3b:06:07:b2:ef",
-		},
-		{}: {
-			MissingFields: []string{"f_mac"},
-			// EvaluatedRule: "f_mac == ab:3b:06:07:b2:ef",
-		},
-	}
-
-	for input, want := range cases {
-		got := toTestResult(evalRule(f, kv(*input)))
-		require.Equal(t, want, got)
-	}
-}
-
-func TestParseError(t *testing.T) {
-	// error
-	for _, s := range []string{
-		"??",
-		"field == %1==",
-		"== true",
-		"test == >=",
-		"field == 123 && ip == 1.2.3",
-		"field == 123 && ip << 1",
-	} {
-		_, err := Parse(s)
-		if err == nil {
-			t.Errorf("expected error for %s", s)
-		}
-	}
-
-	// no error
-	for _, s := range []string{
-		"f_string == 123",
-	} {
-		_, err := Parse(s)
-		if err != nil {
-			t.Errorf("unexpected error for %s", s)
-		}
-	}
-}
-
 func FuzzParse(f *testing.F) {
 	// Add initial corpus of valid and edge case inputs
 	seeds := []string{
@@ -631,421 +282,25 @@ func FuzzParse(f *testing.F) {
 	})
 }
 
-func TestArray(t *testing.T) {
-	assertParseError(t, `field == [1,]`)           // trailing commas are not allowed
-	assertParseError(t, `field == [1, [1, 2], 3]`) // nested arrays are not allowed
-
-	assertRulep(t, `[1, "str", 3]`, nil).
-		Ok().
-		Value([]any{int64(1), "str", int64(3)})
-	// EvaluatedRule(`[1, "str", 3]`)
-
-	{
-		f := MustParse(`field == [1, "str", 3]`)
-		require.Equal(t, `field == [1, "str", 3]`, f.String())
-
-		assertEval(t, f, kv{"field": 3}, true)
-		assertEval(t, f, kv{"field": 4}, false)
-		assertEval(t, f, kv{"field": "str"}, true)
-	}
-
-	{
-		f := MustParse(`field contains [1, "str", 3]`)
-		require.Equal(t, `field contains [1, "str", 3]`, f.String())
-
-		// contains does not support arrays on the right side
-		assertEval(t, f, kv{"field": "string"}, false)
-		assertEval(t, f, kv{"field": "str"}, false)
-		assertEval(t, f, kv{"field": 123}, false)
-	}
-
-	{
-		f := MustParse(`field contains "str"`)
-		require.Equal(t, `field contains "str"`, f.String())
-
-		assertEval(t, f, kv{"field": "string"}, true) // substring
-		assertEval(t, f, kv{"field": []any{"str", 123}}, true)
-		assertEval(t, f, kv{"field": []any{"test", "string"}}, false)
-	}
-
-	assertParseEval(t, `f == "string"`, kv{"f": []any{1, "str", 3}}, false)       // false (no element equals "string")
-	assertParseEval(t, `f != "string"`, kv{"f": []any{1, "str", 3}}, true)        // true  (no element equals "string")
-	assertParseEval(t, `f contains "string"`, kv{"f": []any{1, "str", 3}}, false) // false (array doesn't contain "string")
-
-	{
-		f := MustParse(`arr contains val`)
-
-		assertEval(t, f, kv{
-			"arr": []any{1, "str", 3},
-			"val": "str",
-		}, true)
-		assertEval(t, f, kv{
-			"arr": []any{1, "str", 3},
-			"val": 50,
-		}, false)
-	}
-
-	assertParseEval(t, `[1,2,3] contains 2`, nil, true)
-	assertParseEval(t, `[1,2,3] contains "str"`, nil, false)
-}
-
-func TestBracketPathIndexing(t *testing.T) {
-	assertParseEval(t, `data["field.name"] == true`, kv{
-		"data": KV{"field.name": true},
-	}, true)
-	assertRulep(t, `data.field.name == true`, kv{
-		"data": KV{"field.name": true},
-	}).NotOk().MissingFields("data.field.name")
-	assertParseEval(t, `["destination.ip"] == 1.1.1.1`, kv{
-		"destination.ip": net.ParseIP("1.1.1.1"),
-	}, true)
-	assertParseEval(t, `items[0].name == "first"`, kv{
-		"items": []any{KV{"name": "first"}, KV{"name": "second"}},
-	}, true)
-	assertParseEval(t, `items[1] == "second"`, kv{
-		"items": []string{"first", "second"},
-	}, true)
-
-	require.Equal(t, `request.headers["user-agent"] == "curl"`, MustParse(`request.headers["user-agent"] == "curl"`).String())
-	require.Equal(t, `["destination.ip"] == 1.1.1.1`, MustParse(`["destination.ip"] == 1.1.1.1`).String())
-
-	assertParseError(t, `items[] == "x"`)
-	assertParseError(t, `items[field] == "x"`)
-	assertParseError(t, `items[-1] == "x"`)
-}
-
-func TestIn(t *testing.T) {
-	{
-		f := MustParse(`field in [1, "str", 3]`)
-		require.Equal(t, `field in [1, "str", 3]`, f.String())
-
-		assertEval(t, f, kv{"field": "string"}, false)
-		assertEval(t, f, kv{"field": "str"}, true)
-		assertEval(t, f, kv{"field": "s"}, false)
-		assertEval(t, f, kv{"field": 123}, false)
-	}
-
-	assertParseEval(t, `5 in [1,2,3]`, nil, false)
-	assertParseEval(t, `"str" in ["str"]`, nil, true)
-	assertParseEval(t, `1.2.3.4 in [1.0.0.0/8, 8.8.8.8]`, nil, true)
-	assertParseEval(t, `192.168.0.1 in [1.0.0.0/8, 8.8.8.8]`, nil, false)
-	assertParseEval(t, `192.168.0.1 in 192.168.0.0/16`, nil, true)
-	assertParseEval(t, `ip in 192.168.0.0/16`, kv{"ip": net.ParseIP("192.168.0.1")}, true)
-	assertParseEval(t, `cidr contains ip`, kv{"cidr": parseCIDR(t, "192.168.0.0/16"), "ip": net.ParseIP("192.168.0.1")}, true)
-}
-
-func TestInListLeft(t *testing.T) {
-	tests := []struct {
-		name  string
-		rule  string
-		input map[string]any
-		pass  bool
-	}{
-		{
-			name:  "[]string in array matches",
-			rule:  `client in ["alice", "bob"]`,
-			input: map[string]any{"client": []string{"nobody", "bob"}},
-			pass:  true,
-		},
-		{
-			name:  "[]string in array no match",
-			rule:  `client in ["alice", "bob"]`,
-			input: map[string]any{"client": []string{"nobody", "somebody"}},
-			pass:  false,
-		},
-		{
-			name:  "empty []string in array",
-			rule:  `client in ["alice"]`,
-			input: map[string]any{"client": []string{}},
-			pass:  false,
-		},
-		{
-			name:  "[]any in array matches",
-			rule:  `client in ["alice", 3]`,
-			input: map[string]any{"client": []any{"nobody", 3}},
-			pass:  true,
-		},
-		{
-			name:  "[]any in array no match",
-			rule:  `client in ["alice", 3]`,
-			input: map[string]any{"client": []any{"nobody", 4}},
-			pass:  false,
-		},
-		{
-			name:  "[]int in array matches",
-			rule:  `ports in [80, 443]`,
-			input: map[string]any{"ports": []int{22, 443}},
-			pass:  true,
-		},
-		{
-			name:  "[]int in array no match",
-			rule:  `ports in [80, 443]`,
-			input: map[string]any{"ports": []int{22, 8080}},
-			pass:  false,
-		},
-		{
-			name:  "[]int64 in array matches",
-			rule:  `ports in [80, 443]`,
-			input: map[string]any{"ports": []int64{22, 80}},
-			pass:  true,
-		},
-		{
-			name:  "[]net.IP in CIDR matches",
-			rule:  `ips in 192.168.0.0/16`,
-			input: map[string]any{"ips": []net.IP{net.ParseIP("1.1.1.1"), net.ParseIP("192.168.0.1")}},
-			pass:  true,
-		},
-		{
-			name:  "[]net.IP in CIDR no match",
-			rule:  `ips in 192.168.0.0/16`,
-			input: map[string]any{"ips": []net.IP{net.ParseIP("1.1.1.1"), net.ParseIP("8.8.8.8")}},
-			pass:  false,
-		},
-		{
-			name:  "[]net.IP in array matches",
-			rule:  `ips in [1.0.0.0/8, 8.8.8.8]`,
-			input: map[string]any{"ips": []net.IP{net.ParseIP("192.168.0.1"), net.ParseIP("8.8.8.8")}},
-			pass:  true,
-		},
-		{
-			name:  "not (list in array) when no element matches",
-			rule:  `not (client in ["alice", "bob"])`,
-			input: map[string]any{"client": []string{"nobody", "somebody"}},
-			pass:  true,
-		},
-		{
-			name:  "not (list in array) when an element matches",
-			rule:  `not (client in ["alice", "bob"])`,
-			input: map[string]any{"client": []string{"nobody", "bob"}},
-			pass:  false,
-		},
-		// scalar left side is unchanged
-		{
-			name:  "scalar in array matches",
-			rule:  `client in ["alice", "bob"]`,
-			input: map[string]any{"client": "bob"},
-			pass:  true,
-		},
-		{
-			name:  "scalar in array no match",
-			rule:  `client in ["alice", "bob"]`,
-			input: map[string]any{"client": "nobody"},
-			pass:  false,
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			assertRulep(t, tc.rule, kv(tc.input)).Ok().DoesPass(tc.pass)
-		})
-	}
-}
-
-func TestOperationValidity(t *testing.T) {
-	assertParseError(t, `f >= "string"`)
-	assertParseError(t, `f < 1.2.3.4`)
-	assertParseError(t, `f > 01:02:03:04:05:06`)
-	assertParseError(t, `f <= true`)
-	assertParseError(t, `f > /pattern/`)
-
-	_ = MustParse(`f >= 1`)
-	_ = MustParse(`f < 1.5`)
-}
-
-func TestSpecialBooleanFields(t *testing.T) {
-	tests := []struct {
-		name     string
-		rule     string
-		input    map[string]any
-		expected any
-	}{
-		{
-			name:     "standalone true",
-			rule:     "true",
-			input:    map[string]any{},
-			expected: true,
-		},
-		{
-			name:     "standalone false",
-			rule:     "false",
-			input:    map[string]any{},
-			expected: false,
-		},
-		{
-			name:     "true equals true",
-			rule:     "true == true",
-			input:    map[string]any{},
-			expected: true,
-		},
-		{
-			name:     "false equals false",
-			rule:     "false == false",
-			input:    map[string]any{},
-			expected: true,
-		},
-		{
-			name:     "true not equals false",
-			rule:     "true != false",
-			input:    map[string]any{},
-			expected: true,
-		},
-		{
-			name:     "field equals true",
-			rule:     "field == true",
-			input:    map[string]any{"field": true},
-			expected: true,
-		},
-		{
-			name:     "field not equals true",
-			rule:     "field != true",
-			input:    map[string]any{"field": false},
-			expected: true,
-		},
-		{
-			name:     "case insensitive TRUE",
-			rule:     "TRUE == true",
-			input:    map[string]any{},
-			expected: true,
-		},
-		{
-			name:     "case insensitive FALSE",
-			rule:     "FALSE == false",
-			input:    map[string]any{},
-			expected: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			rule := MustParse(tt.rule)
-			result := evalRule(rule, kv(tt.input))
-			if result.Value != tt.expected {
-				t.Errorf("Expected %v, got %v for rule: %s", tt.expected, result.Value, tt.rule)
-			}
-		})
-	}
-}
-
-func TestStringAutomaticCasting(t *testing.T) {
-	tests := []struct {
-		name      string
-		ruleExpr  string
-		inputData map[string]any
-		expected  bool
-	}{
-		{
-			name:      "explicit IP equals string IP",
-			ruleExpr:  `ip == "192.168.1.1"`,
-			inputData: map[string]any{"ip": net.ParseIP("192.168.1.1")},
-			expected:  true,
-		},
-		{
-			name:      "string IP equals explicit IP",
-			ruleExpr:  `"192.168.1.1" == ip`,
-			inputData: map[string]any{"ip": net.ParseIP("192.168.1.1")},
-			expected:  true,
-		},
-		{
-			name:      "string field with IP value equals explicit IP",
-			ruleExpr:  `ipstr == 192.168.1.1`,
-			inputData: map[string]any{"ipstr": "192.168.1.1"},
-			expected:  true,
-		},
-		{
-			name:      "string IP in CIDR array",
-			ruleExpr:  `"192.168.1.5" in [192.168.1.0/24]`,
-			inputData: map[string]any{},
-			expected:  true,
-		},
-		{
-			name:      "string IP not in CIDR array",
-			ruleExpr:  `"10.0.0.1" in [192.168.1.0/24]`,
-			inputData: map[string]any{},
-			expected:  false,
-		},
-		{
-			name:      "string MAC equals MAC",
-			ruleExpr:  `mac == "01:23:45:67:89:ab"`,
-			inputData: map[string]any{"mac": mustParseMac("01:23:45:67:89:ab")},
-			expected:  true,
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			assertRulep(t, tc.ruleExpr, kv(tc.inputData)).
-				Ok().
-				DoesPass(tc.expected)
-		})
-	}
-}
-
-func TestFunctionParsing(t *testing.T) {
-	parsed := MustParse(`func_name(
-		fieldarg,
-		192.168.0.0,
-		[1, 2, 3],
-		nested_func(true)
-	)`)
-	require.Equal(t, `func_name(fieldarg, 192.168.0.0, [1, 2, 3], nested_func(true))`, parsed.String())
-}
-
-func TestIntegerLiterals(t *testing.T) {
-	for expr, want := range map[string]any{
-		`x == 10`:                   10,
-		`x == 010`:                  10, // leading zeros are decimal, not octal
-		`x == -010`:                 -10,
-		`x == 0x1f`:                 31,
-		`x == 0o17`:                 15,
-		`x == 0b101`:                5,
-		`x == 1_000`:                1000,
-		`x == 0`:                    0,
-		`x == 00`:                   0,
-		`x == 18446744073709551615`: uint64(18446744073709551615),
-	} {
-		assertRulep(t, expr, kv{"x": want}).Ok().DoesPass(true)
-	}
-	assertRulep(t, `18446744073709551615 > 9223372036854775807`, nil).Ok().DoesPass(true)
-	assertRulep(t, `-1 < 18446744073709551615`, nil).Ok().DoesPass(true)
-}
-
-func TestMacros(t *testing.T) {
-	r := MustParse(`dst_k8s_svc() && user != "root"`)
+func TestMacroSetRegister(t *testing.T) {
 	macros := MacroSet{}
 	require.NoError(t, macros.Register("dst_k8s_svc", `ip in 172.16.0.0/16 or host matches /svc.cluster.local$/`))
 	require.Equal(t, `ip in 172.16.0.0/16 or host matches /svc.cluster.local$/`, macros["dst_k8s_svc"].Source)
 	require.NotNil(t, macros["dst_k8s_svc"].AST)
+}
 
-	assertRule(t, r, &ctx{
-		Macros: macros,
-		KV: KV{
-			"ip":   net.ParseIP("172.16.0.1"),
-			"user": "nouser",
-		},
-	}).
-		Pass()
-	// EvaluatedRule(`ip == 172.16.0.0/16 and user != "root"`)
+// TestFunctionErrorMessages pins Go error wording. Which expressions fail, and
+// the parse error positions, are covered by testdata/vectors/functions.json.
+func TestFunctionErrorMessages(t *testing.T) {
+	assertRulep(t, "unknown_fn()", nil).ErrorString(`unknown function "unknown_fn"`)
+	assertRulep(t, "unknown_fn(some_args)", nil).ErrorString(`unknown function "unknown_fn"`)
 
-	assertRule(t, r, &ctx{
-		Macros: macros,
-		KV: KV{
-			"ip":   net.ParseIP("1.1.1.1"),
-			"host": "1.1.1.1",
-			"user": "nouser",
-		},
-	}).
-		Fail()
-	// EvaluatedRule(`ip == 172.16.0.0/16 or host =~ /svc.cluster.local$/`)
-
-	assertRule(t, r, &ctx{
-		Macros: macros,
-		KV: KV{
-			"host": "test.svc.cluster.local",
-			"user": "nouser",
-		},
-	}).
-		Pass()
-	// EvaluatedRule(`host =~ /svc.cluster.local$/ and user != "root"`)
+	for _, expr := range []string{"starts_with()", "starts_with(arg1)"} {
+		_, err := Parse(expr)
+		var parseErr *ParseError
+		require.ErrorAs(t, err, &parseErr, expr)
+		require.Contains(t, parseErr.Message, `function "starts_with" expects 2 arguments`, expr)
+	}
 }
 
 func TestCustomFunction(t *testing.T) {
@@ -1154,96 +409,5 @@ func TestOpts_Validate(t *testing.T) {
 				require.EqualError(t, err, tc.err)
 			}
 		})
-	}
-}
-
-func TestFieldNames(t *testing.T) {
-	valid := []string{
-		"field",
-		"field1",
-		"field-",
-		"field_",
-		"field_1",
-		"field-1",
-		"field.1",
-		"field-1.field2",
-		"field-1.field2-3",
-		"request.header.user-agent",
-	}
-	for _, field := range valid {
-		r := field + ` == true`
-		_, err := Parse(r)
-		require.NoError(t, err, r)
-	}
-
-	invalid := []string{
-		"-field",
-		`field%.field`,
-		"01fie^ld",
-		"01fie||d",
-	}
-	for _, field := range invalid {
-		r := field + ` == true`
-		_, err := Parse(r)
-		require.Error(t, err, r)
-	}
-}
-
-func TestNot(t *testing.T) {
-	assertRulep(t, `not (a == 1)`, kv(map[string]any{"a": 1})).Ok().DoesPass(false)
-	assertRulep(t, `not (a == 1)`, kv(map[string]any{"a": 2})).Ok().DoesPass(true)
-}
-
-func TestHexLiterals(t *testing.T) {
-	// Unquoted hex needs at least two colon-separated pairs; a lone pair is a field name.
-	assertRulep(t, `ab == 1`, kv{"ab": 1}).Ok().DoesPass(true)
-	assertRulep(t, `fe == "x"`, kv{"fe": "x"}).Ok().DoesPass(true)
-	assertRulep(t, `ad`, kv{}).MissingFields("ad")
-	assertRulep(t, `x == ab:cd`, kv{"x": "\xab\xcd"}).Ok().DoesPass(true)
-	assertParseError(t, `x == 0a`)
-
-	// x"..." is hex with optional colons, in either quote style and case.
-	assertRulep(t, `x == x"0a"`, kv{"x": "\n"}).Ok().DoesPass(true)
-	assertRulep(t, `x == x"504f5354"`, kv{"x": "POST"}).Ok().DoesPass(true)
-	assertRulep(t, `x == X'50:4F:53:54'`, kv{"x": "POST"}).Ok().DoesPass(true)
-	// Eight unquoted pairs are an IPv6 address; x"..." keeps them as bytes.
-	assertRulep(t, `x == x"0123456789abcdef"`, kv{"x": "\x01\x23\x45\x67\x89\xab\xcd\xef"}).Ok().DoesPass(true)
-	assertParseError(t, `x == x""`)
-	assertParseError(t, `x == x"abc"`)
-	assertParseError(t, `x == x"0g"`)
-
-	require.Equal(t, `x == x"0a"`, MustParse(`x == x"0a"`).String())
-}
-
-func TestRegexFlags(t *testing.T) {
-	assertRulep(t, `ua matches /curl/i`, kv{"ua": "CURL/8.0"}).Ok().DoesPass(true)
-	assertRulep(t, `ua matches |curl|i`, kv{"ua": "CURL/8.0"}).Ok().DoesPass(true)
-	assertRulep(t, `ua matches /curl/`, kv{"ua": "CURL/8.0"}).Ok().DoesPass(false)
-	assertRulep(t, `body matches /a.b/s`, kv{"body": "a\nb"}).Ok().DoesPass(true)
-	assertRulep(t, `body matches /^b$/m`, kv{"body": "a\nb"}).Ok().DoesPass(true)
-	assertRulep(t, `body matches /^A.B$/ims`, kv{"body": "x\na\nb"}).Ok().DoesPass(true)
-	assertParseError(t, `ua matches /curl/q`)
-	// A keyword directly after the closing delimiter is still a keyword.
-	assertRulep(t, `ua matches /curl/and ok`, kv{"ua": "curl", "ok": true}).Ok().DoesPass(true)
-	require.Equal(t, `ua =~ /curl/i`, MustParse(`ua matches /curl/i`).String())
-}
-
-func TestRegexDialect(t *testing.T) {
-	// Forms whose meaning differs between regex engines are rejected.
-	for _, pattern := range []string{
-		`/\<a/`, `/a\>/`, `/\Qa.b\E/`, `/\0/`, `/\12/`, `/\b{start}a/`,
-		`/\p{^L}/`, `/a{,3}/`, `/[\d-z]/`, `/[\p{L}-z]/`,
-		`/[a[b]]/`, `/[[a]]/`, `/[a-z&&b]/`, `/[a--b]/`, `/[a~~b]/`,
-	} {
-		assertParseError(t, `x matches `+pattern)
-	}
-	// Equivalent forms that mean the same everywhere are accepted.
-	for _, pattern := range []string{
-		`/\ba/`, `/\x{1F600}/`, `/a{0,3}/`, `/\P{L}/`, `/[\d\-z]/`, `/[a-z]/`,
-		`/[[:alpha:]]/`, `/[[:^digit:]x]/`, `/[\[\]]/`, `/[]a]/`, `/[^]a]/`, `/[a-]/`, `/[a&b~c-]/`,
-		`/\{,3\}/`, `/a{2}/`,
-	} {
-		_, err := Parse(`x matches ` + pattern)
-		require.NoError(t, err, pattern)
 	}
 }

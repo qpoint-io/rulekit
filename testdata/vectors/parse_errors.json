@@ -1,0 +1,32 @@
+{
+  "cases": [
+    {"name": "syntax error: ??", "expr": "??", "expect": {"parse_error": true}},
+    {"name": "syntax error: field == %1==", "expr": "field == %1==", "expect": {"parse_error": true}},
+    {"name": "syntax error: == true", "expr": "== true", "expect": {"parse_error": true}},
+    {"name": "syntax error: test == >=", "expr": "test == >=", "expect": {"parse_error": true}},
+    {
+      "name": "syntax error: field == 123 && ip == 1.2.3",
+      "expr": "field == 123 && ip == 1.2.3",
+      "expect": {"parse_error": true}
+    },
+    {
+      "name": "syntax error: field == 123 && ip << 1",
+      "expr": "field == 123 && ip << 1",
+      "expect": {"parse_error": true}
+    },
+    {"name": "int compared to field parses", "expr": "f_string == 123", "expect": {"parse_error": false}},
+    {"name": "ordering against non-number: f >= \"string\"", "expr": "f >= \"string\"", "expect": {"parse_error": true}},
+    {"name": "ordering against non-number: f < 1.2.3.4", "expr": "f < 1.2.3.4", "expect": {"parse_error": true}},
+    {
+      "name": "ordering against non-number: f > 01:02:03:04:05:06",
+      "expr": "f > 01:02:03:04:05:06",
+      "expect": {"parse_error": true}
+    },
+    {"name": "ordering against non-number: f <= true", "expr": "f <= true", "expect": {"parse_error": true}},
+    {"name": "ordering against non-number: f > /pattern/", "expr": "f > /pattern/", "expect": {"parse_error": true}},
+    {"name": "ordering against int parses", "expr": "f >= 1", "expect": {"parse_error": false}},
+    {"name": "ordering against float parses", "expr": "f < 1.5", "expect": {"parse_error": false}},
+    {"name": "array trailing comma", "expr": "field == [1,]", "expect": {"parse_error": true}},
+    {"name": "nested array", "expr": "field == [1, [1, 2], 3]", "expect": {"parse_error": true}}
+  ]
+}

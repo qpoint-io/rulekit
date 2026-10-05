@@ -1,0 +1,65 @@
+{
+  "input_mode": "annotated_keys",
+  "cases": [
+    {"name": "unknown function parses", "expr": "some_none_stdlib_fn()", "expect": {"parse_error": false}},
+    {"name": "unknown function is an eval error", "expr": "unknown_fn()", "expect": {"error": true}},
+    {"name": "unknown function with args is an eval error", "expr": "unknown_fn(some_args)", "expect": {"error": true}},
+    {
+      "name": "starts_with: match",
+      "expr": "starts_with(url, \"https://\")",
+      "input": {"url": "https://example.com"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "starts_with: no match",
+      "expr": "starts_with(url, \"https://\")",
+      "input": {"url": "http://example.com"},
+      "expect": {"value": false}
+    },
+    {
+      "name": "starts_with: not a url",
+      "expr": "starts_with(url, \"https://\")",
+      "input": {"url": "invalid-url"},
+      "expect": {"value": false}
+    },
+    {
+      "name": "starts_with: ip stringified",
+      "expr": "starts_with(ip, \"10.0\")",
+      "input": {"ip.$ip": "10.0.0.1"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "starts_with: int and int prefix",
+      "expr": "starts_with(code, 5)",
+      "input": {"code": 500},
+      "expect": {"value": true}
+    },
+    {
+      "name": "starts_with: int and string prefix",
+      "expr": "starts_with(code, \"5\")",
+      "input": {"code": 500},
+      "expect": {"value": true}
+    },
+    {
+      "name": "starts_with: int no match",
+      "expr": "starts_with(code, 5)",
+      "input": {"code": 404},
+      "expect": {"value": false}
+    },
+    {
+      "name": "starts_with: bool result stringified",
+      "expr": "starts_with(starts_with(\"https://example.com\", \"https://\"), \"true\")",
+      "expect": {"value": true}
+    },
+    {
+      "name": "starts_with: no args is a parse error",
+      "expr": "starts_with()",
+      "expect": {"parse_error": {"line": 1, "column": 14}}
+    },
+    {
+      "name": "starts_with: one arg is a parse error",
+      "expr": "starts_with(arg1)",
+      "expect": {"parse_error": {"line": 1, "column": 18}}
+    }
+  ]
+}

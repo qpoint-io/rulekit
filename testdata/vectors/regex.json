@@ -1,0 +1,63 @@
+{
+  "input_mode": "annotated_keys",
+  "cases": [
+    {
+      "name": "slash and pipe regex delimiters parse",
+      "expr": "f_string matches /gl=se$/ and str matches |some/path/here|",
+      "expect": {"parse_error": false}
+    },
+    {"name": "flag i", "expr": "ua matches /curl/i", "input": {"ua": "CURL/8.0"}, "expect": {"value": true}},
+    {
+      "name": "flag i with pipe delimiters",
+      "expr": "ua matches |curl|i",
+      "input": {"ua": "CURL/8.0"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "case-sensitive by default",
+      "expr": "ua matches /curl/",
+      "input": {"ua": "CURL/8.0"},
+      "expect": {"value": false}
+    },
+    {"name": "flag s", "expr": "body matches /a.b/s", "input": {"body": "a\nb"}, "expect": {"value": true}},
+    {"name": "flag m", "expr": "body matches /^b$/m", "input": {"body": "a\nb"}, "expect": {"value": true}},
+    {"name": "flags ims", "expr": "body matches /^A.B$/ims", "input": {"body": "x\na\nb"}, "expect": {"value": true}},
+    {"name": "unknown flag is a parse error", "expr": "ua matches /curl/q", "expect": {"parse_error": true}},
+    {
+      "name": "keyword after closing delimiter",
+      "expr": "ua matches /curl/and ok",
+      "input": {"ua": "curl", "ok": true},
+      "expect": {"value": true}
+    },
+    {"name": "rejected: /\\<a/", "expr": "x matches /\\<a/", "expect": {"parse_error": true}},
+    {"name": "rejected: /a\\>/", "expr": "x matches /a\\>/", "expect": {"parse_error": true}},
+    {"name": "rejected: /\\Qa.b\\E/", "expr": "x matches /\\Qa.b\\E/", "expect": {"parse_error": true}},
+    {"name": "rejected: /\\0/", "expr": "x matches /\\0/", "expect": {"parse_error": true}},
+    {"name": "rejected: /\\12/", "expr": "x matches /\\12/", "expect": {"parse_error": true}},
+    {"name": "rejected: /\\b{start}a/", "expr": "x matches /\\b{start}a/", "expect": {"parse_error": true}},
+    {"name": "rejected: /\\p{^L}/", "expr": "x matches /\\p{^L}/", "expect": {"parse_error": true}},
+    {"name": "rejected: /a{,3}/", "expr": "x matches /a{,3}/", "expect": {"parse_error": true}},
+    {"name": "rejected: /[\\d-z]/", "expr": "x matches /[\\d-z]/", "expect": {"parse_error": true}},
+    {"name": "rejected: /[\\p{L}-z]/", "expr": "x matches /[\\p{L}-z]/", "expect": {"parse_error": true}},
+    {"name": "rejected: /[a[b]]/", "expr": "x matches /[a[b]]/", "expect": {"parse_error": true}},
+    {"name": "rejected: /[[a]]/", "expr": "x matches /[[a]]/", "expect": {"parse_error": true}},
+    {"name": "rejected: /[a-z&&b]/", "expr": "x matches /[a-z&&b]/", "expect": {"parse_error": true}},
+    {"name": "rejected: /[a--b]/", "expr": "x matches /[a--b]/", "expect": {"parse_error": true}},
+    {"name": "rejected: /[a~~b]/", "expr": "x matches /[a~~b]/", "expect": {"parse_error": true}},
+    {"name": "accepted: /\\ba/", "expr": "x matches /\\ba/", "expect": {"parse_error": false}},
+    {"name": "accepted: /\\x{1F600}/", "expr": "x matches /\\x{1F600}/", "expect": {"parse_error": false}},
+    {"name": "accepted: /a{0,3}/", "expr": "x matches /a{0,3}/", "expect": {"parse_error": false}},
+    {"name": "accepted: /\\P{L}/", "expr": "x matches /\\P{L}/", "expect": {"parse_error": false}},
+    {"name": "accepted: /[\\d\\-z]/", "expr": "x matches /[\\d\\-z]/", "expect": {"parse_error": false}},
+    {"name": "accepted: /[a-z]/", "expr": "x matches /[a-z]/", "expect": {"parse_error": false}},
+    {"name": "accepted: /[[:alpha:]]/", "expr": "x matches /[[:alpha:]]/", "expect": {"parse_error": false}},
+    {"name": "accepted: /[[:^digit:]x]/", "expr": "x matches /[[:^digit:]x]/", "expect": {"parse_error": false}},
+    {"name": "accepted: /[\\[\\]]/", "expr": "x matches /[\\[\\]]/", "expect": {"parse_error": false}},
+    {"name": "accepted: /[]a]/", "expr": "x matches /[]a]/", "expect": {"parse_error": false}},
+    {"name": "accepted: /[^]a]/", "expr": "x matches /[^]a]/", "expect": {"parse_error": false}},
+    {"name": "accepted: /[a-]/", "expr": "x matches /[a-]/", "expect": {"parse_error": false}},
+    {"name": "accepted: /[a&b~c-]/", "expr": "x matches /[a&b~c-]/", "expect": {"parse_error": false}},
+    {"name": "accepted: /\\{,3\\}/", "expr": "x matches /\\{,3\\}/", "expect": {"parse_error": false}},
+    {"name": "accepted: /a{2}/", "expr": "x matches /a{2}/", "expect": {"parse_error": false}}
+  ]
+}

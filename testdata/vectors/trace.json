@@ -1,0 +1,102 @@
+{
+  "input_mode": "annotated_keys",
+  "cases": [
+    {
+      "name": "or short-circuits the right side",
+      "expr": "a == 1 or b == 2",
+      "input": {"a": 1},
+      "expect": {
+        "value": true,
+        "trace": {
+          "kind": "binary",
+          "expr": "a == 1 or b == 2",
+          "status": "passed",
+          "children": [
+            {"status": "passed", "active": true, "pruned": false, "value": true},
+            {"expr": "b == 2", "status": "pruned", "active": false, "pruned": true}
+          ]
+        }
+      }
+    },
+    {
+      "name": "missing fields propagate to the root",
+      "expr": "a == 1 or b == 2",
+      "input": {},
+      "expect": {
+        "missing_fields": ["a", "b"],
+        "trace": {
+          "status": "missing",
+          "missing_fields": ["a", "b"],
+          "children": [{"status": "missing"}, {"status": "missing"}]
+        }
+      }
+    },
+    {
+      "name": "diagnostic: incomparable types",
+      "expr": "port == \"443\"",
+      "input": {"port": 443},
+      "expect": {
+        "value": false,
+        "trace": {
+          "status": "failed",
+          "diagnostics": [
+            {"code": "comparison_incomparable", "left_type": "int64", "operator": "==", "right_type": "string"}
+          ]
+        }
+      }
+    },
+    {
+      "name": "diagnostic: unsupported operator",
+      "expr": "port contains 443",
+      "input": {"port": 443},
+      "expect": {
+        "value": false,
+        "trace": {
+          "status": "failed",
+          "diagnostics": [
+            {
+              "code": "comparison_unsupported_operator",
+              "left_type": "int64",
+              "operator": "contains",
+              "right_type": "int64"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "diagnostic: invalid shape",
+      "expr": "port contains [443]",
+      "input": {"port": 443},
+      "expect": {
+        "value": false,
+        "trace": {
+          "status": "failed",
+          "diagnostics": [
+            {"code": "comparison_invalid_shape", "left_type": "int64", "operator": "contains", "right_type": "array"}
+          ]
+        }
+      }
+    },
+    {
+      "name": "macro call has the expanded macro as its child",
+      "expr": "is_internal() and user != \"root\"",
+      "input": {"ip.$ip": "172.16.0.1", "user": "api"},
+      "macros": {"is_internal": "ip in 172.16.0.0/16 or host matches /svc\\.cluster\\.local$/"},
+      "expect": {
+        "value": true,
+        "trace": {
+          "status": "passed",
+          "children": [
+            {
+              "expr": "is_internal()",
+              "status": "passed",
+              "children": [{"expr": "ip in 172.16.0.0/16 or host =~ /svc\\.cluster\\.local$/", "status": "passed"}]
+            },
+            {}
+          ]
+        }
+      }
+    }
+  ]
+}

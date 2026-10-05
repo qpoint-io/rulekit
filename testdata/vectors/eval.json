@@ -1,0 +1,515 @@
+{
+  "input_mode": "annotated_keys",
+  "cases": [
+    {
+      "name": "engine example: tags array matches",
+      "expr": "\n\t\ttags == 'db-svc'\n\t\tOR domain matches /example\\.com$/ -- any domain or subdomain of example.com\n\t\tOR src.process.path matches |^/usr/bin/| -- patterns can be enclosed in |...| or /.../\n\t\tOR (process.uid != 0 AND tags contains 'internal-svc') \n\t\t/* connections to LAN addresses over privileged ports */\n\t\tOR (destination.port <= 1023 AND destination.ip == 192.168.0.0/16)\n\t",
+      "input": {
+        "tags": ["db-svc", "internal-vlan", "unprivileged-user"],
+        "domain": "example.com",
+        "process": {"uid": 1000, "path": "/usr/bin/some-other-process"},
+        "port": 8080
+      },
+      "expect": {"value": true}
+    },
+    {
+      "name": "engine example: LAN address over privileged port",
+      "expr": "\n\t\ttags == 'db-svc'\n\t\tOR domain matches /example\\.com$/ -- any domain or subdomain of example.com\n\t\tOR src.process.path matches |^/usr/bin/| -- patterns can be enclosed in |...| or /.../\n\t\tOR (process.uid != 0 AND tags contains 'internal-svc') \n\t\t/* connections to LAN addresses over privileged ports */\n\t\tOR (destination.port <= 1023 AND destination.ip == 192.168.0.0/16)\n\t",
+      "input": {"destination": {"ip.$ip": "192.168.2.37", "port": 22}},
+      "expect": {"value": true}
+    },
+    {
+      "name": "engine example: flat dotted keys are not nested paths",
+      "expr": "\n\t\ttags == 'db-svc'\n\t\tOR domain matches /example\\.com$/ -- any domain or subdomain of example.com\n\t\tOR src.process.path matches |^/usr/bin/| -- patterns can be enclosed in |...| or /.../\n\t\tOR (process.uid != 0 AND tags contains 'internal-svc') \n\t\t/* connections to LAN addresses over privileged ports */\n\t\tOR (destination.port <= 1023 AND destination.ip == 192.168.0.0/16)\n\t",
+      "input": {"destination.ip.$ip": "1.1.1.1", "destination.port": 22},
+      "expect": {
+        "value": null,
+        "missing_fields": ["destination.ip", "destination.port", "domain", "process.uid", "src.process.path", "tags"]
+      }
+    },
+    {
+      "name": "engine example: src process path matches",
+      "expr": "\n\t\ttags == 'db-svc'\n\t\tOR domain matches /example\\.com$/ -- any domain or subdomain of example.com\n\t\tOR src.process.path matches |^/usr/bin/| -- patterns can be enclosed in |...| or /.../\n\t\tOR (process.uid != 0 AND tags contains 'internal-svc') \n\t\t/* connections to LAN addresses over privileged ports */\n\t\tOR (destination.port <= 1023 AND destination.ip == 192.168.0.0/16)\n\t",
+      "input": {"src": {"process": {"path": "/usr/bin/some-other-process"}}},
+      "expect": {"value": true}
+    },
+    {
+      "name": "engine example: no branch matches",
+      "expr": "\n\t\ttags == 'db-svc'\n\t\tOR domain matches /example\\.com$/ -- any domain or subdomain of example.com\n\t\tOR src.process.path matches |^/usr/bin/| -- patterns can be enclosed in |...| or /.../\n\t\tOR (process.uid != 0 AND tags contains 'internal-svc') \n\t\t/* connections to LAN addresses over privileged ports */\n\t\tOR (destination.port <= 1023 AND destination.ip == 192.168.0.0/16)\n\t",
+      "input": {"src": {"process": {"path": "/opt/go"}}},
+      "expect": {
+        "value": null,
+        "missing_fields": ["destination.ip", "destination.port", "domain", "process.uid", "tags"]
+      }
+    },
+    {
+      "name": "float equality true",
+      "expr": "tls_version == 1.2",
+      "input": {"tls_version": 1.2},
+      "expect": {"value": true}
+    },
+    {
+      "name": "float equality false",
+      "expr": "tls_version == 1.2",
+      "input": {"tls_version": 1.1},
+      "expect": {"value": false}
+    },
+    {
+      "name": "equality on missing field",
+      "expr": "tls_version == 1.2",
+      "input": {},
+      "expect": {"value": null, "missing_fields": ["tls_version"]}
+    },
+    {
+      "name": "inequality on missing field",
+      "expr": "tls_version != 5",
+      "input": {},
+      "expect": {"value": null, "missing_fields": ["tls_version"]}
+    },
+    {
+      "name": "negated missing field",
+      "expr": "!tls_version",
+      "input": {},
+      "expect": {"value": null, "missing_fields": ["tls_version"]}
+    },
+    {
+      "name": "or: first branch true",
+      "expr": "domain matches /example\\.com$/ OR tags == \"db-svc\"",
+      "input": {"domain": "example.com"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "or: second branch true with first missing",
+      "expr": "domain matches /example\\.com$/ OR tags == \"db-svc\"",
+      "input": {"tags": "db-svc"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "or: false branch and missing branch",
+      "expr": "domain matches /example\\.com$/ OR tags == \"db-svc\"",
+      "input": {"domain": "other.com"},
+      "expect": {"value": null, "missing_fields": ["tags"]}
+    },
+    {
+      "name": "and: true branch and missing branch",
+      "expr": "domain == \"example.com\" AND tags == \"db-svc\"",
+      "input": {"domain": "example.com"},
+      "expect": {"value": null, "missing_fields": ["tags"]}
+    },
+    {
+      "name": "and: missing branch and true branch",
+      "expr": "domain == \"example.com\" AND tags == \"db-svc\"",
+      "input": {"tags": "db-svc"},
+      "expect": {"value": null, "missing_fields": ["domain"]}
+    },
+    {
+      "name": "and: array field equals element",
+      "expr": "domain == \"example.com\" AND tags == \"db-svc\"",
+      "input": {"domain": "example.com", "tags": ["test", "db-svc"]},
+      "expect": {"value": true}
+    },
+    {
+      "name": "and: false branch wins over missing branch",
+      "expr": "domain == \"example.com\" AND tags == \"db-svc\"",
+      "input": {"domain": "qpoint.io"},
+      "expect": {"value": false}
+    },
+    {
+      "name": "and: empty array field equals nothing",
+      "expr": "domain == \"example.com\" AND tags == \"db-svc\"",
+      "input": {"tags": []},
+      "expect": {"value": false}
+    },
+    {
+      "name": "nested and/or with bare bool field",
+      "expr": "\n\t\t\t\tdst.ip == 8.8.8.8\n\t\t\t\tor (\n\t\t\t\t\tdst.ip == 1.1.1.1\n\t\t\t\t\tand (\n\t\t\t\t\t\tdst.port == 53\n\t\t\t\t\t\tor (dst.port == 443 and tls.enabled)\n\t\t\t\t\t)\n\t\t\t\t)",
+      "input": {"tls": {"enabled": true}, "dst": {"ip.$ip": "1.1.1.1", "port": 443}},
+      "expect": {"value": true}
+    },
+    {
+      "name": "int and uint64 equality",
+      "expr": "f_int == 1 and f_uint == 13",
+      "input": {"f_int": 1, "f_uint.$uint64": "13"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "int and uint64 inequality",
+      "expr": "f_int == 1 and f_uint == 13",
+      "input": {"f_int": 1, "f_uint.$uint64": "14"},
+      "expect": {"value": false}
+    },
+    {
+      "name": "array != means no element equals",
+      "expr": "f_int != 2",
+      "input": {"f_int": [1, 3, 4]},
+      "expect": {"value": true}
+    },
+    {
+      "name": "array != with an equal element",
+      "expr": "f_int != 2",
+      "input": {"f_int": [1, 2, 3, 4]},
+      "expect": {"value": false}
+    },
+    {
+      "name": "numeric map keys and hex equals string",
+      "expr": "f_string.1 == \"1\" and f_string.2 == 47:45:54  and f_string.3 == \"abc123\"",
+      "input": {"f_string": {"1": "1", "2": "GET", "3": "abc123"}},
+      "expect": {"value": true}
+    },
+    {
+      "name": "numeric map keys and hex equals string: mismatch",
+      "expr": "f_string.1 == \"1\" and f_string.2 == 47:45:54  and f_string.3 == \"abc123\"",
+      "input": {"f_string": {"1": "2", "2": "GET", "3": "abc123"}},
+      "expect": {"value": false}
+    },
+    {
+      "name": "string and hex contains",
+      "expr": "f_string.1 contains \"1\" and f_string.2 contains 47:45:54  and f_string.3 contains \"abc123\"",
+      "input": {"f_string": {"1": "asdf1asdf", "2": "text - GET ---", "3": "asf fffabc123"}},
+      "expect": {"value": true}
+    },
+    {
+      "name": "string and hex contains: mismatch",
+      "expr": "f_string.1 contains \"1\" and f_string.2 contains 47:45:54  and f_string.3 contains \"abc123\"",
+      "input": {"f_string": {"1": "test234test", "2": "xxxxETyyy", "3": "abc125"}},
+      "expect": {"value": false}
+    },
+    {
+      "name": "ip equality",
+      "expr": "ip.src==192.168.1.1 and ip.dst==192.168.1.1",
+      "input": {"ip": {"src.$ip": "192.168.1.1", "dst.$ip": "192.168.1.1"}},
+      "expect": {"value": true}
+    },
+    {
+      "name": "ip inequality",
+      "expr": "ip.src==192.168.1.1 and ip.dst==192.168.1.1",
+      "input": {"ip": {"src.$ip": "192.168.1.2", "dst.$ip": "192.168.1.1"}},
+      "expect": {"value": false}
+    },
+    {
+      "name": "ip equality on missing fields",
+      "expr": "ip.src==192.168.1.1 and ip.dst==192.168.1.1",
+      "input": {},
+      "expect": {"value": null, "missing_fields": ["ip.dst", "ip.src"]}
+    },
+    {
+      "name": "ip == cidr is containment",
+      "expr": "ip.src == 192.168.0.0/16",
+      "input": {"ip": {"src.$ip": "192.168.100.1", "dst.$ip": "192.168.1.1"}},
+      "expect": {"value": true}
+    },
+    {
+      "name": "ip == cidr outside range",
+      "expr": "ip.src == 192.168.0.0/16",
+      "input": {"ip": {"src.$ip": "172.16.0.1", "dst.$ip": "10.0.0.1"}},
+      "expect": {"value": false}
+    },
+    {
+      "name": "ip == cidr on missing field",
+      "expr": "ip.src == 192.168.0.0/16",
+      "input": {},
+      "expect": {"value": null, "missing_fields": ["ip.src"]}
+    },
+    {
+      "name": "mac equals hex literal",
+      "expr": "f_mac == ab:3b:06:07:b2:ef",
+      "input": {"f_mac.$mac": "ab:3b:06:07:b2:ef"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "mac differs from hex literal",
+      "expr": "f_mac == ab:3b:06:07:b2:ef",
+      "input": {"f_mac.$mac": "aa:bb:cc:dd:ee:ff"},
+      "expect": {"value": false}
+    },
+    {
+      "name": "mac equality on missing field",
+      "expr": "f_mac == ab:3b:06:07:b2:ef",
+      "input": {},
+      "expect": {"value": null, "missing_fields": ["f_mac"]}
+    },
+    {
+      "name": "field == array is membership: int",
+      "expr": "field == [1, \"str\", 3]",
+      "input": {"field": 3},
+      "expect": {"value": true}
+    },
+    {
+      "name": "field == array is membership: no match",
+      "expr": "field == [1, \"str\", 3]",
+      "input": {"field": 4},
+      "expect": {"value": false}
+    },
+    {
+      "name": "field == array is membership: string",
+      "expr": "field == [1, \"str\", 3]",
+      "input": {"field": "str"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "contains with array on the right: superstring",
+      "expr": "field contains [1, \"str\", 3]",
+      "input": {"field": "string"},
+      "expect": {"value": false}
+    },
+    {
+      "name": "contains with array on the right: element",
+      "expr": "field contains [1, \"str\", 3]",
+      "input": {"field": "str"},
+      "expect": {"value": false}
+    },
+    {
+      "name": "contains with array on the right: int",
+      "expr": "field contains [1, \"str\", 3]",
+      "input": {"field": 123},
+      "expect": {"value": false}
+    },
+    {
+      "name": "string contains substring",
+      "expr": "field contains \"str\"",
+      "input": {"field": "string"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "array contains element",
+      "expr": "field contains \"str\"",
+      "input": {"field": ["str", 123]},
+      "expect": {"value": true}
+    },
+    {
+      "name": "array contains is not substring",
+      "expr": "field contains \"str\"",
+      "input": {"field": ["test", "string"]},
+      "expect": {"value": false}
+    },
+    {
+      "name": "array == scalar: no element equals",
+      "expr": "f == \"string\"",
+      "input": {"f": [1, "str", 3]},
+      "expect": {"value": false}
+    },
+    {
+      "name": "array != scalar: no element equals",
+      "expr": "f != \"string\"",
+      "input": {"f": [1, "str", 3]},
+      "expect": {"value": true}
+    },
+    {
+      "name": "array contains scalar: no element equals",
+      "expr": "f contains \"string\"",
+      "input": {"f": [1, "str", 3]},
+      "expect": {"value": false}
+    },
+    {
+      "name": "field array contains field value",
+      "expr": "arr contains val",
+      "input": {"arr": [1, "str", 3], "val": "str"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "field array contains field value: no match",
+      "expr": "arr contains val",
+      "input": {"arr": [1, "str", 3], "val": 50},
+      "expect": {"value": false}
+    },
+    {"name": "array literal contains int", "expr": "[1,2,3] contains 2", "expect": {"value": true}},
+    {"name": "array literal contains string", "expr": "[1,2,3] contains \"str\"", "expect": {"value": false}},
+    {
+      "name": "in array: superstring",
+      "expr": "field in [1, \"str\", 3]",
+      "input": {"field": "string"},
+      "expect": {"value": false}
+    },
+    {
+      "name": "in array: element",
+      "expr": "field in [1, \"str\", 3]",
+      "input": {"field": "str"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "in array: substring",
+      "expr": "field in [1, \"str\", 3]",
+      "input": {"field": "s"},
+      "expect": {"value": false}
+    },
+    {"name": "in array: int", "expr": "field in [1, \"str\", 3]", "input": {"field": 123}, "expect": {"value": false}},
+    {"name": "int literal in array", "expr": "5 in [1,2,3]", "expect": {"value": false}},
+    {"name": "string literal in array", "expr": "\"str\" in [\"str\"]", "expect": {"value": true}},
+    {"name": "ip literal in mixed cidr/ip array", "expr": "1.2.3.4 in [1.0.0.0/8, 8.8.8.8]", "expect": {"value": true}},
+    {
+      "name": "ip literal not in mixed cidr/ip array",
+      "expr": "192.168.0.1 in [1.0.0.0/8, 8.8.8.8]",
+      "expect": {"value": false}
+    },
+    {"name": "ip literal in cidr", "expr": "192.168.0.1 in 192.168.0.0/16", "expect": {"value": true}},
+    {
+      "name": "ip field in cidr",
+      "expr": "ip in 192.168.0.0/16",
+      "input": {"ip.$ip": "192.168.0.1"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "cidr field contains ip field",
+      "expr": "cidr contains ip",
+      "input": {"cidr.$cidr": "192.168.0.0/16", "ip.$ip": "192.168.0.1"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "array in array: any element matches",
+      "expr": "client in [\"alice\", \"bob\"]",
+      "input": {"client": ["nobody", "bob"]},
+      "expect": {"value": true}
+    },
+    {
+      "name": "array in array: no element matches",
+      "expr": "client in [\"alice\", \"bob\"]",
+      "input": {"client": ["nobody", "somebody"]},
+      "expect": {"value": false}
+    },
+    {
+      "name": "empty array in array",
+      "expr": "client in [\"alice\"]",
+      "input": {"client": []},
+      "expect": {"value": false}
+    },
+    {
+      "name": "mixed array in array: matches",
+      "expr": "client in [\"alice\", 3]",
+      "input": {"client": ["nobody", 3]},
+      "expect": {"value": true}
+    },
+    {
+      "name": "mixed array in array: no match",
+      "expr": "client in [\"alice\", 3]",
+      "input": {"client": ["nobody", 4]},
+      "expect": {"value": false}
+    },
+    {
+      "name": "int array in array: matches",
+      "expr": "ports in [80, 443]",
+      "input": {"ports": [22, 443]},
+      "expect": {"value": true}
+    },
+    {
+      "name": "int array in array: no match",
+      "expr": "ports in [80, 443]",
+      "input": {"ports": [22, 8080]},
+      "expect": {"value": false}
+    },
+    {
+      "name": "int array in array: first element matches",
+      "expr": "ports in [80, 443]",
+      "input": {"ports": [22, 80]},
+      "expect": {"value": true}
+    },
+    {
+      "name": "ip array in cidr: matches",
+      "expr": "ips in 192.168.0.0/16",
+      "input_mode": "typed_document",
+      "input": {
+        "ips": {
+          "$type": "array",
+          "value": [{"$type": "ip", "value": "1.1.1.1"}, {"$type": "ip", "value": "192.168.0.1"}]
+        }
+      },
+      "expect": {"value": true}
+    },
+    {
+      "name": "ip array in cidr: no match",
+      "expr": "ips in 192.168.0.0/16",
+      "input_mode": "typed_document",
+      "input": {
+        "ips": {"$type": "array", "value": [{"$type": "ip", "value": "1.1.1.1"}, {"$type": "ip", "value": "8.8.8.8"}]}
+      },
+      "expect": {"value": false}
+    },
+    {
+      "name": "ip array in mixed array: matches",
+      "expr": "ips in [1.0.0.0/8, 8.8.8.8]",
+      "input_mode": "typed_document",
+      "input": {
+        "ips": {
+          "$type": "array",
+          "value": [{"$type": "ip", "value": "192.168.0.1"}, {"$type": "ip", "value": "8.8.8.8"}]
+        }
+      },
+      "expect": {"value": true}
+    },
+    {
+      "name": "not (array in array): no element matches",
+      "expr": "not (client in [\"alice\", \"bob\"])",
+      "input": {"client": ["nobody", "somebody"]},
+      "expect": {"value": true}
+    },
+    {
+      "name": "not (array in array): an element matches",
+      "expr": "not (client in [\"alice\", \"bob\"])",
+      "input": {"client": ["nobody", "bob"]},
+      "expect": {"value": false}
+    },
+    {
+      "name": "scalar in array: matches",
+      "expr": "client in [\"alice\", \"bob\"]",
+      "input": {"client": "bob"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "scalar in array: no match",
+      "expr": "client in [\"alice\", \"bob\"]",
+      "input": {"client": "nobody"},
+      "expect": {"value": false}
+    },
+    {"name": "bool: standalone true", "expr": "true", "input": {}, "expect": {"value": true}},
+    {"name": "bool: standalone false", "expr": "false", "input": {}, "expect": {"value": false}},
+    {"name": "bool: true equals true", "expr": "true == true", "input": {}, "expect": {"value": true}},
+    {"name": "bool: false equals false", "expr": "false == false", "input": {}, "expect": {"value": true}},
+    {"name": "bool: true not equals false", "expr": "true != false", "input": {}, "expect": {"value": true}},
+    {"name": "bool: field equals true", "expr": "field == true", "input": {"field": true}, "expect": {"value": true}},
+    {
+      "name": "bool: field not equals true",
+      "expr": "field != true",
+      "input": {"field": false},
+      "expect": {"value": true}
+    },
+    {"name": "bool: case insensitive TRUE", "expr": "TRUE == true", "input": {}, "expect": {"value": true}},
+    {"name": "bool: case insensitive FALSE", "expr": "FALSE == false", "input": {}, "expect": {"value": true}},
+    {
+      "name": "ip field equals quoted ip",
+      "expr": "ip == \"192.168.1.1\"",
+      "input": {"ip.$ip": "192.168.1.1"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "quoted ip equals ip field",
+      "expr": "\"192.168.1.1\" == ip",
+      "input": {"ip.$ip": "192.168.1.1"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "string field equals ip literal",
+      "expr": "ipstr == 192.168.1.1",
+      "input": {"ipstr": "192.168.1.1"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "quoted ip in cidr array",
+      "expr": "\"192.168.1.5\" in [192.168.1.0/24]",
+      "input": {},
+      "expect": {"value": true}
+    },
+    {
+      "name": "quoted ip not in cidr array",
+      "expr": "\"10.0.0.1\" in [192.168.1.0/24]",
+      "input": {},
+      "expect": {"value": false}
+    },
+    {
+      "name": "mac field equals quoted mac",
+      "expr": "mac == \"01:23:45:67:89:ab\"",
+      "input": {"mac.$mac": "01:23:45:67:89:ab"},
+      "expect": {"value": true}
+    },
+    {"name": "not negates true", "expr": "not (a == 1)", "input": {"a": 1}, "expect": {"value": false}},
+    {"name": "not negates false", "expr": "not (a == 1)", "input": {"a": 2}, "expect": {"value": true}}
+  ]
+}

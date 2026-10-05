@@ -1,0 +1,251 @@
+{
+  "input_mode": "annotated_keys",
+  "cases": [
+    {
+      "name": "url field: url.scheme == \"https\"",
+      "expr": "url.scheme == \"https\"",
+      "input": {
+        "url.$url": "https://alice@Example.com:8443/api/v1?tag=a&tag=b&env=prod#top",
+        "bare.$url": "http://example.com"
+      },
+      "expect": {"value": true}
+    },
+    {
+      "name": "url field: url.host == \"example.com\"",
+      "expr": "url.host == \"example.com\"",
+      "input": {
+        "url.$url": "https://alice@Example.com:8443/api/v1?tag=a&tag=b&env=prod#top",
+        "bare.$url": "http://example.com"
+      },
+      "expect": {"value": true}
+    },
+    {
+      "name": "url field: url.port == 8443",
+      "expr": "url.port == 8443",
+      "input": {
+        "url.$url": "https://alice@Example.com:8443/api/v1?tag=a&tag=b&env=prod#top",
+        "bare.$url": "http://example.com"
+      },
+      "expect": {"value": true}
+    },
+    {
+      "name": "url field: url.path == \"/api/v1\"",
+      "expr": "url.path == \"/api/v1\"",
+      "input": {
+        "url.$url": "https://alice@Example.com:8443/api/v1?tag=a&tag=b&env=prod#top",
+        "bare.$url": "http://example.com"
+      },
+      "expect": {"value": true}
+    },
+    {
+      "name": "url field: url.query.env == \"prod\"",
+      "expr": "url.query.env == \"prod\"",
+      "input": {
+        "url.$url": "https://alice@Example.com:8443/api/v1?tag=a&tag=b&env=prod#top",
+        "bare.$url": "http://example.com"
+      },
+      "expect": {"value": true}
+    },
+    {
+      "name": "url field: url.query[\"tag\"] == \"b\"",
+      "expr": "url.query[\"tag\"] == \"b\"",
+      "input": {
+        "url.$url": "https://alice@Example.com:8443/api/v1?tag=a&tag=b&env=prod#top",
+        "bare.$url": "http://example.com"
+      },
+      "expect": {"value": true}
+    },
+    {
+      "name": "url field: url.fragment == \"top\"",
+      "expr": "url.fragment == \"top\"",
+      "input": {
+        "url.$url": "https://alice@Example.com:8443/api/v1?tag=a&tag=b&env=prod#top",
+        "bare.$url": "http://example.com"
+      },
+      "expect": {"value": true}
+    },
+    {
+      "name": "url field: url.user == \"alice\"",
+      "expr": "url.user == \"alice\"",
+      "input": {
+        "url.$url": "https://alice@Example.com:8443/api/v1?tag=a&tag=b&env=prod#top",
+        "bare.$url": "http://example.com"
+      },
+      "expect": {"value": true}
+    },
+    {
+      "name": "absent url part is missing: bare.port",
+      "expr": "bare.port == 80",
+      "input": {
+        "url.$url": "https://alice@Example.com:8443/api/v1?tag=a&tag=b&env=prod#top",
+        "bare.$url": "http://example.com"
+      },
+      "expect": {"value": null, "missing_fields": ["bare.port"]}
+    },
+    {
+      "name": "absent url part is missing: bare.query.env",
+      "expr": "bare.query.env == \"prod\"",
+      "input": {
+        "url.$url": "https://alice@Example.com:8443/api/v1?tag=a&tag=b&env=prod#top",
+        "bare.$url": "http://example.com"
+      },
+      "expect": {"value": null, "missing_fields": ["bare.query.env"]}
+    },
+    {
+      "name": "absent url part is missing: bare.fragment",
+      "expr": "bare.fragment == \"\"",
+      "input": {
+        "url.$url": "https://alice@Example.com:8443/api/v1?tag=a&tag=b&env=prod#top",
+        "bare.$url": "http://example.com"
+      },
+      "expect": {"value": null, "missing_fields": ["bare.fragment"]}
+    },
+    {
+      "name": "absent url part is missing: bare.user",
+      "expr": "bare.user == \"\"",
+      "input": {
+        "url.$url": "https://alice@Example.com:8443/api/v1?tag=a&tag=b&env=prod#top",
+        "bare.$url": "http://example.com"
+      },
+      "expect": {"value": null, "missing_fields": ["bare.user"]}
+    },
+    {
+      "name": "url without path has empty path",
+      "expr": "bare.path == \"\"",
+      "input": {
+        "url.$url": "https://alice@Example.com:8443/api/v1?tag=a&tag=b&env=prod#top",
+        "bare.$url": "http://example.com"
+      },
+      "expect": {"value": true}
+    },
+    {
+      "name": "unknown url field is missing",
+      "expr": "url.nope == 1",
+      "input": {
+        "url.$url": "https://alice@Example.com:8443/api/v1?tag=a&tag=b&env=prod#top",
+        "bare.$url": "http://example.com"
+      },
+      "expect": {"value": null, "missing_fields": ["url.nope"]}
+    },
+    {
+      "name": "url compares as string: url == \"https://example.com/a\"",
+      "expr": "url == \"https://example.com/a\"",
+      "input": {"url.$url": "https://example.com/a", "s": "https://example.com/a"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "url compares as string: url != \"https://example.com/b\"",
+      "expr": "url != \"https://example.com/b\"",
+      "input": {"url.$url": "https://example.com/a", "s": "https://example.com/a"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "url compares as string: url contains \"example.com\"",
+      "expr": "url contains \"example.com\"",
+      "input": {"url.$url": "https://example.com/a", "s": "https://example.com/a"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "url compares as string: url matches /^https:/",
+      "expr": "url matches /^https:/",
+      "input": {"url.$url": "https://example.com/a", "s": "https://example.com/a"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "url compares as string: url in [\"https://example.com/b\", \"https://example.com/a\"]",
+      "expr": "url in [\"https://example.com/b\", \"https://example.com/a\"]",
+      "input": {"url.$url": "https://example.com/a", "s": "https://example.com/a"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "url compares as string: s == \"https://example.com/a\"",
+      "expr": "s == \"https://example.com/a\"",
+      "input": {"url.$url": "https://example.com/a", "s": "https://example.com/a"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "string value has no url fields",
+      "expr": "s.host == \"example.com\"",
+      "input": {"url.$url": "https://example.com/a", "s": "https://example.com/a"},
+      "expect": {"value": null, "missing_fields": ["s.host"]}
+    },
+    {
+      "name": "ip field: v4.version == \"v4\"",
+      "expr": "v4.version == \"v4\"",
+      "input": {"v4.$ip": "10.1.2.3", "v6.$ip": "2001:db8::1", "mapped.$ip": "::ffff:10.1.2.3"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "ip field: v6.version == \"v6\"",
+      "expr": "v6.version == \"v6\"",
+      "input": {"v4.$ip": "10.1.2.3", "v6.$ip": "2001:db8::1", "mapped.$ip": "::ffff:10.1.2.3"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "ip field: mapped.version == \"v4\"",
+      "expr": "mapped.version == \"v4\"",
+      "input": {"v4.$ip": "10.1.2.3", "v6.$ip": "2001:db8::1", "mapped.$ip": "::ffff:10.1.2.3"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "unknown ip field is missing",
+      "expr": "v4.nope == 1",
+      "input": {"v4.$ip": "10.1.2.3", "v6.$ip": "2001:db8::1", "mapped.$ip": "::ffff:10.1.2.3"},
+      "expect": {"value": null, "missing_fields": ["v4.nope"]}
+    },
+    {
+      "name": "cidr field: net4.network == 10.1.0.0",
+      "expr": "net4.network == 10.1.0.0",
+      "input": {"net4.$cidr": "10.1.0.0/16", "net6.$cidr": "2001:db8::/32"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "cidr field: net4.prefix == 16",
+      "expr": "net4.prefix == 16",
+      "input": {"net4.$cidr": "10.1.0.0/16", "net6.$cidr": "2001:db8::/32"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "cidr field: net4.version == \"v4\"",
+      "expr": "net4.version == \"v4\"",
+      "input": {"net4.$cidr": "10.1.0.0/16", "net6.$cidr": "2001:db8::/32"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "cidr field: net6.prefix == 32",
+      "expr": "net6.prefix == 32",
+      "input": {"net4.$cidr": "10.1.0.0/16", "net6.$cidr": "2001:db8::/32"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "cidr field: net6.version == \"v6\"",
+      "expr": "net6.version == \"v6\"",
+      "input": {"net4.$cidr": "10.1.0.0/16", "net6.$cidr": "2001:db8::/32"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "mac oui equals hex",
+      "expr": "mac.oui == 00:1a:2b",
+      "input": {"mac.$mac": "00:1A:2B:3C:4D:5E"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "mac oui equals quoted hex",
+      "expr": "mac.oui == \"00:1a:2b\"",
+      "input": {"mac.$mac": "00:1A:2B:3C:4D:5E"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "mac oui mismatch",
+      "expr": "mac.oui == 00:1a:2c",
+      "input": {"mac.$mac": "00:1A:2B:3C:4D:5E"},
+      "expect": {"value": false}
+    },
+    {
+      "name": "map keys win over value fields",
+      "expr": "url.host == \"from-map\"",
+      "input": {"url": {"host": "from-map"}},
+      "expect": {"value": true}
+    }
+  ]
+}
