@@ -15,7 +15,7 @@ is described in the [language reference](../README.md). API documentation:
 
 ```toml
 [dependencies]
-rulekit = { git = "https://github.com/qpoint-io/rulekit", branch = "v2-rust" }
+rulekit = { git = "https://github.com/qpoint-io/rulekit", branch = "v2" }
 ```
 
 Requires Rust 1.88 or later.
