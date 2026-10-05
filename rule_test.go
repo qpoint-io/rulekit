@@ -359,11 +359,20 @@ func TestFilterParseInt(t *testing.T) {
 	}
 }
 
-func TestFilterParseString(t *testing.T) {
-	_, err := Parse(`f_string=="text" or f_string=="te\"x't" or f_string =='test' or f_string == 'te"s\'t' or f_string contains 12 && f_string==01:23:45:67:89:ab:AB:cd:ef`)
-	if err != nil {
-		t.Error(err)
+func TestStringLiterals(t *testing.T) {
+	for expr, want := range map[string]string{
+		`s == "text"`:        `text`,
+		`s == "te\"x't"`:     `te"x't`,
+		`s == 'test'`:        `test`,
+		`s == 'te"s\'t'`:     `te"s't`,
+		`s == 'bad qu\"ote'`: `bad qu"ote`,
+		`s == "tab\there"`:   "tab\there",
+		`s == 'tab\there'`:   "tab\there",
+	} {
+		assertRulep(t, expr, kv{"s": want}).Ok().DoesPass(true)
 	}
+	// Nine colon-separated pairs (not an IPv6 address) are hex bytes; case is ignored.
+	assertRulep(t, `s == 01:23:45:67:89:ab:AB:cd:ef`, kv{"s": "\x01\x23\x45\x67\x89\xab\xab\xcd\xef"}).Ok().DoesPass(true)
 }
 
 func TestFilterParseRegexp(t *testing.T) {
@@ -561,7 +570,6 @@ func TestParseError(t *testing.T) {
 		"test == >=",
 		"field == 123 && ip == 1.2.3",
 		"field == 123 && ip << 1",
-		"str == 'bad qu\\\"ote'",
 	} {
 		_, err := Parse(s)
 		if err == nil {

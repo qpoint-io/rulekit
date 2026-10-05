@@ -80,10 +80,7 @@ func operatorToString(op int) string {
 func parseString[T interface{ string | []byte }](data T) (any, error) {
 	str := string(data)
 	if str[0] == '\'' {
-		str = str[1 : len(str)-1]
-		str = strings.ReplaceAll(str, `"`, `\"`)
-		str = strings.ReplaceAll(str, `\'`, `'`)
-		str = `"` + str + `"`
+		str = singleToDoubleQuoted(str)
 	}
 	var err error
 	str, err = strconv.Unquote(str)
@@ -102,6 +99,32 @@ func parseString[T interface{ string | []byte }](data T) (any, error) {
 		return u, nil
 	}
 	return str, nil
+}
+
+// singleToDoubleQuoted rewrites a single-quoted literal as the equivalent
+// double-quoted one, so both quote styles accept the same escapes.
+func singleToDoubleQuoted(str string) string {
+	inner := str[1 : len(str)-1]
+	var b strings.Builder
+	b.Grow(len(inner) + 2)
+	b.WriteByte('"')
+	for i := 0; i < len(inner); i++ {
+		c := inner[i]
+		switch {
+		case c == '\\' && i+1 < len(inner):
+			i++
+			if inner[i] != '\'' {
+				b.WriteByte('\\')
+			}
+			b.WriteByte(inner[i])
+		case c == '"':
+			b.WriteString(`\"`)
+		default:
+			b.WriteByte(c)
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
 }
 
 // parseAbsoluteURL reports whether str is an absolute URL with a scheme and
