@@ -7,7 +7,8 @@ use super::{Val, Value, ValueRef};
 /// Find a query parameter by name using the WHATWG
 /// application/x-www-form-urlencoded rules: pairs are separated by `&`, the
 /// first `=` splits name from value, `+` is a space, and percent escapes are
-/// decoded (invalid escapes are kept as written). A single value is a string;
+/// decoded (invalid escapes, and values that decode to invalid UTF-8, are
+/// kept as written). A single value is a string;
 /// repeated values are a list. Decoding happens only for the requested key.
 pub(crate) fn query_field<'a>(raw: &'a str, key: &str) -> Option<Val<'a>> {
     let mut first: Option<Cow<'a, str>> = None;
@@ -40,9 +41,8 @@ pub(crate) fn query_field<'a>(raw: &'a str, key: &str) -> Option<Val<'a>> {
     })
 }
 
-/// Decode `+` and percent escapes, keeping invalid escapes as written.
-/// Invalid UTF-8 becomes U+FFFD, one per run of invalid bytes (Go
-/// `strings.ToValidUTF8`).
+/// Decode `+` and percent escapes, keeping invalid escapes as written. If
+/// the decoded bytes are not valid UTF-8, the text is kept as written.
 fn form_decode(s: &str) -> Cow<'_, str> {
     if !s.contains(['+', '%']) {
         return Cow::Borrowed(s);
@@ -53,10 +53,7 @@ fn form_decode(s: &str) -> Cow<'_, str> {
     while i < b.len() {
         match b[i] {
             b'+' => out.push(b' '),
-            b'%' if i + 2 < b.len()
-                && b[i + 1].is_ascii_hexdigit()
-                && b[i + 2].is_ascii_hexdigit() =>
-            {
+            b'%' if i + 2 < b.len() && b[i + 1].is_ascii_hexdigit() && b[i + 2].is_ascii_hexdigit() => {
                 out.push(hex(b[i + 1]) << 4 | hex(b[i + 2]));
                 i += 2;
             }
@@ -64,44 +61,14 @@ fn form_decode(s: &str) -> Cow<'_, str> {
         }
         i += 1;
     }
-    Cow::Owned(to_valid_utf8(&out))
+    match String::from_utf8(out) {
+        Ok(decoded) => Cow::Owned(decoded),
+        Err(_) => Cow::Borrowed(s),
+    }
 }
 
 fn hex(c: u8) -> u8 {
     (c as char).to_digit(16).expect("hex digit") as u8
-}
-
-fn to_valid_utf8(mut b: &[u8]) -> String {
-    let mut out = String::with_capacity(b.len());
-    while !b.is_empty() {
-        match std::str::from_utf8(b) {
-            Ok(s) => {
-                out.push_str(s);
-                break;
-            }
-            Err(err) => {
-                let valid = err.valid_up_to();
-                out.push_str(std::str::from_utf8(&b[..valid]).expect("valid prefix"));
-                out.push('\u{FFFD}');
-                // Skip the whole run of invalid bytes.
-                let mut rest = &b[valid..];
-                loop {
-                    match std::str::from_utf8(rest) {
-                        Err(e) if e.valid_up_to() == 0 => {
-                            let skip = e.error_len().unwrap_or(rest.len());
-                            rest = &rest[skip..];
-                            if rest.is_empty() {
-                                break;
-                            }
-                        }
-                        _ => break,
-                    }
-                }
-                b = rest;
-            }
-        }
-    }
-    out
 }
 
 #[cfg(test)]
@@ -129,12 +96,9 @@ mod tests {
             ]))
         );
         assert_eq!(get("a=1", "b"), None);
-        // %ff%fe is one invalid run: one replacement character.
-        assert_eq!(
-            get("v=%ff%fex", "v"),
-            Some(Value::String("\u{FFFD}x".into()))
-        );
-        // Go: '%' needs two following bytes, so "%4" stays.
+        // Decoding to invalid UTF-8 keeps the text as written.
+        assert_eq!(get("v=%ff%fex", "v"), Some(Value::String("%ff%fex".into())));
+        // '%' needs two following bytes, so "%4" stays.
         assert_eq!(get("v=%4", "v"), Some(Value::String("%4".into())));
     }
 }

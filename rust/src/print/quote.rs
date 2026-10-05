@@ -1,49 +1,29 @@
-//! Port of Go `strconv.Quote` for valid UTF-8 input.
+//! Quoting bracket keys (the shared rule in testdata/vectors/README.md,
+//! "Other shared rules").
 
 use std::fmt::Write;
 
-use crate::regex::in_go_class;
-
-/// Append `s` as a Go double-quoted string literal.
-pub(crate) fn quote_into(out: &mut String, s: &str) {
+/// Append `key` quoted: `"` and `\` escaped; `\n`, `\r`, `\t` as escapes;
+/// other control characters (U+0000–U+001F, U+007F) as `\u00XX`; every other
+/// character as is.
+pub(crate) fn quote_into(out: &mut String, key: &str) {
     out.push('"');
-    for c in s.chars() {
+    for c in key.chars() {
         match c {
             '"' | '\\' => {
                 out.push('\\');
                 out.push(c);
             }
-            _ if is_print(c) => out.push(c),
-            '\x07' => out.push_str("\\a"),
-            '\x08' => out.push_str("\\b"),
-            '\x0c' => out.push_str("\\f"),
             '\n' => out.push_str("\\n"),
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),
-            '\x0b' => out.push_str("\\v"),
-            _ if c < ' ' || c == '\x7f' => {
-                let _ = write!(out, "\\x{:02x}", c as u32);
-            }
-            _ if (c as u32) < 0x10000 => {
+            '\0'..='\x1f' | '\x7f' => {
                 let _ = write!(out, "\\u{:04x}", c as u32);
             }
-            _ => {
-                let _ = write!(out, "\\U{:08x}", c as u32);
-            }
+            _ => out.push(c),
         }
     }
     out.push('"');
-}
-
-/// Go `strconv.IsPrint`: letters, marks, numbers, punctuation, symbols, and
-/// the ASCII space.
-fn is_print(c: char) -> bool {
-    if c.is_ascii() {
-        return (' '..='~').contains(&c);
-    }
-    ["L", "M", "N", "P", "S"]
-        .iter()
-        .any(|class| in_go_class(class, c))
 }
 
 #[cfg(test)]
@@ -57,12 +37,10 @@ mod tests {
     }
 
     #[test]
-    fn quotes_like_go() {
+    fn quotes_keys() {
         assert_eq!(quote("user-agent"), r#""user-agent""#);
         assert_eq!(quote("it\"s\\"), r#""it\"s\\""#);
-        assert_eq!(quote("a\tb\x01\x7f"), r#""a\tb\x01\x7f""#);
-        assert_eq!(quote("ñame é"), "\"ñame é\"");
-        assert_eq!(quote("\u{a0}\u{ad}"), r#""\u00a0\u00ad""#);
-        assert_eq!(quote("\u{e0000}"), r#""\U000e0000""#);
+        assert_eq!(quote("a\tb\n\r\x01\x7f"), r#""a\tb\n\r\u0001\u007f""#);
+        assert_eq!(quote("ñame é \u{a0}\u{ad}\u{e0000}"), "\"ñame é \u{a0}\u{ad}\u{e0000}\"");
     }
 }
