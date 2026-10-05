@@ -1210,13 +1210,23 @@ func TestNot(t *testing.T) {
 	assertRulep(t, `not (a == 1)`, kv(map[string]any{"a": 2})).Ok().DoesPass(true)
 }
 
-func TestHexLikeFieldNames(t *testing.T) {
-	// A lone byte pair made of letters is a field name, not a hex literal.
+func TestHexLiterals(t *testing.T) {
+	// Unquoted hex needs at least two colon-separated pairs; a lone pair is a field name.
 	assertRulep(t, `ab == 1`, kv{"ab": 1}).Ok().DoesPass(true)
 	assertRulep(t, `fe == "x"`, kv{"fe": "x"}).Ok().DoesPass(true)
-	assertRulep(t, `ad`, kv{"ad": true}).Ok().DoesPass(true)
 	assertRulep(t, `ad`, kv{}).MissingFields("ad")
-	// Byte pairs that cannot be field names remain hex literals.
-	assertRulep(t, `x == 0a`, kv{"x": "\n"}).Ok().DoesPass(true)
 	assertRulep(t, `x == ab:cd`, kv{"x": "\xab\xcd"}).Ok().DoesPass(true)
+	assertParseError(t, `x == 0a`)
+
+	// x"..." is hex with optional colons, in either quote style and case.
+	assertRulep(t, `x == x"0a"`, kv{"x": "\n"}).Ok().DoesPass(true)
+	assertRulep(t, `x == x"504f5354"`, kv{"x": "POST"}).Ok().DoesPass(true)
+	assertRulep(t, `x == X'50:4F:53:54'`, kv{"x": "POST"}).Ok().DoesPass(true)
+	// Eight unquoted pairs are an IPv6 address; x"..." keeps them as bytes.
+	assertRulep(t, `x == x"0123456789abcdef"`, kv{"x": "\x01\x23\x45\x67\x89\xab\xcd\xef"}).Ok().DoesPass(true)
+	assertParseError(t, `x == x""`)
+	assertParseError(t, `x == x"abc"`)
+	assertParseError(t, `x == x"0g"`)
+
+	require.Equal(t, `x == x"0a"`, MustParse(`x == x"0a"`).String())
 }

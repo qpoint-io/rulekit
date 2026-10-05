@@ -327,6 +327,16 @@ func (l *lexer) next() token {
 		}
 		l.pos++
 		return token{kind: op_GT, raw: ">", start: start, end: l.pos, leadingTrivia: leading}
+	case 'x', 'X':
+		if l.pos+1 < len(l.input) && (l.input[l.pos+1] == '"' || l.input[l.pos+1] == '\'') {
+			l.pos++
+			tok := l.scanDelimited(l.input[l.pos], token_HEX_STRING, leading)
+			tok.start = start
+			if tok.kind == token_HEX_STRING {
+				tok.raw = l.input[start:l.pos]
+			}
+			return tok
+		}
 	case '/', '\'', '"':
 		if ch == '/' && l.hasPrefix("/*") {
 			break
@@ -448,8 +458,7 @@ func (l *lexer) scanAtom(leading string) token {
 	if isFloat(raw) {
 		return token{kind: token_FLOAT, raw: raw, start: start, end: l.pos, leadingTrivia: leading}
 	}
-	// A lone pair such as "ab" is also a valid field name; the field wins.
-	if isHexString(raw) && (strings.IndexByte(raw, ':') >= 0 || !isField(raw)) {
+	if isHexString(raw) {
 		return token{kind: token_HEX_STRING, raw: raw, start: start, end: l.pos, leadingTrivia: leading}
 	}
 	if isField(raw) {
@@ -513,7 +522,7 @@ func isFloat(s string) bool {
 }
 
 func isHexString(s string) bool {
-	if len(s) < 2 {
+	if !strings.Contains(s, ":") {
 		return false
 	}
 	parts := strings.Split(s, ":")
