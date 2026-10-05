@@ -2,7 +2,7 @@ package rulekit
 
 import (
 	"net"
-	"strings"
+	"regexp"
 )
 
 func compareMac(left net.HardwareAddr, op int, right any) compareOutcome {
@@ -16,9 +16,9 @@ func compareMac(left net.HardwareAddr, op int, right any) compareOutcome {
 	case []byte:
 		// mac ? bytes
 		return compareBytesBytes(left, op, right)
-	case string:
-		// mac ? string
-		return compareStringString(strings.ToLower(left.String()), op, strings.ToLower(right))
+	case string, *regexp.Regexp, urlQuery:
+		// mac ? string: compare the MAC's text form
+		return compareString(left.String(), op, right)
 	}
 	return incomparable()
 }

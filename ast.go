@@ -275,18 +275,6 @@ func astLiteralIs(node astNode, kind int) bool {
 	return ok && lit.kind == kind
 }
 
-// astQuotedCIDR reports whether node is a quoted literal such as
-// "10.0.0.0/8" that parses as a CIDR.
-func astQuotedCIDR(node astNode) bool {
-	lit, ok := node.(*astLiteral)
-	if !ok || lit.kind != token_STRING {
-		return false
-	}
-	value, err := parseString(lit.raw)
-	_, isCIDR := value.(*net.IPNet)
-	return err == nil && isCIDR
-}
-
 func astValidInequalityOperand(node astNode) bool {
 	switch n := node.(type) {
 	case *astPath, *astCall:

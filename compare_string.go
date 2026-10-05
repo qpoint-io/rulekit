@@ -35,7 +35,7 @@ func compareString(left string, op int, right any) compareOutcome {
 		return compareBytesBytes([]byte(left), op, right)
 	case net.HardwareAddr:
 		// string ? mac
-		return compareStringString(strings.ToLower(left), op, right.String())
+		return compareStringString(left, op, right.String())
 	}
 	return incomparable()
 }

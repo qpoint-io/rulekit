@@ -3,7 +3,6 @@ package rulekit
 import (
 	"fmt"
 	"net"
-	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -70,22 +69,7 @@ func operatorToString(op int) string {
 }
 
 func parseString[T interface{ string | []byte }](data T) (any, error) {
-	str, err := unquote(string(data))
-	if err != nil {
-		return nil, err
-	}
-
-	if ip := net.ParseIP(str); ip != nil {
-		return ip, nil
-	} else if _, ipnet, err := net.ParseCIDR(str); err == nil {
-		return ipnet, nil
-	} else if mac, ok := parseMAC(str); ok {
-		return mac, nil
-	}
-	if u, ok := parseAbsoluteURL(str); ok {
-		return u, nil
-	}
-	return str, nil
+	return unquote(string(data))
 }
 
 // unquote decodes a single- or double-quoted literal. Both quote styles accept
@@ -120,19 +104,6 @@ func unquote(raw string) (string, error) {
 		return "", fmt.Errorf("string is not valid UTF-8; use x\"...\" for bytes")
 	}
 	return s, nil
-}
-
-// parseAbsoluteURL reports whether str is an absolute URL with a scheme and
-// host whose canonical form is exactly str.
-func parseAbsoluteURL(str string) (*url.URL, bool) {
-	if !strings.Contains(str, "://") {
-		return nil, false
-	}
-	u, err := url.Parse(str)
-	if err != nil || u.Scheme == "" || u.Host == "" || u.String() != str {
-		return nil, false
-	}
-	return u, true
 }
 
 func parseInt[T interface{ string | []byte }](data T) (any, error) {
@@ -602,22 +573,19 @@ func (l *lexer) hasPrefix(s string) bool {
 	return strings.HasPrefix(l.input[l.pos:], s)
 }
 
+// Field names use the v1 character set: an ASCII letter or underscore, then
+// ASCII letters, digits, '_', '.', or '-'. Other keys need bracket syntax.
 func isAtomStart(r rune) bool {
-	return unicode.IsLetter(r) || r == '_'
+	return 'a' <= r && r <= 'z' || 'A' <= r && r <= 'Z' || r == '_'
 }
 
 func isField(s string) bool {
-	if s == "" {
+	if s == "" || !isAtomStart(rune(s[0])) {
 		return false
 	}
-	for i, r := range s {
-		if i == 0 {
-			if !isAtomStart(r) {
-				return false
-			}
-			continue
-		}
-		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && r != '.' && r != '-' {
+	for i := 1; i < len(s); i++ {
+		c := rune(s[i])
+		if !isAtomStart(c) && !('0' <= c && c <= '9') && c != '.' && c != '-' {
 			return false
 		}
 	}
@@ -727,7 +695,7 @@ func (p *parser) parseExpr(minPrec int) (astNode, error) {
 			if err != nil {
 				return nil, err
 			}
-			if !astLiteralIs(right, token_IP_CIDR) && !astQuotedCIDR(right) {
+			if !astLiteralIs(right, token_IP_CIDR) {
 				if _, ok := right.(*astArray); !ok {
 					return nil, p.errorf(tok, "in requires an array or CIDR value")
 				}

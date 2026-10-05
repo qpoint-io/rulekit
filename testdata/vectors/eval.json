@@ -492,10 +492,10 @@
       "expect": {"value": true}
     },
     {
-      "name": "quoted ip in cidr array",
+      "name": "quoted ip text is not in a cidr array",
       "expr": "\"192.168.1.5\" in [192.168.1.0/24]",
       "input": {},
-      "expect": {"value": true}
+      "expect": {"value": false}
     },
     {
       "name": "quoted ip not in cidr array",

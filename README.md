@@ -109,12 +109,12 @@ The Result also provides additional helper methods:
 | ---------------------- | ------------ | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **bool**               | VALUE, FIELD | `true`                                                         | Valid values: `true`, `false` (any letter case)                                                                                                                                         |
 | **number**             | VALUE, FIELD | `8080`, `0x1f`, `1_000`, `1.5`                                 | Integer or float. Integers may be decimal (leading zeros are still decimal: `010` is ten) or use a `0x`, `0o`, or `0b` prefix, with optional `_` separators. Parsed as int64, or uint64 if out of range for int64, or float64 if float. |
-| **string**             | VALUE, FIELD | `"domain.com"`, `'domain.com'`                                 | A double- or single-quoted string. Both accept backslash escapes: `"a \"quoted\" word"`, `'it\'s'`. Must be valid UTF-8; use `x"..."` for arbitrary bytes. A quoted value that is a valid IP address, CIDR, MAC address, or absolute URL is treated as that type (e.g. `"10.0.0.1"` is an IP). Any other quoted value is a string. |
+| **string**             | VALUE, FIELD | `"domain.com"`, `'domain.com'`                                 | A double- or single-quoted string. Both accept backslash escapes: `"a \"quoted\" word"`, `'it\'s'`. Must be valid UTF-8; use `x"..."` for arbitrary bytes. A quoted value is always a string, even if it looks like an IP address or URL. Comparing a string with an IP address, CIDR, MAC address, or URL compares against that value's text form (e.g. `"cafe::"` for the IPv6 address `CAFE::`). |
 | **IP address**         | VALUE, FIELD | `192.168.1.1`, `2001:db8:3333:4444:cccc:dddd:eeee:ffff`        | An IPv4, IPv6, or an IPv6 dual address. Maps to Go type: `net.IP`                                                                                                                       |
 | **CIDR**               | VALUE        | `192.168.1.0/24`, `2001:db8:3333:4444:cccc:dddd:eeee:ffff/64`  | An IPv4 or IPv6 CIDR block. Maps to Go type: `*net.IPNet`                                                                                                                               |
-| **MAC address**        | VALUE, FIELD | `"01:23:45:67:89:ab"`, `"01-23-45-67-89-ab"`, `"0123.4567.89ab"` | A 6- or 8-byte MAC address in quotes, written with colons, hyphens, or dot-separated groups of four. Unquoted pairs such as `01:23:45:67:89:ab` are hexadecimal bytes, which also equal a MAC address with the same value. Maps to Go type: `net.HardwareAddr` |
+| **MAC address**        | FIELD        | `01:23:45:67:89:ab`                                            | A MAC address from the input. Compares as bytes with hexadecimal values such as `01:23:45:67:89:ab`, and with strings by its lowercase colon text. Maps to Go type: `net.HardwareAddr` |
 | **Hexadecimal string** | VALUE, FIELD | `50:4f:53:54`, `x"504f5354"`, `x"0a"`                          | Bytes, written either as two or more colon-separated hex pairs or as hex digits in `x"..."` (`X` and single quotes also work). Equals a string with the same bytes (`x"504f5354" == "POST"`) or a MAC address with the same value. Eight colon-separated pairs read as an IPv6 address; use `x"..."` for 8-byte values. |
-| **URL**                | VALUE, FIELD | `"https://example.com/api"`                                    | An absolute URL in quotes. Compares against strings and other URLs by its text. Maps to Go type: `*url.URL`                                                                             |
+| **URL**                | FIELD        |                                                                | A URL from the input. Compares with strings by its text. Maps to Go type: `*url.URL`                                                                                                    |
 | **Regex**              | VALUE        | `/example\.com$/`, `/curl/i`, `\|a/b\|`                        | A regular expression in [RE2 syntax](https://github.com/google/re2/wiki/Syntax), surrounded by forward slashes or by `\|` (handy when the pattern contains `/`). May not be quoted with double quotes (otherwise it will be parsed as a string). Lowercase flags may follow the closing delimiter: `i` (ignore case), `m` (`^` and `$` match at line breaks), `s` (`.` matches newlines). `\d`, `\w`, and `\b` match ASCII only, and `\s` matches space, `\t`, `\n`, `\f`, and `\r`. Repetition counts go up to 1000. Not supported: `\Q...\E`, `\<` and `\>`, numeric escapes such as `\0` (use `\x{...}`), `{,n}` (use `{0,n}`), a `{` that does not start a repetition (use `\{`), `\p{^...}` (use `\P{...}`), nested classes, and `&&`, `--`, or `~~` inside a class. |
 
 ### Constructs
@@ -133,7 +133,7 @@ Dot syntax traverses nested maps and objects:
 destination.ip == 192.168.1.1
 ```
 
-Use bracket syntax for exact map keys that contain dots, spaces, slashes, reserved words, or other punctuation:
+Field names are ASCII: a letter or `_`, then letters, digits, `_`, `.`, or `-`. Use bracket syntax for exact map keys that contain other characters, such as spaces, slashes, non-ASCII letters, reserved words, or other punctuation:
 
 ```perl
 labels["app.kubernetes.io/name"] == "api"
@@ -171,7 +171,7 @@ device.mac.oui == 00:1a:2b
 | CIDR | `version` | `"v4"` or `"v6"` |
 | MAC address | `oui` | First three bytes, e.g. `00:1a:2b` |
 
-A field that the value doesn't have, such as `port` on `https://example.com`, is missing, so the rule result is unknown rather than false. Fields only apply to typed values: a map with a `host` key is read as a map, and a string from the input is never treated as a URL.
+A field that the value doesn't have, such as `port` on `https://example.com`, is missing, so the rule result is unknown rather than false. Fields only apply to typed values: a map with a `host` key is read as a map, and a string is never treated as a URL.
 
 ### JSON Input Helpers
 
@@ -331,7 +331,7 @@ Rulekit comes with a built-in standard library of functions:
 
 | Function                     | Description                                                                                                                 | Example                        |
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
-| `starts_with(value, prefix)` | Checks if a value starts with the given prefix. Works with strings, numbers, and other types by converting them to strings. | `starts_with(url, "https://")` |
+| `starts_with(value, prefix)` | Checks if a value starts with the given prefix. Both arguments must be strings or values with a text form (IP address, CIDR, MAC address, URL); other types are an error. | `starts_with(url, "https://")` |
 
 ### Custom Functions
 

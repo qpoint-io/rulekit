@@ -29,26 +29,26 @@
       "expect": {"value": true}
     },
     {
-      "name": "starts_with: int and int prefix",
-      "expr": "starts_with(code, 5)",
-      "input": {"code": 500},
-      "expect": {"value": true}
-    },
-    {
-      "name": "starts_with: int and string prefix",
+      "name": "starts_with: int value is an error",
       "expr": "starts_with(code, \"5\")",
       "input": {"code": 500},
-      "expect": {"value": true}
+      "expect": {"error": true}
     },
     {
-      "name": "starts_with: int no match",
+      "name": "starts_with: int prefix is an error",
       "expr": "starts_with(code, 5)",
-      "input": {"code": 404},
-      "expect": {"value": false}
+      "input": {"code": "500"},
+      "expect": {"error": true}
     },
     {
-      "name": "starts_with: bool result stringified",
+      "name": "starts_with: bool value is an error",
       "expr": "starts_with(starts_with(\"https://example.com\", \"https://\"), \"true\")",
+      "expect": {"error": true}
+    },
+    {
+      "name": "starts_with: url input uses its text",
+      "expr": "starts_with(u, \"https://x.com/\")",
+      "input": {"u.$url": "https://x.com/a"},
       "expect": {"value": true}
     },
     {

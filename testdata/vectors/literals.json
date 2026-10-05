@@ -168,67 +168,32 @@
     {"name": "twelve bare hex digits in quotes stay a string", "expr": "s == \"123456789012\"", "input": {"s": "123456789012"}, "expect": {"value": true}},
     {"name": "mixed MAC separators stay a string", "expr": "s == \"aa:bb-cc:dd:ee:ff\"", "input": {"s": "aa:bb-cc:dd:ee:ff"}, "expect": {"value": true}},
     {"name": "five MAC groups stay a string", "expr": "s == \"aa:bb:cc:dd:ee\"", "input": {"s": "aa:bb:cc:dd:ee"}, "expect": {"value": true}},
-    {"name": "quoted dotted 8-byte MAC is a MAC", "expr": "mac == \"0123.4567.89ab.cdef\"", "input": {"mac.$mac": "01:23:45:67:89:ab:cd:ef"}, "expect": {"value": true}},
-    {
-      "name": "quoted plain value is a string",
-      "expr": "s == \"just a string\"",
-      "input": {"s": "just a string", "ip.$ip": "192.168.1.1", "mac.$mac": "01:23:45:67:89:ab"},
-      "expect": {"value": true}
-    },
-    {
-      "name": "quoted ip is an ip",
-      "expr": "ip == \"192.168.1.1\"",
-      "input": {"s": "just a string", "ip.$ip": "192.168.1.1", "mac.$mac": "01:23:45:67:89:ab"},
-      "expect": {"value": true}
-    },
-    {"name": "quoted ipv6 compares as ip", "expr": "\"2001:db8::1\" == 2001:db8:0:0:0:0:0:1", "expect": {"value": true}},
-    {"name": "quoted ip in cidr", "expr": "\"10.1.2.3\" in 10.0.0.0/8", "expect": {"value": true}},
-    {
-      "name": "quoted cidr is a cidr",
-      "expr": "ip in \"192.168.1.0/24\"",
-      "input": {"s": "just a string", "ip.$ip": "192.168.1.1", "mac.$mac": "01:23:45:67:89:ab"},
-      "expect": {"value": true}
-    },
-    {
-      "name": "quoted mac: colon notation",
-      "expr": "mac == \"01:23:45:67:89:ab\"",
-      "input": {"s": "just a string", "ip.$ip": "192.168.1.1", "mac.$mac": "01:23:45:67:89:ab"},
-      "expect": {"value": true}
-    },
-    {
-      "name": "quoted mac: hyphen notation",
-      "expr": "mac == \"01-23-45-67-89-AB\"",
-      "input": {"s": "just a string", "ip.$ip": "192.168.1.1", "mac.$mac": "01:23:45:67:89:ab"},
-      "expect": {"value": true}
-    },
-    {
-      "name": "quoted mac: dot notation",
-      "expr": "mac == \"0123.4567.89ab\"",
-      "input": {"s": "just a string", "ip.$ip": "192.168.1.1", "mac.$mac": "01:23:45:67:89:ab"},
-      "expect": {"value": true}
-    },
-    {
-      "name": "quoted url: https://example.com/a?b=c",
-      "expr": "\"https://example.com/a?b=c\"",
-      "expect": {"value": {"$type": "url", "value": "https://example.com/a?b=c"}}
-    },
-    {
-      "name": "quoted url: http://[::1]:8080/",
-      "expr": "\"http://[::1]:8080/\"",
-      "expect": {"value": {"$type": "url", "value": "http://[::1]:8080/"}}
-    },
-    {
-      "name": "quoted non-url: mailto:a@example.com",
-      "expr": "\"mailto:a@example.com\"",
-      "expect": {"value": "mailto:a@example.com"}
-    },
-    {"name": "quoted non-url: https://", "expr": "\"https://\"", "expect": {"value": "https://"}},
-    {"name": "quoted non-url: example.com/a", "expr": "\"example.com/a\"", "expect": {"value": "example.com/a"}},
-    {
-      "name": "quoted non-url: https://example.com/a b",
-      "expr": "\"https://example.com/a b\"",
-      "expect": {"value": "https://example.com/a b"}
-    },
+    {"name": "string field equals quoted IPv6 text exactly", "expr": "s == \"CAFE::\"", "input": {"s": "CAFE::"}, "expect": {"value": true}},
+    {"name": "string field equals quoted CIDR text exactly", "expr": "s == \"10.0.0.1/8\"", "input": {"s": "10.0.0.1/8"}, "expect": {"value": true}},
+    {"name": "string field equals quoted hyphen MAC text", "expr": "s == \"AA-BB-CC-DD-EE-FF\"", "input": {"s": "AA-BB-CC-DD-EE-FF"}, "expect": {"value": true}},
+    {"name": "string field equals quoted URL text", "expr": "s == \"https://x.com/a\"", "input": {"s": "https://x.com/a"}, "expect": {"value": true}},
+    {"name": "quoted ip-looking value is a string", "expr": "\"10.0.0.1\"", "expect": {"value": "10.0.0.1"}},
+    {"name": "quoted url-looking value is a string", "expr": "\"https://example.com/a?b=c\"", "expect": {"value": "https://example.com/a?b=c"}},
+    {"name": "string field vs bare ip uses the ip text", "expr": "s == 10.0.0.1", "input": {"s": "10.0.0.1"}, "expect": {"value": true}},
+    {"name": "string field vs bare ipv6 uses the canonical ip text", "expr": "s == CAFE::", "input": {"s": "CAFE::"}, "expect": {"value": false}},
+    {"name": "string field is not in a cidr", "expr": "s in 10.0.0.0/8", "input": {"s": "10.0.0.1"}, "expect": {"value": false}},
+    {"name": "ip input equals its text", "expr": "ip == \"192.168.1.1\"", "input": {"ip.$ip": "192.168.1.1"}, "expect": {"value": true}},
+    {"name": "ipv6 input compares by canonical text", "expr": "ip == \"cafe::\"", "input": {"ip.$ip": "CAFE::"}, "expect": {"value": true}},
+    {"name": "ipv6 input does not equal non-canonical text", "expr": "ip == \"CAFE::\"", "input": {"ip.$ip": "CAFE::"}, "expect": {"value": false}},
+    {"name": "ipv4-mapped input prints as ipv4", "expr": "ip == \"1.2.3.4\"", "input": {"ip.$ip": "::ffff:1.2.3.4"}, "expect": {"value": true}},
+    {"name": "ipv4-mapped input does not equal mapped text", "expr": "ip == \"::ffff:1.2.3.4\"", "input": {"ip.$ip": "::ffff:1.2.3.4"}, "expect": {"value": false}},
+    {"name": "cidr input equals its text", "expr": "net == \"10.0.0.0/8\"", "input": {"net.$cidr": "10.0.0.0/8"}, "expect": {"value": true}},
+    {"name": "mac input equals its colon text", "expr": "mac == \"01:23:45:67:89:ab\"", "input": {"mac.$mac": "01:23:45:67:89:ab"}, "expect": {"value": true}},
+    {"name": "mac input does not equal hyphen text", "expr": "mac == \"01-23-45-67-89-ab\"", "input": {"mac.$mac": "01:23:45:67:89:ab"}, "expect": {"value": false}},
+    {"name": "url input equals its text", "expr": "u == \"https://x.com/a\"", "input": {"u.$url": "https://x.com/a"}, "expect": {"value": true}},
+    {"name": "ip input contains text", "expr": "ip contains \"192.168.\"", "input": {"ip.$ip": "192.168.1.1"}, "expect": {"value": true}},
+    {"name": "ip input matches regex on its text", "expr": "ip matches /^192\\./", "input": {"ip.$ip": "192.168.1.1"}, "expect": {"value": true}},
+    {"name": "mac input matches regex on its text", "expr": "mac matches /^01:23/", "input": {"mac.$mac": "01:23:45:67:89:ab"}, "expect": {"value": true}},
+    {"name": "ip input in array of strings", "expr": "ip in [\"10.0.0.1\", \"192.168.1.1\"]", "input": {"ip.$ip": "192.168.1.1"}, "expect": {"value": true}},
+    {"name": "quoted cidr is not a cidr for in", "expr": "ip in \"192.168.1.0/24\"", "expect": {"parse_error": true}},
+    {"name": "quoted ip text equals bare ip", "expr": "\"10.0.0.1\" == 10.0.0.1", "expect": {"value": true}},
+    {"name": "quoted ipv6 text equals bare ipv6 by canonical text", "expr": "\"2001:db8::1\" == 2001:db8:0:0:0:0:0:1", "expect": {"value": true}},
+    {"name": "quoted ip text is not in a cidr", "expr": "\"10.1.2.3\" in 10.0.0.0/8", "expect": {"value": false}},
     {"name": "array literal value", "expr": "[1, \"str\", 3]", "expect": {"value": [1, "str", 3]}}
   ]
 }

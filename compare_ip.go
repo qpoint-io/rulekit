@@ -1,6 +1,9 @@
 package rulekit
 
-import "net"
+import (
+	"net"
+	"regexp"
+)
 
 func compareIP(left net.IP, op int, right any) compareOutcome {
 	switch right := right.(type) {
@@ -22,6 +25,9 @@ func compareIP(left net.IP, op int, right any) compareOutcome {
 			return comparePass(!right.Contains(left))
 		}
 		return unsupportedOperator()
+	case string, *regexp.Regexp, urlQuery:
+		// ip ? string: compare the IP's text form
+		return compareString(left.String(), op, right)
 	}
 	return incomparable()
 }
@@ -37,6 +43,9 @@ func compareIPNet(left *net.IPNet, op int, right any) compareOutcome {
 			return comparePass(!left.Contains(right))
 		}
 		return unsupportedOperator()
+	case string, *regexp.Regexp, urlQuery:
+		// ipnet ? string: compare the CIDR's text form
+		return compareString(left.String(), op, right)
 	}
 	return incomparable()
 }
