@@ -2,6 +2,7 @@ package rulekit
 
 import (
 	"net"
+	"net/url"
 	"regexp"
 	"strings"
 )
@@ -19,6 +20,9 @@ func compareString(left string, op int, right any) compareOutcome {
 		return compareStringString(left, op, right.String())
 	case *net.IPNet:
 		// string ? ipnet
+		return compareStringString(left, op, right.String())
+	case *url.URL:
+		// string ? url
 		return compareStringString(left, op, right.String())
 	case HexString:
 		// string ? hex

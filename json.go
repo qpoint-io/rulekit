@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/url"
 	"strconv"
 	"strings"
 )
@@ -139,7 +140,7 @@ func normalizeJSONNumber(n json.Number) (any, error) {
 }
 
 func splitAnnotatedKey(key string) (string, string, bool) {
-	for _, suffix := range []string{".$bytes_base64", ".$bytes_hex", ".$base64", ".$hex", ".$float64", ".$uint64", ".$int64", ".$bool", ".$string", ".$cidr", ".$mac", ".$ip"} {
+	for _, suffix := range []string{".$bytes_base64", ".$bytes_hex", ".$base64", ".$hex", ".$float64", ".$uint64", ".$int64", ".$bool", ".$string", ".$cidr", ".$mac", ".$url", ".$ip"} {
 		if strings.HasSuffix(key, suffix) {
 			return strings.TrimSuffix(key, suffix), strings.TrimPrefix(suffix, "."), true
 		}
@@ -223,6 +224,12 @@ func decodeScalarValue(typ string, value any, encoding string) (any, error) {
 			return nil, err
 		}
 		return net.ParseMAC(s)
+	case "url":
+		s, err := stringScalar(value)
+		if err != nil {
+			return nil, err
+		}
+		return url.Parse(s)
 	case "bytes":
 		return decodeBytes(value, encoding)
 	case "hex":

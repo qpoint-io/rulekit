@@ -109,10 +109,11 @@ The Result also provides additional helper methods:
 | ---------------------- | ------------ | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **bool**               | VALUE, FIELD | `true`                                                         | Valid values: `true`, `false`                                                                                                                                                           |
 | **number**             | VALUE, FIELD | `8080`                                                         | Integer or float. Parsed as either int64 or uint64 if out of range for int64, or float64 if float.                                                                                      |
-| **string**             | VALUE, FIELD | `"domain.com"`                                                 | A double-quoted string. Quotes may be escaped with a backslash: `"a string \"with\" quotes"`. A quoted value that is a valid IP address, CIDR, or MAC address is treated as that type (e.g. `"10.0.0.1"` is an IP). Any other quoted value is a string. |
+| **string**             | VALUE, FIELD | `"domain.com"`                                                 | A double-quoted string. Quotes may be escaped with a backslash: `"a string \"with\" quotes"`. A quoted value that is a valid IP address, CIDR, MAC address, or absolute URL is treated as that type (e.g. `"10.0.0.1"` is an IP). Any other quoted value is a string. |
 | **IP address**         | VALUE, FIELD | `192.168.1.1`, `2001:db8:3333:4444:cccc:dddd:eeee:ffff`        | An IPv4, IPv6, or an IPv6 dual address. Maps to Go type: `net.IP`                                                                                                                       |
 | **CIDR**               | VALUE        | `192.168.1.0/24`, `2001:db8:3333:4444:cccc:dddd:eeee:ffff/64`  | An IPv4 or IPv6 CIDR block. Maps to Go type: `*net.IPNet`                                                                                                                               |
 | **Hexadecimal string** | VALUE, FIELD | `50:4f:53:54` (bytes of "POST"), `12:34:56:78:9a:bc` (MAC address) | Bytes written as colon-separated hex pairs. Equals a string with the same bytes (`50:4f:53:54 == "POST"`) or a MAC address with the same value. A single pair must start with a digit (`0a`); `ab` is a field name. Eight pairs read as an IPv6 address. |
+| **URL**                | VALUE, FIELD | `"https://example.com/api"`                                    | An absolute URL in quotes. Compares against strings and other URLs by its text. Maps to Go type: `*url.URL`                                                                             |
 | **Regex**              | VALUE        | `/example\.com$/`                                              | A Go-style regular expression. Must be surrounded by forward slashes. May not be quoted with double quotes (otherwise it will be parsed as a string). Maps to Go type: `*regexp.Regexp` |
 
 ### Constructs
@@ -142,6 +143,35 @@ items[0].name == "first"
 
 Plain dotted fields do not fall back to flat keys. If the input contains a top-level key named `destination.ip`, use `["destination.ip"]`.
 
+### Value Fields
+
+IP addresses, CIDRs, MAC addresses, and URLs expose read-only fields using the same path syntax:
+
+```perl
+request.url.scheme == "https" and request.url.host == "api.example.com"
+request.url.query["tag"] == "beta"
+source.ip.version == "v6"
+destination.net.prefix >= 24
+device.mac.oui == 00:1a:2b
+```
+
+| Type | Field | Value |
+| ---- | ----- | ----- |
+| URL | `scheme` | Lowercase scheme, e.g. `"https"` |
+| URL | `host` | Lowercase host name without the port |
+| URL | `port` | Port number, if the URL has one |
+| URL | `path` | Path, e.g. `"/api/v1"` (`""` if empty) |
+| URL | `query["name"]` | Query parameter value; a parameter given more than once is a list |
+| URL | `fragment` | Text after `#` |
+| URL | `user` | User name |
+| IP address | `version` | `"v4"` or `"v6"` |
+| CIDR | `network` | Network address, e.g. `10.0.0.0` |
+| CIDR | `prefix` | Prefix length, e.g. `16` |
+| CIDR | `version` | `"v4"` or `"v6"` |
+| MAC address | `oui` | First three bytes, e.g. `00:1a:2b` |
+
+A field that the value doesn't have, such as `port` on `https://example.com`, is missing, so the rule result is unknown rather than false. Fields only apply to typed values: a map with a `host` key is read as a map, and a string from the input is never treated as a URL.
+
 ### JSON Input Helpers
 
 `DecodeJSON` converts JSON documents into `rulekit.KV`. Plain JSON decodes dynamically by default. Annotated key suffixes are opt-in and are intended for values that JSON cannot represent natively:
@@ -150,7 +180,7 @@ Plain dotted fields do not fall back to flat keys. If the input contains a top-l
 kv, err := rulekit.DecodeJSON(data, rulekit.JSONOptions{AnnotatedKeys: true})
 ```
 
-Supported suffixes include `.$ip`, `.$cidr`, `.$mac`, `.$hex`, `.$base64`, `.$bytes_hex`, `.$bytes_base64`, `.$string`, `.$bool`, `.$int64`, `.$uint64`, and `.$float64`.
+Supported suffixes include `.$ip`, `.$cidr`, `.$mac`, `.$url`, `.$hex`, `.$base64`, `.$bytes_hex`, `.$bytes_base64`, `.$string`, `.$bool`, `.$int64`, `.$uint64`, and `.$float64`.
 
 Fully typed documents are a separate mode. In this mode, every field value must be a typed object and annotated keys are rejected:
 

@@ -3,6 +3,7 @@ package rulekit
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"regexp"
 )
 
@@ -213,6 +214,8 @@ func (n *nodeMatch) apply(lv any, rv any) bool {
 	switch val := lv.(type) {
 	case string:
 		return r.MatchString(val)
+	case *url.URL:
+		return r.MatchString(val.String())
 	case []string:
 		for _, s := range val {
 			if r.MatchString(s) {

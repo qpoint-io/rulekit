@@ -86,7 +86,12 @@ func (k *kvInput) GetPath(ctx context.Context, path []pathSegment) (any, bool, e
 
 		currentMap, ok := current.(map[string]any)
 		if !ok {
-			return nil, false, nil
+			field, ok := valueField(current, segment.key)
+			if !ok {
+				return nil, false, nil
+			}
+			current = field
+			continue
 		}
 		value, ok := currentMap[segment.key]
 		if !ok {

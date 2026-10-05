@@ -3,6 +3,7 @@ package rulekit
 import (
 	"context"
 	"net"
+	"net/url"
 	"strconv"
 	"strings"
 )
@@ -206,6 +207,8 @@ func isZero(val any) bool {
 		return len(v) == 0
 	case *net.IPNet:
 		return v == nil || v.IP == nil
+	case *url.URL:
+		return v == nil
 	case []any:
 		return len(v) == 0
 	}
@@ -242,7 +245,12 @@ func indexPath(m KV, segments []pathSegment) (any, bool) {
 
 		currentMap, ok := current.(map[string]any)
 		if !ok {
-			return nil, false
+			field, ok := valueField(current, seg.key)
+			if !ok {
+				return nil, false
+			}
+			current = field
+			continue
 		}
 		val, ok := currentMap[seg.key]
 		if !ok {

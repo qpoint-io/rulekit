@@ -3,6 +3,7 @@ package rulekit
 import (
 	"fmt"
 	"net"
+	"net/url"
 )
 
 type compareDiagnostic uint8
@@ -111,6 +112,10 @@ func compareDetailed(left any, op int, right any) compareOutcome {
 	case net.HardwareAddr:
 		// mac ? any
 		return compareMac(lv, op, right)
+
+	case *url.URL:
+		// url ? any
+		return compareURL(lv, op, right)
 
 	case []any:
 		// []any ? any

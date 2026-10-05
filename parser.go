@@ -3,6 +3,7 @@ package rulekit
 import (
 	"fmt"
 	"net"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -99,7 +100,23 @@ func parseString[T interface{ string | []byte }](data T) (any, error) {
 			return mac, nil
 		}
 	}
+	if u, ok := parseAbsoluteURL(str); ok {
+		return u, nil
+	}
 	return str, nil
+}
+
+// parseAbsoluteURL reports whether str is an absolute URL with a scheme and
+// host whose canonical form is exactly str.
+func parseAbsoluteURL(str string) (*url.URL, bool) {
+	if !strings.Contains(str, "://") {
+		return nil, false
+	}
+	u, err := url.Parse(str)
+	if err != nil || u.Scheme == "" || u.Host == "" || u.String() != str {
+		return nil, false
+	}
+	return u, true
 }
 
 func parseInt[T interface{ string | []byte }](data T) (any, error) {
