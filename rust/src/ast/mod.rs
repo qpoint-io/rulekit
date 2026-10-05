@@ -1,8 +1,27 @@
-//! Parsed expression trees (port of `ast.go` / `ast_api.go`).
+//! Parsed expression trees, for tools that inspect or edit rules.
 //!
-//! An [`Ast`] owns its source text, a node arena, and the lossless token
-//! stream. Nodes are addressed by [`NodeId`] and inspected through
-//! [`NodeRef`].
+//! An [`Ast`] owns its source text, its nodes, and the lossless token stream
+//! (with whitespace and comments as trivia). Nodes are addressed by
+//! [`NodeId`] and inspected through the read-only [`NodeRef`] view; the tree
+//! cannot be modified. To change an expression, parse replacement source and
+//! use [`rewrite`](crate::rewrite).
+//!
+//! ```rust
+//! use rulekit::Ast;
+//! use rulekit::ast::{AstKind, Operator, Segment};
+//!
+//! let ast = Ast::parse(r#"request.headers["user-agent"] matches /curl/"#)?;
+//! let root = ast.root();
+//! assert_eq!(root.kind(), AstKind::Binary);
+//! assert_eq!(root.operator(), Some(Operator::Matches));
+//! assert_eq!(root.raw_operator(), Some("matches"));
+//!
+//! let lhs = root.children()[0];
+//! let path = lhs.path().unwrap();
+//! assert_eq!(path[2], Segment::Key { key: "user-agent".into(), bracket: true });
+//! assert_eq!(ast.to_string(), r#"request.headers["user-agent"] =~ /curl/"#);
+//! # Ok::<(), rulekit::ParseError>(())
+//! ```
 
 mod json;
 
@@ -15,7 +34,9 @@ use crate::error::ParseError;
 /// A byte range in the expression source.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Span {
+    /// Offset of the first byte.
     pub start: usize,
+    /// Offset one past the last byte.
     pub end: usize,
 }
 
@@ -36,36 +57,65 @@ impl Span {
     }
 }
 
-/// Lexical token kinds. [`TokenKind::name`] is the Go token kind string.
+/// Lexical token kinds. [`TokenKind::name`] gives the kind names used in the
+/// JSON AST.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TokenKind {
+    /// End of input; always the last token.
     Eof,
+    /// A field name, such as `a` or `a.b-c` (dots included).
     Field,
+    /// A quoted string.
     String,
+    /// Hex bytes: `x"0a0b"` or colon-separated pairs such as `0a:0b`.
     HexString,
+    /// An integer literal.
     Int,
+    /// A float literal.
     Float,
+    /// `true` or `false`.
     Bool,
+    /// A CIDR literal.
     IpCidr,
+    /// An IP address literal.
     Ip,
+    /// A regex literal, `/.../` or `|...|`, with flags.
     Regex,
+    /// `(`.
     LParen,
+    /// `)`.
     RParen,
+    /// `[`.
     LBracket,
+    /// `]`.
     RBracket,
+    /// `.`.
     Dot,
+    /// `,`.
     Comma,
+    /// `not` or `!`.
     Not,
+    /// `and` or `&&`.
     And,
+    /// `or` or `||`.
     Or,
+    /// `==` or `eq`.
     Eq,
+    /// `!=` or `ne`.
     Ne,
+    /// `>` or `gt`.
     Gt,
+    /// `>=` or `ge`.
     Ge,
+    /// `<` or `lt`.
     Lt,
+    /// `<=` or `le`.
     Le,
+    /// `contains`.
     Contains,
+    /// `matches` or `=~`.
     Matches,
+    /// `in`.
     In,
 }
 
@@ -167,9 +217,11 @@ pub struct TokenRef<'a> {
 }
 
 impl<'a> TokenRef<'a> {
+    /// The token kind.
     pub fn kind(&self) -> TokenKind {
         self.token.kind
     }
+    /// The token's byte range in the source.
     pub fn span(&self) -> Span {
         self.token.span
     }
@@ -190,11 +242,17 @@ impl<'a> TokenRef<'a> {
 /// The shape of an AST node.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum AstKind {
+    /// A literal value, such as `1`, `"a"`, or `10.0.0.0/8`.
     Literal,
+    /// A field path, such as `a.b[0]`.
     Path,
+    /// An array, `[...]`.
     Array,
+    /// A function or macro call, `name(...)`.
     Call,
+    /// `not` applied to an operand.
     Unary,
+    /// A logical or comparison operator with two operands.
     Binary,
 }
 
@@ -215,17 +273,29 @@ impl AstKind {
 /// Normalized unary and binary operators.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Operator {
+    /// `not`.
     Not,
+    /// `and`.
     And,
+    /// `or`.
     Or,
+    /// `==`.
     Eq,
+    /// `!=`.
     Ne,
+    /// `>`.
     Gt,
+    /// `>=`.
     Ge,
+    /// `<`.
     Lt,
+    /// `<=`.
     Le,
+    /// `contains`.
     Contains,
+    /// `matches` (printed as `=~`).
     Matches,
+    /// `in`.
     In,
 }
 
@@ -280,13 +350,21 @@ impl Operator {
 /// Literal token kinds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum LiteralKind {
+    /// A quoted string.
     String,
+    /// Hex bytes.
     HexString,
+    /// An integer.
     Int,
+    /// A float.
     Float,
+    /// `true` or `false`.
     Bool,
+    /// An IP address.
     Ip,
+    /// A CIDR block.
     Cidr,
+    /// A regex.
     Regex,
 }
 
@@ -310,7 +388,12 @@ impl LiteralKind {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Segment {
     /// A map key. `bracket` records `a["b"]` rather than `a.b`.
-    Key { key: String, bracket: bool },
+    Key {
+        /// The key.
+        key: String,
+        /// Whether the key was written in brackets.
+        bracket: bool,
+    },
     /// An array index, always written with brackets.
     Index(usize),
 }
@@ -373,7 +456,11 @@ impl NodeData {
     }
 }
 
-/// A parsed expression: source text, node arena, and token stream.
+/// A parsed expression: source text, nodes, and token stream.
+///
+/// Its [`Display`](fmt::Display) output is the compact canonical expression
+/// without comments; use [`format`](crate::format) for other modes. With
+/// serde, an `Ast` serializes as its [`json`](Self::json) document.
 #[derive(Clone, Debug)]
 pub struct Ast {
     pub(crate) source: String,
@@ -383,7 +470,12 @@ pub struct Ast {
 }
 
 impl Ast {
-    /// Parse an expression (Go `ParseAST`).
+    /// Parse an expression without compiling it.
+    ///
+    /// # Errors
+    ///
+    /// A [`ParseError`] for invalid syntax. Literal values (such as regexes)
+    /// are only checked by [`compile`](crate::compile).
     pub fn parse(source: &str) -> Result<Ast, ParseError> {
         crate::parse::parse(source)
     }
@@ -393,6 +485,7 @@ impl Ast {
         &self.source
     }
 
+    /// The root node.
     pub fn root(&self) -> NodeRef<'_> {
         self.node(self.root)
     }
@@ -425,7 +518,9 @@ impl Ast {
         &self.source[span.start..span.end]
     }
 
-    /// The JSON document for this AST (Go `AST.JSON`).
+    /// The AST as a JSON document: source, node tree, and tokens (without
+    /// EOF). Node ids are tree positions (`root`, `root.0`, ...); spans have
+    /// byte offsets and 1-based lines and byte columns.
     pub fn json(&self) -> JsonAst {
         json::build(self)
     }
@@ -438,7 +533,8 @@ impl fmt::Display for Ast {
     }
 }
 
-/// Read-only view of one AST node.
+/// Read-only view of one AST node. Its [`Display`](fmt::Display) output is
+/// the node's compact canonical expression.
 #[derive(Clone, Copy)]
 pub struct NodeRef<'a> {
     ast: &'a Ast,
@@ -456,6 +552,7 @@ impl fmt::Debug for NodeRef<'_> {
 }
 
 impl<'a> NodeRef<'a> {
+    /// The node's id, for [`Ast::node`] and [`Edit`](crate::Edit).
     pub fn id(&self) -> NodeId {
         self.id
     }
@@ -464,6 +561,7 @@ impl<'a> NodeRef<'a> {
         self.ast.data(self.id)
     }
 
+    /// The node's shape.
     pub fn kind(&self) -> AstKind {
         match self.data() {
             NodeData::Literal { .. } => AstKind::Literal,
@@ -475,10 +573,13 @@ impl<'a> NodeRef<'a> {
         }
     }
 
+    /// The node's byte range in the source.
     pub fn span(&self) -> Span {
         self.data().span()
     }
 
+    /// The child nodes in source order: array items, call arguments, the
+    /// operand of `not`, or the two operands of a binary operator.
     pub fn children(&self) -> Vec<NodeRef<'a>> {
         let ids: &[NodeId] = match self.data() {
             NodeData::Literal { .. } | NodeData::Path { .. } => &[],

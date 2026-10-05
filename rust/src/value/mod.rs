@@ -1,4 +1,18 @@
-//! Rule values: owned [`Value`], borrowed [`ValueRef`], and [`Val`] (either).
+//! Rule values: owned [`Value`], borrowed [`ValueRef`], and [`Val`] (either),
+//! plus the typed network values [`Ip`], [`Cidr`], [`Mac`], and [`Url`].
+//!
+//! ```rust
+//! use rulekit::value::{Cidr, Ip, Map, Url, Value};
+//!
+//! let input: Map<Value> = Map::from_iter([
+//!     ("src".to_owned(), Value::Ip(Ip::parse("10.1.2.3").unwrap())),
+//!     ("net".to_owned(), Value::Cidr(Cidr::parse("10.0.0.0/8").unwrap())),
+//!     ("url".to_owned(), Value::Url(Box::new(Url::parse("https://example.com/a")?))),
+//!     ("tags".to_owned(), Value::Array(vec![Value::String("prod".into())])),
+//! ]);
+//! # let _ = input;
+//! # Ok::<(), String>(())
+//! ```
 
 mod fields;
 mod ip;
@@ -21,21 +35,34 @@ pub type Map<V> = HashMap<String, V, foldhash::fast::RandomState>;
 /// An owned value: input data, a literal, or a function result.
 #[derive(Clone, Debug, Default)]
 pub enum Value {
+    /// `null`.
     #[default]
     Null,
+    /// A boolean.
     Bool(bool),
+    /// A signed integer (`int64`).
     Int(i64),
+    /// An unsigned integer (`uint64`); compares exactly with `Int`.
     Uint(u64),
+    /// A float (`float64`).
     Float(f64),
+    /// A UTF-8 string.
     String(String),
     /// Byte strings, including hex literals.
     Bytes(Vec<u8>),
+    /// An IP address.
     Ip(Ip),
+    /// A CIDR block.
     Cidr(Cidr),
+    /// A MAC address.
     Mac(Mac),
+    /// A URL.
     Url(Box<Url>),
+    /// A compiled regex.
     Regex(Box<regex::Regex>),
+    /// A list.
     Array(Vec<Value>),
+    /// A string-keyed object.
     Object(Map<Value>),
 }
 
@@ -87,32 +114,49 @@ impl PartialEq for Value {
 /// A borrowed view of a value. Small values are held by copy.
 #[derive(Clone, Copy, Debug)]
 pub enum ValueRef<'a> {
+    /// `null`.
     Null,
+    /// A boolean.
     Bool(bool),
+    /// A signed integer.
     Int(i64),
+    /// An unsigned integer.
     Uint(u64),
+    /// A float.
     Float(f64),
+    /// A string.
     Str(&'a str),
     /// A URL's raw query string: compares as text, and has parameter fields.
     Query(&'a str),
+    /// A byte string.
     Bytes(&'a [u8]),
+    /// An IP address.
     Ip(Ip),
+    /// A CIDR block.
     Cidr(Cidr),
+    /// A MAC address.
     Mac(Mac),
+    /// A URL.
     Url(&'a Url),
+    /// A compiled regex.
     Regex(&'a regex::Regex),
+    /// A list.
     Array(ArrayRef<'a>),
+    /// An object.
     Object(ObjectRef<'a>),
 }
 
 /// A borrowed list of values.
 #[derive(Clone, Copy, Debug)]
 pub enum ArrayRef<'a> {
+    /// Items of a [`Value::Array`].
     Values(&'a [Value]),
+    /// Items computed during evaluation.
     Vals(&'a [Val<'a>]),
 }
 
 impl<'a> ArrayRef<'a> {
+    /// The number of items.
     pub fn len(&self) -> usize {
         match self {
             ArrayRef::Values(v) => v.len(),
@@ -120,10 +164,12 @@ impl<'a> ArrayRef<'a> {
         }
     }
 
+    /// Whether the list has no items.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
+    /// The item at index `i`.
     pub fn get(&self, i: usize) -> Option<ValueRef<'a>> {
         match self {
             ArrayRef::Values(v) => v.get(i).map(Value::as_ref),
@@ -131,6 +177,7 @@ impl<'a> ArrayRef<'a> {
         }
     }
 
+    /// The items in order.
     pub fn iter(&self) -> impl Iterator<Item = ValueRef<'a>> + 'a {
         let this = *self;
         (0..this.len()).map(move |i| this.get(i).expect("index in range"))
@@ -140,6 +187,7 @@ impl<'a> ArrayRef<'a> {
 /// A borrowed object.
 #[derive(Clone, Copy, Debug)]
 pub enum ObjectRef<'a> {
+    /// A plain object.
     Map(&'a Map<Value>),
     /// A map holding inputs or lazy values, or a nested input, reached as a
     /// value. It is truthy and compares with nothing.
@@ -147,13 +195,19 @@ pub enum ObjectRef<'a> {
 }
 
 /// A borrowed or owned value: what inputs, functions, and evaluation return.
+///
+/// Borrow when the data outlives the evaluation (input data, the context);
+/// own computed values. `From` converts a [`Value`] or [`ValueRef`].
 #[derive(Clone, Debug)]
 pub enum Val<'a> {
+    /// A borrowed value.
     Ref(ValueRef<'a>),
+    /// An owned value.
     Owned(Value),
 }
 
 impl<'a> Val<'a> {
+    /// Borrow the value.
     pub fn as_ref(&self) -> ValueRef<'_> {
         match self {
             Val::Ref(v) => *v,
@@ -204,9 +258,9 @@ impl<'a> ValueRef<'a> {
         }
     }
 
-    /// Whether the value is zero (Go `isZero`): null, false, 0, empty
+    /// Whether the value is zero: null, false, 0, or an empty
     /// string/bytes/array. Typed network values, regexes, and objects are
-    /// non-zero.
+    /// non-zero. A rule passes when its value is non-zero.
     pub fn is_zero(self) -> bool {
         match self {
             ValueRef::Null => true,
@@ -227,7 +281,7 @@ impl<'a> ValueRef<'a> {
     }
 
     /// The value's type name, using the typed-JSON vocabulary (`int64`,
-    /// `string`, `ip`, ...). Go `diagnosticType`.
+    /// `string`, `ip`, ...).
     pub fn type_name(self) -> &'static str {
         match self {
             ValueRef::Null => "null",
@@ -248,7 +302,7 @@ impl<'a> ValueRef<'a> {
     }
 
     /// The text a value compares with strings by: strings themselves and the
-    /// text forms of IPs, CIDRs, MACs, URLs, and URL queries. Go `stringable`.
+    /// text forms of IPs, CIDRs, MACs, URLs, and URL queries.
     pub fn text(self) -> Option<TextForm<'a>> {
         match self {
             ValueRef::Str(s) | ValueRef::Query(s) => Some(TextForm::Borrowed(s)),

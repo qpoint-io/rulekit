@@ -1,4 +1,4 @@
-//! Output modes (port of `format.go`).
+//! Output modes.
 
 use super::{canonical, canonical_in, precedence};
 use crate::ast::{Ast, NodeData, NodeId, Operator, TokenKind, TokenRef};
@@ -15,7 +15,24 @@ pub enum PrintMode {
     Multiline(String),
 }
 
-/// Print an AST in the given mode (Go `Format`).
+/// Print an AST in the given mode.
+///
+/// [`PrintMode::Compact`] and [`PrintMode::Multiline`] normalize spacing,
+/// operator spelling (`&&` becomes `and`, `matches` becomes `=~`), and
+/// parentheses; comments are kept.
+///
+/// ```rust
+/// use rulekit::{Ast, PrintMode, format};
+///
+/// let ast = Ast::parse("a==1&&(b||c)")?;
+/// assert_eq!(format(&ast, &PrintMode::Source), "a==1&&(b||c)");
+/// assert_eq!(format(&ast, &PrintMode::Compact), "a == 1 and (b or c)");
+/// assert_eq!(
+///     format(&ast, &PrintMode::Multiline("  ".into())),
+///     "a == 1 and (\n  b\n  or c\n)"
+/// );
+/// # Ok::<(), rulekit::ParseError>(())
+/// ```
 pub fn format(ast: &Ast, mode: &PrintMode) -> String {
     let has_comments = ast.tokens().any(|tok| {
         let trivia = tok.leading_trivia();

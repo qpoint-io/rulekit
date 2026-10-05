@@ -3,8 +3,8 @@
 
 use std::fmt;
 
-/// A 6- or 8-byte MAC address, stored inline. Bytes past `len` are always
-/// zero, so the derived equality and hash only see the address.
+/// A MAC address of 6 or 8 bytes (3 for an [`oui`](Mac::oui)). Its
+/// [`Display`](fmt::Display) text form is lowercase hex pairs joined by `:`.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Mac {
     len: u8,
@@ -15,7 +15,7 @@ impl Mac {
     /// Parses hex pairs separated by `:` or `-` (`01:23:45:67:89:ab`) or
     /// groups of four hex digits separated by `.` (`0123.4567.89ab`), 6 or 8
     /// bytes. The separator is the first of `:`, `-`, `.` present anywhere in
-    /// `s` (in that priority), as `mac.go`.
+    /// `s` (in that priority).
     pub fn parse(s: &str) -> Option<Mac> {
         let s = s.as_bytes();
         let (sep, width) = if s.contains(&b':') {
@@ -49,6 +49,7 @@ impl Mac {
         Some(mac)
     }
 
+    /// The address bytes.
     pub fn as_bytes(&self) -> &[u8] {
         &self.bytes[..usize::from(self.len)]
     }
@@ -66,9 +67,8 @@ impl Mac {
         })
     }
 
-    /// The first three bytes (the `oui` field). Like Go's `mac[:3]`, the
-    /// result is still a MAC value: it compares as bytes and prints as
-    /// `00:1a:2b`.
+    /// The first three bytes (the `oui` field). The result is still a MAC
+    /// value: it compares as bytes and prints as `00:1a:2b`.
     pub fn oui(&self) -> Mac {
         let mut bytes = [0; 8];
         bytes[..3].copy_from_slice(&self.bytes[..3]);

@@ -269,7 +269,7 @@ fn compare_number(left: ValueRef<'_>, op: CmpOp, right: ValueRef<'_>) -> Outcome
 
 /// Go `cmpNumber`: exact across int64/uint64, float comparisons convert the
 /// integer to float64.
-pub(crate) fn cmp_number(left: ValueRef<'_>, right: ValueRef<'_>) -> Option<Ordering> {
+pub fn cmp_number(left: ValueRef<'_>, right: ValueRef<'_>) -> Option<Ordering> {
     Some(match (left, right) {
         (ValueRef::Int(l), ValueRef::Int(r)) => l.cmp(&r),
         (ValueRef::Int(l), ValueRef::Uint(r)) => {

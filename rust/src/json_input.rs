@@ -24,17 +24,49 @@ use crate::input::{Kv, KvEntry};
 use crate::literal::is_float;
 use crate::value::{Cidr, Ip, Mac, Map, Url, Value};
 
-/// How [`decode_json`] reads values.
+/// How [`decode_json`] reads values. The default decodes plain JSON.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct JsonOptions {
-    /// Enable suffix type hints such as `"src.$ip": "1.2.3.4"`.
+    /// Enable key suffix type hints such as `"src.$ip": "1.2.3.4"`, for
+    /// values JSON cannot represent natively. Supported suffixes: `.$ip`,
+    /// `.$cidr`, `.$mac`, `.$url`, `.$hex`, `.$base64`, `.$bytes_hex`,
+    /// `.$bytes_base64`, `.$string`, `.$bool`, `.$int64`, `.$uint64`, and
+    /// `.$float64`.
     pub annotated_keys: bool,
     /// Require every field to be a typed object such as
-    /// `{"$type": "ip", "value": "1.2.3.4"}`. Exclusive with `annotated_keys`.
+    /// `{"$type": "ip", "value": "1.2.3.4"}` or
+    /// `{"$type": "bytes", "encoding": "hex", "value": "474554"}`. Cannot be
+    /// combined with `annotated_keys`.
     pub typed_document: bool,
 }
 
-/// Decode a JSON object into a [`Kv`] (Go `DecodeJSON`).
+/// Decode a JSON object into a [`Kv`] for [`KvInput`](crate::KvInput).
+///
+/// In plain JSON, numbers with a fraction or exponent are `float64`; other
+/// numbers are `int64`, or `uint64` if too large for `int64`. Strings stay
+/// strings even if they look like IP addresses or URLs; use
+/// [`JsonOptions`] to decode typed values.
+///
+/// # Errors
+///
+/// [`Error::Json`] if `data` is not a single valid JSON object (nested at
+/// most 100 levels deep), an integer is out of range, a type hint or typed
+/// value is invalid, or both options are set.
+///
+/// ```rust
+/// use rulekit::{JsonOptions, KvInput, Opts, decode_json};
+///
+/// let data = br#"{"src.$ip": "10.1.2.3", "port": 443, "tags": ["prod"]}"#;
+/// let opts = JsonOptions {
+///     annotated_keys: true,
+///     ..JsonOptions::default()
+/// };
+/// let input = KvInput::new(decode_json::<()>(data, opts)?);
+///
+/// let rule = rulekit::parse(r#"src in 10.0.0.0/8 and port == 443 and tags contains "prod""#)?;
+/// assert!(rule.eval(&input, &(), Opts::default()).pass());
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 pub fn decode_json<C: ?Sized>(data: &[u8], opts: JsonOptions) -> Result<Kv<C>, Error> {
     if opts.annotated_keys && opts.typed_document {
         return Err(err(

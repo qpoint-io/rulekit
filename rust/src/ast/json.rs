@@ -1,59 +1,82 @@
-//! JSON form of an AST (port of `ast_json.go`).
+//! JSON form of an AST.
 
 use serde::Serialize;
 
 use super::{Ast, NodeData, NodeId, Span, TokenKind};
 use crate::print::{canonical, path_string};
 
-/// The JSON document for a parsed AST: source, node tree, tokens (no EOF).
+/// The JSON document for a parsed AST, from [`Ast::json`]. Serialize it
+/// (or the [`Ast`] itself) with serde.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct JsonAst {
+    /// The expression source.
     pub source: String,
+    /// The root node.
     pub root: JsonNode,
+    /// The tokens, without the final EOF token.
     pub tokens: Vec<JsonToken>,
 }
 
-/// One AST node. `id` is the tree position (`root`, `root.0`, ...); `text` is
-/// the node's compact canonical expression. `operator`/`raw` are set for unary
-/// and binary nodes (`negated` for `not contains`/`not matches`/`not in`),
-/// `raw` is the token for literals and the name for calls, `path` is set for
-/// paths.
+/// One AST node of a [`JsonAst`]. Empty `operator`, `raw`, `path`, and
+/// `children`, and a false `negated`, are omitted when serialized.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct JsonNode {
+    /// The tree position: `root`, then `<parent id>.<child index>`.
     pub id: String,
+    /// The [`AstKind`](super::AstKind) name, such as `binary`.
     pub kind: &'static str,
+    /// The node's compact canonical expression.
     pub text: String,
+    /// The [`Operator`](super::Operator) name for unary and binary nodes
+    /// (the negated operator for `not contains`/`not matches`/`not in`).
     #[serde(skip_serializing_if = "str::is_empty")]
     pub operator: &'static str,
+    /// Whether a binary node is `not contains`, `not matches`, or `not in`.
     #[serde(skip_serializing_if = "is_false")]
     pub negated: bool,
+    /// The operator as written for unary and binary nodes, the token for
+    /// literals, and the name for calls.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub raw: String,
+    /// The rendered path, for path nodes.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub path: String,
+    /// The node's position in the source.
     pub span: JsonSpan,
+    /// The child nodes.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub children: Vec<JsonNode>,
 }
 
-/// One source token; `role` is `id`, `str`, `num`, `kw`, or `pun`.
+/// One source token of a [`JsonAst`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct JsonToken {
+    /// The [`TokenKind`] name, such as `FIELD` or `GE`.
     pub kind: &'static str,
+    /// The highlighting role: `id`, `str`, `num`, `kw`, or `pun`.
     pub role: &'static str,
+    /// The token text as written.
     pub raw: String,
+    /// The token's position in the source.
     pub span: JsonSpan,
 }
 
-/// A byte span with 1-based lines and 1-based byte columns.
+/// A source position: byte offsets plus 1-based lines and 1-based byte
+/// columns. Field names serialize in camelCase (`startLine`, ...).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JsonSpan {
+    /// Byte offset of the start.
     pub start: usize,
+    /// Byte offset one past the end.
     pub end: usize,
+    /// Line of the start.
     pub start_line: usize,
+    /// Byte column of the start.
     pub start_column: usize,
+    /// Line of the end.
     pub end_line: usize,
+    /// Byte column of the end.
     pub end_column: usize,
 }
 

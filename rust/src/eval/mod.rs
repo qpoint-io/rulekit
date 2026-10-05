@@ -5,6 +5,8 @@
 //! the trace flag once; the untraced instantiation contains no trace code.
 
 mod compare;
+#[doc(hidden)]
+pub use compare::cmp_number;
 pub(crate) mod trace;
 
 use smallvec::SmallVec;
@@ -183,7 +185,26 @@ pub(crate) fn lower(ast: &Ast, id: NodeId) -> Result<Node, ParseError> {
 /// Missing field names, borrowed from compiled rules.
 pub(crate) type Missing<'a> = SmallVec<[&'a str; 2]>;
 
-/// The outcome of evaluating a rule.
+/// The outcome of [`Rule::eval`](crate::Rule::eval).
+///
+/// Exactly one of these holds:
+/// - [`error`](Self::error) is set: evaluation failed (an input or function
+///   error, an unknown function, a bad argument);
+/// - [`unknown`](Self::unknown): no error, but the input lacked
+///   [`missing_fields`](Self::missing_fields) needed to decide;
+/// - [`complete`](Self::complete): the rule produced [`value`](Self::value),
+///   which [`pass`](Self::pass)es if non-zero and [`fail`](Self::fail)s
+///   otherwise.
+///
+/// ```rust
+/// use rulekit::{NoInput, Opts};
+///
+/// let rule = rulekit::parse("port == 443 and tls")?;
+/// let result = rule.eval(&NoInput, &(), Opts::default());
+/// assert!(result.unknown());
+/// assert_eq!(result.missing_fields(), ["port", "tls"]);
+/// # Ok::<(), rulekit::ParseError>(())
+/// ```
 #[derive(Debug)]
 pub struct EvalResult<'a> {
     value: Val<'a>,
@@ -234,10 +255,13 @@ impl<'a> EvalResult<'a> {
         self.value.as_ref()
     }
 
+    /// The result value, owned or borrowed from the rule, input, or context.
     pub fn into_value(self) -> Val<'a> {
         self.value
     }
 
+    /// The evaluation error, if any. When both sides of `and`/`or` fail,
+    /// this is an [`Error::Multiple`].
     pub fn error(&self) -> Option<&Error> {
         self.error.as_deref()
     }

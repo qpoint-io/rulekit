@@ -1,4 +1,4 @@
-//! Evaluation inputs (port of `input.go` and the path walk in `values.go`).
+//! Evaluation inputs.
 
 use std::fmt;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -7,12 +7,19 @@ use crate::ast::Segment;
 use crate::error::BoxError;
 use crate::value::{Map, ObjectRef, Val, Value, ValueRef, value_field};
 
-/// Resolves rule paths against an evaluation input. `ctx` is the caller's
-/// evaluation context.
+/// Resolves rule paths (such as `request.headers["host"]` or `tags[0]`)
+/// against evaluation data.
 ///
-/// Return `Ok(None)` when the path is absent: the rule result is then
-/// unknown with that field missing.
+/// Implemented by [`KvInput`], [`FnInput`], and [`NoInput`], and by
+/// references, `Box`es, and `Arc`s of inputs. `C` is the caller's
+/// evaluation context type.
 pub trait Input<C: ?Sized = ()> {
+    /// The value at `path`, which may borrow from the input or `ctx`.
+    ///
+    /// Return `Ok(None)` when the path is absent: the rule result is then
+    /// unknown, with the field listed in
+    /// [`EvalResult::missing_fields`](crate::EvalResult::missing_fields).
+    /// An `Err` is reported as [`Error::Input`](crate::Error::Input).
     fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError>;
 }
 
@@ -34,7 +41,7 @@ impl<C: ?Sized, T: Input<C> + ?Sized> Input<C> for Arc<T> {
     }
 }
 
-/// An input with no fields: every path is missing (Go's nil input).
+/// An input with no fields: every path is missing.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct NoInput;
 
@@ -44,8 +51,31 @@ impl<C: ?Sized> Input<C> for NoInput {
     }
 }
 
-/// An input backed by a function returning owned values (Go `FromFunc` /
-/// `FromContextFunc`).
+/// An input backed by a closure that resolves a path to an owned value.
+///
+/// The closure receives the evaluation context and the path; return
+/// `Ok(None)` for an absent field. Nested in a [`KvInput`] as a
+/// [`KvEntry::Input`], it receives the rest of the path below its key.
+///
+/// ```rust
+/// use rulekit::ast::Segment;
+/// use rulekit::value::Value;
+/// use rulekit::{BoxError, FnInput, Opts};
+///
+/// let input = FnInput(|_: &(), path: &[Segment]| {
+///     Ok::<_, BoxError>(match path {
+///         [Segment::Key { key, .. }] if key == "port" => Some(Value::Int(443)),
+///         _ => None,
+///     })
+/// });
+///
+/// let rule = rulekit::parse("port == 443")?;
+/// assert!(rule.eval(&input, &(), Opts::default()).pass());
+///
+/// let rule = rulekit::parse("host == \"example.com\"")?;
+/// assert_eq!(rule.eval(&input, &(), Opts::default()).missing_fields(), ["host"]);
+/// # Ok::<(), rulekit::ParseError>(())
+/// ```
 pub struct FnInput<F>(pub F);
 
 impl<C: ?Sized, F> Input<C> for FnInput<F>
@@ -57,10 +87,15 @@ where
     }
 }
 
-/// A key-value tree for [`KvInput`].
+/// A key-value tree for [`KvInput`]: field names to [`KvEntry`]s.
+///
+/// Build one by hand (it is a `HashMap`, so `Kv::from_iter` and `insert`
+/// work) or decode it from JSON with [`decode_json`](crate::decode_json).
 pub type Kv<C = ()> = Map<KvEntry<C>>;
 
 /// One entry of a [`Kv`] map.
+///
+/// `Value` converts into `KvEntry::Value` with `into()`.
 pub enum KvEntry<C: ?Sized = ()> {
     /// Plain data, including nested plain objects (`Value::Object`).
     Value(Value),
@@ -68,7 +103,7 @@ pub enum KvEntry<C: ?Sized = ()> {
     Object(Kv<C>),
     /// A nested input that resolves the rest of any path through it.
     Input(Arc<dyn Input<C> + Send + Sync>),
-    /// A value computed on first use (Go `LazyValue`/`LazyContextValue`).
+    /// A value computed from the context on first use.
     Lazy(Lazy<C>),
 }
 
@@ -88,6 +123,9 @@ pub struct Lazy<C: ?Sized = ()> {
 }
 
 impl<C: ?Sized> Lazy<C> {
+    /// A lazy entry computed by `f`, which returns a [`Value`] or a
+    /// [`KvEntry`] (for example a [`KvEntry::Object`] or [`KvEntry::Input`]
+    /// to resolve the rest of the path).
     pub fn new<T, F>(f: F) -> Self
     where
         T: Into<KvEntry<C>>,
@@ -153,13 +191,61 @@ impl<C: ?Sized> From<Value> for KvEntry<C> {
     }
 }
 
-/// An input over a [`Kv`] tree (Go `FromKV`). Dotted paths traverse nested
-/// maps; they never fall back to flat keys.
+/// An input over a [`Kv`] tree.
+///
+/// Each path segment selects a map entry, an array element, or a built-in
+/// field of a typed value (such as `url.host`). Dotted paths traverse nested
+/// maps; they never fall back to flat keys, so `a.b` does not read a key
+/// named `"a.b"` (write `["a.b"]` for that). A [`KvEntry::Input`] resolves
+/// the rest of any path through it, and a [`KvEntry::Lazy`] is computed when
+/// first read.
+///
+/// ```rust
+/// use std::sync::Arc;
+/// use rulekit::ast::Segment;
+/// use rulekit::value::Value;
+/// use rulekit::{BoxError, Env, FnInput, Kv, KvEntry, KvInput, Lazy, Opts};
+///
+/// struct Ctx {
+///     user: String,
+/// }
+///
+/// // Resolves `request.headers.<name>`.
+/// let headers = FnInput(|_: &Ctx, path: &[Segment]| {
+///     Ok::<_, BoxError>(match path {
+///         [Segment::Key { key, .. }] if key == "host" => {
+///             Some(Value::String("example.com".into()))
+///         }
+///         _ => None,
+///     })
+/// });
+///
+/// let request: Kv<Ctx> = Kv::from_iter([
+///     ("method".to_owned(), Value::String("GET".into()).into()),
+///     ("headers".to_owned(), KvEntry::Input(Arc::new(headers))),
+/// ]);
+/// let input = KvInput::new(Kv::from_iter([
+///     ("request".to_owned(), KvEntry::Object(request)),
+///     (
+///         "user".to_owned(),
+///         KvEntry::Lazy(Lazy::new(|ctx: &Ctx| Ok(Value::String(ctx.user.clone())))),
+///     ),
+/// ]));
+///
+/// let rule = rulekit::parse(
+///     r#"request.method == "GET" and request.headers.host == "example.com" and user == "alice""#,
+/// )?;
+/// let env = Env::new();
+/// let ctx = Ctx { user: "alice".into() };
+/// assert!(rule.eval(&input, &ctx, Opts::new(&env)).pass());
+/// # Ok::<(), rulekit::ParseError>(())
+/// ```
 pub struct KvInput<C: ?Sized = ()> {
     kv: Kv<C>,
 }
 
 impl<C: ?Sized> KvInput<C> {
+    /// An input over `kv`.
     pub fn new(kv: Kv<C>) -> Self {
         KvInput { kv }
     }

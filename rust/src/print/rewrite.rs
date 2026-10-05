@@ -1,4 +1,4 @@
-//! Source-preserving rewrites (port of `rewrite.go`).
+//! Source-preserving rewrites.
 
 use super::{PrintMode, format};
 use crate::ast::{Ast, NodeId};
@@ -14,9 +14,30 @@ pub struct Edit<'a> {
     pub replacement: &'a Ast,
 }
 
-/// Replace AST nodes while keeping the rest of the source text as written
-/// (Go `Rewrite`). With no edits, the result is the original source. Edits
-/// must not overlap.
+/// Replace AST nodes while keeping the rest of the source text, including
+/// comments and spacing, as written.
+///
+/// Each replacement is printed in `mode` and inserted as is: it is not
+/// parenthesized, so write the parentheses in the replacement's source when
+/// its position needs them. With no edits, the result is the original
+/// source.
+///
+/// # Errors
+///
+/// [`Error::Rewrite`] if edits overlap or a target is not a node of `ast`.
+///
+/// ```rust
+/// use rulekit::{Ast, Edit, PrintMode, rewrite};
+///
+/// let ast = Ast::parse("a == 1   -- first check\nand b")?;
+/// let target = ast.root().children()[0].id(); // `a == 1`
+/// let replacement = Ast::parse("c   ==  2")?;
+///
+/// let edits = [Edit { target, replacement: &replacement }];
+/// let out = rewrite(&ast, &edits, &PrintMode::Compact)?;
+/// assert_eq!(out, "c == 2   -- first check\nand b");
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 pub fn rewrite(ast: &Ast, edits: &[Edit<'_>], mode: &PrintMode) -> Result<String, Error> {
     if edits.is_empty() {
         return Ok(ast.source().to_owned());

@@ -3,6 +3,10 @@
 use std::fmt;
 
 /// A syntax or literal error in an expression, with a 1-based position.
+///
+/// The [`Display`](fmt::Display) form names the position, shows the
+/// offending source line with a caret under the column, then the message and
+/// any [`suggestion`](Self::suggestion).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ParseError {
     line: usize,
@@ -37,10 +41,12 @@ impl ParseError {
         self.column
     }
 
+    /// The error message, without position or suggestion.
     pub fn message(&self) -> &str {
         &self.message
     }
 
+    /// A hint on the expected syntax, for some kinds of error.
     pub fn suggestion(&self) -> Option<&str> {
         self.suggestion
     }
@@ -144,24 +150,46 @@ pub enum Error {
     UnknownFunction(String),
     /// A function called with the wrong number of arguments.
     ArgCount {
+        /// The function name.
         function: String,
+        /// The number of declared parameters.
         expected: usize,
+        /// The number of arguments passed.
         got: usize,
     },
     /// A macro called with arguments.
-    MacroArgs { name: String, got: usize },
+    MacroArgs {
+        /// The macro name.
+        name: String,
+        /// The number of arguments passed.
+        got: usize,
+    },
     /// A function asked for an argument name it does not declare.
     UnknownArg(String),
     /// A function argument of the wrong type.
     InvalidArg {
+        /// The parameter name (or its index, if the function declares no
+        /// name for it).
         name: String,
+        /// The expected type name.
         expected: String,
+        /// The type name of the value passed (`nothing` if absent).
         got: String,
     },
     /// An input failed to resolve a field.
-    Input { field: String, source: BoxError },
+    Input {
+        /// The field path in canonical form, as in missing fields.
+        field: String,
+        /// The input's error.
+        source: BoxError,
+    },
     /// A function returned an error.
-    Function { name: String, source: BoxError },
+    Function {
+        /// The function name.
+        name: String,
+        /// The function's error.
+        source: BoxError,
+    },
     /// Several errors (both sides of `and`/`or` failed).
     Multiple(Vec<Error>),
     /// Invalid functions or macros when building an `Env`.

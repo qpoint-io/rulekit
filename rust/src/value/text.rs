@@ -6,11 +6,19 @@ use std::ops::Deref;
 /// Longest inline text form: an IPv6 CIDR (`ffff:...:ffff/128`) is 43 bytes.
 const INLINE: usize = 48;
 
-/// A value's text form: borrowed, or formatted into an inline buffer.
+/// A value's text form, from [`ValueRef::text`](super::ValueRef::text):
+/// borrowed, or formatted into an inline buffer. Dereferences to `str`.
 #[derive(Clone, Copy)]
 pub enum TextForm<'a> {
+    /// Text borrowed from the value.
     Borrowed(&'a str),
-    Inline { buf: [u8; INLINE], len: u8 },
+    /// Text formatted inline (IPs, CIDRs, MACs).
+    Inline {
+        /// UTF-8 text in the first `len` bytes.
+        buf: [u8; INLINE],
+        /// The text length.
+        len: u8,
+    },
 }
 
 impl TextForm<'_> {
@@ -27,6 +35,7 @@ impl TextForm<'_> {
         }
     }
 
+    /// The text.
     pub fn as_str(&self) -> &str {
         match self {
             TextForm::Borrowed(s) => s,

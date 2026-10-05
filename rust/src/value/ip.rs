@@ -25,6 +25,7 @@ impl Ip {
         Ip(a.to_canonical())
     }
 
+    /// The address (never IPv4-mapped IPv6).
     pub fn addr(self) -> IpAddr {
         self.0
     }
@@ -74,6 +75,7 @@ impl Cidr {
         }))
     }
 
+    /// The network address.
     pub fn network(self) -> Ip {
         // Normalized at construction: an IPv6 network is never mapped.
         Ip(self.0.network())
@@ -85,6 +87,7 @@ impl Cidr {
         self.0.prefix_len()
     }
 
+    /// Whether this is an IPv4 network.
     pub fn is_v4(self) -> bool {
         matches!(self.0, IpNet::V4(_))
     }
