@@ -7,6 +7,8 @@
       "input": {"data": {"field.name": true}},
       "expect": {"value": true}
     },
+    {"name": "single-quoted bracket key with escaped double quote", "expr": "x['it\\\"s'] == 1", "input": {"x": {"it\"s": 1}}, "expect": {"value": true}},
+    {"name": "double-quoted bracket key with escaped single quote", "expr": "x[\"it\\'s\"] == 1", "input": {"x": {"it's": 1}}, "expect": {"value": true}},
     {
       "name": "dotted path does not match dotted key",
       "expr": "data.field.name == true",

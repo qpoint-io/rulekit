@@ -106,14 +106,7 @@ func fieldPathSegments(path string) []pathSegment {
 }
 
 func parsePathKey(raw string) (string, error) {
-	str := raw
-	if str[0] == '\'' {
-		str = str[1 : len(str)-1]
-		str = strings.ReplaceAll(str, `"`, `\"`)
-		str = strings.ReplaceAll(str, `\'`, `'`)
-		str = `"` + str + `"`
-	}
-	return strconv.Unquote(str)
+	return unquote(raw)
 }
 
 type LiteralValue[T any] struct {

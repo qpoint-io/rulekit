@@ -114,6 +114,7 @@
       "expect": {"value": true}
     },
     {"name": "negative less than uint64 max", "expr": "-1 < 18446744073709551615", "expect": {"value": true}},
+    {"name": "double-quoted string accepts escaped single quote", "expr": "s == \"it\\'s\"", "input": {"s": "it's"}, "expect": {"value": true}},
     {
       "name": "single hex pair is a field name: number",
       "expr": "ab == 1",
