@@ -9,6 +9,9 @@
     },
     {"name": "single-quoted bracket key with escaped double quote", "expr": "x['it\\\"s'] == 1", "input": {"x": {"it\"s": 1}}, "expect": {"value": true}},
     {"name": "double-quoted bracket key with escaped single quote", "expr": "x[\"it\\'s\"] == 1", "input": {"x": {"it's": 1}}, "expect": {"value": true}},
+    {"name": "hebrew field name", "expr": "שלום == 1", "input": {"שלום": 1}, "expect": {"value": true}},
+    {"name": "accented field name ending in a", "expr": "voilà == 1", "input": {"voilà": 1}, "expect": {"value": true}},
+    {"name": "cyrillic field name", "expr": "имя == 1", "input": {"имя": 1}, "expect": {"value": true}},
     {
       "name": "dotted path does not match dotted key",
       "expr": "data.field.name == true",
