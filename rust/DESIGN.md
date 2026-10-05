@@ -8,8 +8,8 @@ unless a QUESTION in the report says otherwise.
 
 ## 1. Crate layout
 
-One library crate, `rulekit`, in `rust/`. Edition 2024, `rust-version = "1.85"` (the
-first edition-2024 release; the local toolchain is 1.97). No workspace, no cargo features
+One library crate, `rulekit`, in `rust/`. Edition 2024, `rust-version = "1.88"` (let
+chains; the local toolchain is 1.97). No workspace, no cargo features
 in v1.
 
 ```
@@ -69,7 +69,7 @@ live outside `rust/` anyway) never enter the published package.
 | crate | why |
 |---|---|
 | `regex` | matching engine (brief) |
-| `regex-syntax` | parse the pattern to an AST for the dialect checks and rewrites (§5) |
+| (none) | `regex-syntax` is not used: regex parsing is a port of Go's parser (§5) |
 | `serde`, `serde_json` | AST JSON, `decode_json`, vectors (D13: always on) |
 | `smallvec` | inline missing-field lists and call-argument buffers (alloc-free hot path) |
 | `foldhash` | fast hasher for `Map` (Go's map hashing is far faster than SipHash) |
@@ -103,9 +103,10 @@ pub enum Value {
 }
 ```
 
-`Ip` wraps `std::net::IpAddr` (storage only; text is ours). `Cidr { addr: Ip, prefix: u8,
-written_prefix: u8 }` stores the host-bits-cleared network; `written_prefix` keeps Go's
-`Mask.Size()` for mapped networks (see QUESTIONS). `Url` stores the original text, the
+`Ip` wraps `std::net::IpAddr` (storage only; text is ours). `Cidr { network: Ip, prefix: u8 }`
+stores the host-bits-cleared network. An IPv4-mapped network is stored as the IPv4 network
+it stands for (`::ffff:10.0.0.0/104` = `10.0.0.0/8`, prefix 8), which matches every Go
+observable (text, version, `prefix` field, `Contains`). `Url` stores the original text, the
 text form (computed once at parse), and byte ranges for scheme/user/host/port/path/query/
 fragment, plus the lowercase host, so every URL field read is a borrow.
 
@@ -220,7 +221,7 @@ enum NodeKind {
     Array(Box<[Node]>),
     ConstArray(Box<[Value]>),                                 // all items literal: built once
     Call(Call),                                               // Stdlib(StartsWith) | Named(Box<str>)
-    Custom(Box<dyn CustomRule>),
+    // No Custom variant for now (coordinator decision); user-defined rules may return later.
 }
 ```
 
@@ -235,46 +236,52 @@ enum NodeKind {
   stack `SmallVec<[Val; 8]>` and compare in place, preserving Go's "evaluate every item
   first, first non-ok item wins" semantics. Only an array that is itself a rule's (or a
   function argument's) *value* materializes an owned `Value::Array`, as Go does.
-- `Custom(Box<dyn CustomRule>)` keeps user-defined rules possible (D3). `CustomRule` is
-  object safe and receives `&dyn Input<C>`-style erased arguments; since `Rule` is not
-  generic over `C`, the custom trait takes `&dyn Any` for the context (see QUESTIONS).
+- No user-defined rule variant in v1.
 - `Rule::print(mode)`, `Display for Rule` (canonical), `Rule::ast()`.
 
-## 5. Regex dialect (`regex.rs`)
+## 5. Regex dialect (`src/regex/`)
 
-Pipeline for a regex literal `/pat/flags` (port of `parseRegex` + brief):
+Decision (coordinator, Phase 1): full Go parity, not a regex-syntax walk. regex-syntax
+cannot parse several patterns Go accepts (`(?)`, `(?i-i)`, `a{01}` as literal text, ...)
+and uses Unicode 16 where Go 1.27.1 uses Unicode 17.
 
-1. Duplicate-flag check; prefix `(?flags)`; flags limited to `i`, `m`, `s` by the lexer.
-2. `check_regex_dialect`: byte-for-byte port of Go `checkRegexDialect` (same scan, same
-   error cases).
-3. Parse with `regex_syntax::ast::parse::Parser` (nest limit tuned to Go's). Walk the AST
-   and reject what Go's RE2 parser rejects but `regex-syntax` accepts:
-   - flags other than `i m s U` and `-` in groups, i.e. `(?x)`, `(?R)`, `(?u)`;
-   - nested repetition (`a**`, `a+*`, `a{2}{3}`; laziness `?` is not a repetition);
-   - counted repetition with min or max > 1000 (Go `errInvalidRepeatSize`), and Go's
-     total-size check for nested counted repetitions;
-   - escapes Go lacks: `\u`, `\U`, `\e`(none in Go), `\b{…}` (already caught by step 2),
-     `\z`-family differences, special word boundaries `\<`/`\>` (step 2);
-   - Unicode class names not in Go's `unicode.Categories`/`unicode.Scripts` + `Any`,
-     including `name=value` / `sc=` forms and loose matching (Go is exact-case, no
-     spaces/underscores folding);
-   - unknown POSIX classes `[[:foo:]]`.
-4. Rewrite (span splicing on the original pattern, from the AST positions):
-   - `\d` → `[0-9]`, `\D` → `[^0-9]`;
-   - `\w` → `[0-9A-Za-z_]`, `\W` → `[^0-9A-Za-z_]`;
-   - `\s` → `[\t\n\f\r ]`, `\S` → `[^\t\n\f\r ]`;
-   - inside a class the positive forms splice ranges in place; negated forms become a
-     nested negated class (legal in Rust, never visible to users);
-   - `\b` → `(?-u:\b)`, `\B` → `(?-u:\B)`.
-   Using explicit ASCII classes rather than `(?-u:\w)` keeps Go's `(?i)` behaviour: Go case
-   folds Perl classes under `(?i)` (so `(?i)\w` matches U+212A KELVIN SIGN), and so does
-   `regex` for an explicit class, but not for `(?-u:\w)`. Phase 1 verifies this with tests.
-5. `regex::RegexBuilder` compile with Unicode on, default size limits. Errors at any step
-   are literal parse errors.
+1. `literal_pattern`: port of `parseRegex` (pattern ends at the last delimiter, duplicate
+   flags rejected, `(?flags)` prefix).
+2. `check_regex_dialect`: byte-for-byte port of Go `checkRegexDialect`.
+3. `parse`: port of Go `regexp/syntax.Parse(s, Perl)`: same accept/reject decisions and
+   error messages, including nested-repetition, repeat-count (1000), `repeatIsValid`,
+   max-height/size/runes checks, flags (`i m s U` inline; `x u R` rejected), escapes, named
+   groups, Unicode names (Go's `canonicalName` loose matching), POSIX classes.
+4. `emit`: prints Go's parse tree as a `regex`-crate pattern in which every class (`\pX`,
+   POSIX, `\d\w\s`, `.`, case-folded literals) is written as explicit code point ranges from
+   Go's tables and Go's `SimpleFold`. `(?i)` is never emitted; laziness is explicit; `\b` →
+   `(?-u:\b)`, `\B` → `(?-u:\B)(?:\b|\B)` (works around a `regex` bug where `(?-u:\B)` holds
+   inside a UTF-8 sequence).
+5. `regex::RegexBuilder` with size limit 128 MiB (Go's own budget; `\pL{1000}` needs ~64 MB)
+   and nest limit 8000. Patterns compile once, at compile time of the rule.
 
-The Unicode property table is a static sorted `&[&str]` in `regex.rs`, listing exactly
-the names Go's `unicode` package exposes for the Go version the vectors are run with (see
-QUESTIONS on how to generate it).
+Unicode data: `src/regex/unicode_names.rs` is generated by `rust/tools/unicode_names`
+(a standalone Go module, not part of the rulekit Go package):
+`cd rust/tools/unicode_names && go run . > ../../src/regex/unicode_names.rs`. It is pinned
+to the Go version in the repository's `go.mod` (go1.27.1, Unicode 17.0.0).
+`rust/tools/check_unicode_names.sh` regenerates it and fails if the output differs (or if
+the installed Go is not the pinned version). The same tables back `strconv.IsPrint` for
+quoting path keys (`print/quote.rs`).
+
+Verification (Phase 1): 0 accept/reject, message, or match differences against Go on all
+vector regexes, 447 hand-written patterns × 138 haystacks (Kelvin sign, Unicode 17 code
+points included), 26 limit cases, and 260k fuzzed patterns.
+
+Known differences:
+- Compile-size limit: some Unicode-heavy patterns Go accepts exceed the `regex` crate's
+  128 MiB compiled-size limit (e.g. five copies of `(?:\pL{1000}){1}`, or
+  `(?:(?:\pL\pN\p{Greek}\pM){250}){4}`); they are rejected with Go's text
+  `expression too large`. `\pL{1000}\pL{1000}\pL{1000}` still compiles (~0.3 s).
+- Near-limit cases: Go checks height/size after alternation factoring (not ported) and has
+  size-cache quirks; accept/reject can differ only for alternations with shared prefixes
+  very close to the 1000-depth or ~3.36M-instruction limits. All tested limit cases agree.
+- Debug builds: the `regex` crate's recursive compiler overflows a 2 MiB thread stack at
+  ~800 nested captures (Go accepts 999); release builds handle every Go-legal depth tried.
 
 ## 6. Input, lazy values, Ctx
 
@@ -318,14 +325,14 @@ impl<C> Input<C> for KvInput<C> { … }
   single-flight per path, errors not memoized, and lazies on other paths never block each
   other. Plain values never touch a lock.
 - Per-input-instance memo: Go keys the memo by path string inside each `kvInput`. Here the
-  memo cell sits on the lazy entry itself and `KvInput` owns its tree; `Clone` for `Lazy`
-  produces a fresh, unresolved cell. A path string identifies exactly one map location,
-  so this is the same memo, with no path-string hashing and no input-wide lock. Resolved
-  values are borrowed from the cell for the input's lifetime.
+  memo cell sits on the lazy entry itself and `KvInput` owns its tree (never a shared
+  `Arc<Kv>`); cloning a `Lazy` produces a fresh, unresolved cell. A path string identifies
+  exactly one map location, so this is the same memo, with no path-string hashing and no
+  input-wide lock. Resolved values are borrowed from the cell for the input's lifetime.
 - Go has two lazy types (`LazyValue`, `LazyContextValue`); Rust has one that receives
   `&C` (ignore it if unused).
-- Arrays inside a `Kv` hold plain `Value`s only (see QUESTIONS: Go allows an `Input` as a
-  `[]any` element).
+- API difference from Go: lazies and nested inputs may only be map entries. Arrays inside a
+  `Kv` hold plain `Value`s (Go also allows an `Input` as a `[]any` element).
 
 ## 7. Eval, results, options
 
