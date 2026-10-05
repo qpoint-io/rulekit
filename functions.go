@@ -422,7 +422,11 @@ func snakeCase(name string) string {
 }
 
 func (f *argField) invalid(value any) error {
-	return &ErrInvalidFunctionArg{Name: f.name, Expected: kindNames[f.kind], Got: diagnosticType(value)}
+	got := diagnosticType(value)
+	if _, ok := value.(*url.URL); ok && f.kind == kindURL {
+		got = "*url.URL that is not a valid rulekit URL"
+	}
+	return &ErrInvalidFunctionArg{Name: f.name, Expected: kindNames[f.kind], Got: got}
 }
 
 // Argument conversions. Each accepts exactly the Go types rulekit uses for
