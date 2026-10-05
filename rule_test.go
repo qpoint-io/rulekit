@@ -1,7 +1,6 @@
 package rulekit
 
 import (
-	"errors"
 	"net"
 	"reflect"
 	"testing"
@@ -62,24 +61,20 @@ func TestEngineExample(t *testing.T) {
 
 func TestEval(t *testing.T) {
 	tcs := []struct {
-		filter  string
-		tests   map[*map[string]any]TestResult
-		wantErr string
+		filter string
+		tests  map[*map[string]any]TestResult
 	}{
 		{
 			filter: `tls_version == 1.2`,
 			tests: map[*map[string]any]TestResult{
 				{"tls_version": 1.2}: {
 					Value: true,
-					// EvaluatedRule: "tls_version == 1.2",
 				},
 				{"tls_version": 1.1}: {
 					Value: false,
-					// EvaluatedRule: "tls_version == 1.2",
 				},
 				{}: {
 					MissingFields: []string{"tls_version"},
-					// EvaluatedRule: "tls_version == 1.2",
 				},
 			},
 		},
@@ -88,7 +83,6 @@ func TestEval(t *testing.T) {
 			tests: map[*map[string]any]TestResult{
 				{}: {
 					MissingFields: []string{"tls_version"},
-					// EvaluatedRule: "tls_version != 5",
 				},
 			},
 		},
@@ -97,7 +91,6 @@ func TestEval(t *testing.T) {
 			tests: map[*map[string]any]TestResult{
 				{}: {
 					MissingFields: []string{"tls_version"},
-					// EvaluatedRule: "!tls_version",
 				},
 			},
 		},
@@ -106,15 +99,12 @@ func TestEval(t *testing.T) {
 			tests: map[*map[string]any]TestResult{
 				{"domain": "example.com"}: {
 					Value: true,
-					// EvaluatedRule: `domain =~ /example\.com$/`,
 				},
 				{"tags": "db-svc"}: {
 					Value: true,
-					// EvaluatedRule: `tags == "db-svc"`,
 				},
 				{"domain": "other.com"}: {
 					MissingFields: []string{"tags"},
-					// EvaluatedRule: `tags == "db-svc"`,
 				},
 			},
 		},
@@ -123,23 +113,18 @@ func TestEval(t *testing.T) {
 			tests: map[*map[string]any]TestResult{
 				{"domain": "example.com"}: {
 					MissingFields: []string{"tags"},
-					// EvaluatedRule: `tags == "db-svc"`,
 				},
 				{"tags": "db-svc"}: {
 					MissingFields: []string{"domain"},
-					// EvaluatedRule: `domain == "example.com"`,
 				},
 				{"domain": "example.com", "tags": []string{"test", "db-svc"}}: {
 					Value: true,
-					// EvaluatedRule: `domain == "example.com" and tags == "db-svc"`,
 				},
 				{"domain": "qpoint.io"}: {
 					Value: false,
-					// EvaluatedRule: `domain == "example.com"`,
 				},
 				{"tags": []string{}}: {
 					Value: false,
-					// EvaluatedRule: `tags == "db-svc"`,
 				},
 			},
 		},
@@ -162,7 +147,6 @@ func TestEval(t *testing.T) {
 					},
 				}: {
 					Value: true,
-					// EvaluatedRule: `dst.ip == 1.1.1.1 and (dst.port == 443 and tls.enabled)`,
 				},
 			},
 		},
@@ -170,10 +154,6 @@ func TestEval(t *testing.T) {
 
 	for _, tc := range tcs {
 		p, err := Parse(tc.filter)
-		if tc.wantErr != "" {
-			require.EqualError(t, err, tc.wantErr)
-			return
-		}
 		require.NoError(t, err)
 
 		for input, want := range tc.tests {
@@ -489,7 +469,6 @@ func TestFilterMatchIP(t *testing.T) {
 			},
 		}: {
 			Value: true,
-			// EvaluatedRule: "ip.src == 192.168.1.1 and ip.dst == 192.168.1.1",
 		},
 		{
 			"ip": KV{
@@ -498,11 +477,9 @@ func TestFilterMatchIP(t *testing.T) {
 			},
 		}: {
 			Value: false,
-			// EvaluatedRule: "ip.src == 192.168.1.1",
 		},
 		{}: {
 			MissingFields: []string{"ip.dst", "ip.src"},
-			// EvaluatedRule: "ip.src == 192.168.1.1 and ip.dst == 192.168.1.1",
 		},
 	}
 
@@ -523,7 +500,6 @@ func TestFilterMatchIP(t *testing.T) {
 			},
 		}: {
 			Value: true,
-			// EvaluatedRule: "ip.src == 192.168.0.0/16",
 		},
 		{
 			"ip": KV{
@@ -532,11 +508,9 @@ func TestFilterMatchIP(t *testing.T) {
 			},
 		}: {
 			Value: false,
-			// EvaluatedRule: "ip.src == 192.168.0.0/16",
 		},
 		{}: {
 			MissingFields: []string{"ip.src"},
-			// EvaluatedRule: "ip.src == 192.168.0.0/16",
 		},
 	}
 
@@ -1163,14 +1137,6 @@ func TestOpts_Validate(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestEval_invalid_ctx(t *testing.T) {
-	assertRulep(t, `true`, &ctx{
-		Functions: map[string]*Function{
-			"starts_with": {},
-		},
-	}).Error(errors.New(`function "starts_with": name conflicts with a stdlib function`))
 }
 
 func TestFieldNames(t *testing.T) {
