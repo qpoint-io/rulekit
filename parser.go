@@ -504,7 +504,9 @@ func (l *lexer) scanAtom(leading string) token {
 	start := l.pos
 	for l.pos < len(l.input) {
 		ch := l.input[l.pos]
-		if unicode.IsSpace(rune(ch)) || strings.ContainsRune("()[],<>=!&|\"'", rune(ch)) {
+		// Atoms are ASCII; a non-ASCII byte ends the atom so the next token can
+		// treat it as whitespace (e.g. a no-break space) or report it.
+		if ch >= utf8.RuneSelf || unicode.IsSpace(rune(ch)) || strings.ContainsRune("()[],<>=!&|\"'", rune(ch)) {
 			break
 		}
 		l.pos++

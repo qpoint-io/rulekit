@@ -97,6 +97,15 @@
           ]
         }
       }
+    },
+    {
+      "name": "negated operator traces its operands directly",
+      "expr": "x not in [1, 2]",
+      "input": {"x": 3},
+      "expect": {
+        "value": true,
+        "trace": {"kind": "binary", "status": "passed", "children": [{"expr": "x"}, {"expr": "[1, 2]"}]}
+      }
     }
   ]
 }

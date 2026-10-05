@@ -127,17 +127,25 @@ func (n *nodeNot) Eval(ctx context.Context, input Input, opts Opts) Result {
 	}
 
 	r := n.right.Eval(ctx, input, opts)
+	var trace *Trace
+	if traceEnabled(opts) {
+		// A negated operator (`a not in b`) has no traced node between it and
+		// its operands, so its operand traces become its children directly.
+		if trace = r.Trace; trace == nil || trace.Node != nil {
+			trace = combineTrace(r.Trace)
+		}
+	}
 	if !r.Ok() {
 		return Result{
 			Error:         r.Error,
 			MissingFields: r.MissingFields,
-			Trace:         traceIfEnabled(traceEnabled(opts), r.Trace),
+			Trace:         trace,
 		}
 	}
 
 	return Result{
 		Value: isZero(r.Value),
-		Trace: traceIfEnabled(traceEnabled(opts), r.Trace),
+		Trace: trace,
 	}
 }
 
@@ -214,6 +222,12 @@ func (n *nodeMatch) apply(lv any, rv any) bool {
 	case []string:
 		for _, s := range val {
 			if r.MatchString(s) {
+				return true
+			}
+		}
+	case []any:
+		for _, el := range val {
+			if s, ok := stringable(el); ok && r.MatchString(s) {
 				return true
 			}
 		}

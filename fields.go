@@ -153,6 +153,10 @@ func cidrField(n *net.IPNet, key string) (any, bool) {
 		if bits == 0 {
 			return nil, false
 		}
+		// An IPv4-mapped network is an IPv4 network: ::ffff:10.0.0.0/104 is /8.
+		if bits == 8*net.IPv6len && n.IP.To4() != nil {
+			ones -= 96
+		}
 		return ones, true
 	case "version":
 		return ipVersion(n.IP)

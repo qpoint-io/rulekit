@@ -13,6 +13,7 @@
     {"name": "non-ascii field name is a parse error", "expr": "ñame == 1", "expect": {"parse_error": true}},
     {"name": "non-ascii field segment is a parse error", "expr": "a.ñ == 1", "expect": {"parse_error": true}},
     {"name": "non-ascii key works in brackets", "expr": "x[\"ñame\"] == 1", "input": {"x": {"ñame": 1}}, "expect": {"value": true}},
+    {"name": "non-breaking space between tokens is whitespace", "expr": "a\u00a0== 1", "input": {"a": 1}, "expect": {"value": true}},
     {
       "name": "dotted path does not match dotted key",
       "expr": "data.field.name == true",

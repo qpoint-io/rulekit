@@ -72,17 +72,8 @@ func compareStringSlice(left []string, op int, right any) compareOutcome {
 		op = op_EQ
 	}
 
-	switch right := right.(type) {
-	case string:
-		// []string{...} ? string
-		return compareSliceDetailed(left, op, func(fv string, op int) compareOutcome {
-			return compareString(fv, op, right)
-		})
-	case *regexp.Regexp:
-		// []string{...} ? regexp
-		return compareSliceDetailed(left, op, func(fv string, op int) compareOutcome {
-			return compareStringRegex(fv, op, right)
-		})
-	}
-	return incomparable()
+	// []string{...} ? any: compare each element as a string
+	return compareSliceDetailed(left, op, func(fv string, op int) compareOutcome {
+		return compareString(fv, op, right)
+	})
 }

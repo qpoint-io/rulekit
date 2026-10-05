@@ -525,6 +525,8 @@
     {"name": "not =~: match", "expr": "s not =~ /^a/", "input": {"s": "abc"}, "expect": {"value": false}},
     {"name": "not contains: case-insensitive keyword", "expr": "s NOT CONTAINS \"x\"", "input": {"s": "abc"}, "expect": {"value": true}},
     {"name": "not in: missing field stays missing", "expr": "x not in [1, 2]", "input": {}, "expect": {"missing_fields": ["x"]}},
-    {"name": "not in: binds like a comparison under and", "expr": "x not in [1] and y", "input": {"x": 2, "y": true}, "expect": {"value": true}}
+    {"name": "not in: binds like a comparison under and", "expr": "x not in [1] and y", "input": {"x": 2, "y": true}, "expect": {"value": true}},
+    {"name": "matches on an array: any element matches", "expr": "tags matches /^d/", "input": {"tags": ["web", "db"]}, "expect": {"value": true}},
+    {"name": "matches on an array: no element matches", "expr": "tags matches /^z/", "input": {"tags": ["web", "db"]}, "expect": {"value": false}}
   ]
 }
