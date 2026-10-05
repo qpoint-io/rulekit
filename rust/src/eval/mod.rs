@@ -311,7 +311,7 @@ fn union<'a>(left: Missing<'a>, right: Missing<'a>) -> Missing<'a> {
     }
     let mut out = left;
     for name in right {
-        if !out.iter().any(|existing| *existing == name) {
+        if !out.contains(&name) {
             out.push(name);
         }
     }
