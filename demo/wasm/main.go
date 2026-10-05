@@ -355,7 +355,16 @@ func rewriteOperator(source string, node rulekit.ASTNode, next string) (string, 
 	}
 	start := betweenStart + rel
 	end := start + len(raw)
+	if spelling, ok := operatorSpelling[next]; ok {
+		next = spelling
+	}
 	return source[:start] + next + source[end:], nil
+}
+
+// operatorSpelling maps machine operator names from the AST JSON to the
+// spelling written into rule text.
+var operatorSpelling = map[string]string{
+	"eq": "==", "ne": "!=", "gt": ">", "ge": ">=", "lt": "<", "le": "<=", "matches": "=~",
 }
 
 func sourceForNode(source string, node rulekit.ASTNode) string {

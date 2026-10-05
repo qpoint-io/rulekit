@@ -98,7 +98,8 @@ func (k ASTKind) String() string {
 	}
 }
 
-// String returns the normalized spelling of an operator.
+// String returns the operator's machine name, as used in JSON and
+// diagnostics. Printed rules use the human spelling (==, =~, ...) instead.
 func (o Operator) String() string {
 	switch o {
 	case OperatorNot:
@@ -108,17 +109,17 @@ func (o Operator) String() string {
 	case OperatorOr:
 		return "or"
 	case OperatorEQ:
-		return "=="
+		return "eq"
 	case OperatorNE:
-		return "!="
+		return "ne"
 	case OperatorGT:
-		return ">"
+		return "gt"
 	case OperatorGE:
-		return ">="
+		return "ge"
 	case OperatorLT:
-		return "<"
+		return "lt"
 	case OperatorLE:
-		return "<="
+		return "le"
 	case OperatorContains:
 		return "contains"
 	case OperatorMatches:

@@ -179,6 +179,7 @@ func newComparisonDiagnostic(code compareDiagnostic, left any, op int, right any
 	leftType := diagnosticType(left)
 	rightType := diagnosticType(right)
 	operator := operatorToString(op)
+	name := publicOperator(astOperatorFromToken(op)).String()
 
 	switch code {
 	case compareDiagnosticIncomparable:
@@ -186,7 +187,7 @@ func newComparisonDiagnostic(code compareDiagnostic, left any, op int, right any
 			Code:      DiagnosticComparisonIncomparable,
 			Message:   fmt.Sprintf("cannot compare %s %s %s", leftType, operator, rightType),
 			LeftType:  leftType,
-			Operator:  operator,
+			Operator:  name,
 			RightType: rightType,
 		}
 	case compareDiagnosticInvalidShape:
@@ -194,7 +195,7 @@ func newComparisonDiagnostic(code compareDiagnostic, left any, op int, right any
 			Code:      DiagnosticComparisonInvalidShape,
 			Message:   fmt.Sprintf("invalid comparison shape for %s %s %s", leftType, operator, rightType),
 			LeftType:  leftType,
-			Operator:  operator,
+			Operator:  name,
 			RightType: rightType,
 		}
 	case compareDiagnosticUnsupportedOperator:
@@ -202,7 +203,7 @@ func newComparisonDiagnostic(code compareDiagnostic, left any, op int, right any
 			Code:      DiagnosticComparisonUnsupportedOperator,
 			Message:   fmt.Sprintf("operator %s is not supported for %s and %s", operator, leftType, rightType),
 			LeftType:  leftType,
-			Operator:  operator,
+			Operator:  name,
 			RightType: rightType,
 		}
 	default:

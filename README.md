@@ -228,7 +228,7 @@ data, err := json.Marshal(ast)
     "id": "root",
     "kind": "binary",
     "text": "age >= 18",
-    "operator": ">=",
+    "operator": "ge",
     "raw": ">=",
     "span": {"start": 0, "end": 9, "startLine": 1, "startColumn": 1, "endLine": 1, "endColumn": 10},
     "children": [

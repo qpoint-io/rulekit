@@ -338,7 +338,7 @@
                     "id": "root.0.1",
                     "kind": "binary",
                     "text": "body == x\"0a0b\"",
-                    "operator": "==",
+                    "operator": "eq",
                     "raw": "==",
                     "span": {"start": 136, "end": 151, "startLine": 2, "startColumn": 58, "endLine": 2, "endColumn": 73},
                     "children": [
@@ -378,7 +378,7 @@
                 "id": "root.1",
                 "kind": "binary",
                 "text": "mac == 00:11:22:33:44:55",
-                "operator": "==",
+                "operator": "eq",
                 "raw": "==",
                 "span": {"start": 155, "end": 179, "startLine": 2, "startColumn": 77, "endLine": 2, "endColumn": 101},
                 "children": [

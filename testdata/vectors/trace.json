@@ -40,7 +40,7 @@
         "trace": {
           "status": "failed",
           "diagnostics": [
-            {"code": "comparison_incomparable", "left_type": "int64", "operator": "==", "right_type": "string"}
+            {"code": "comparison_incomparable", "left_type": "int64", "operator": "eq", "right_type": "string"}
           ]
         }
       }
