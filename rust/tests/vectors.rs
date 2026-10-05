@@ -490,6 +490,7 @@ fn canonical(value: ValueRef<'_>) -> Result<Json, String> {
         }
         ValueRef::Query(_)
         | ValueRef::Regex(_)
+        | ValueRef::UrlText(_)
         | ValueRef::Object(ObjectRef::Opaque | ObjectRef::Source(_)) => {
             return Err(format!("value has no vector representation: {value:?}"));
         }

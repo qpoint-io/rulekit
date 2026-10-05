@@ -122,8 +122,7 @@ List membership is `tags contains "db"` (`in` takes an array or CIDR literal,
 as in Go). `Vec<u8>` and `&[u8]` are lists of numbers, not byte strings; use
 `Value::Bytes` for bytes. `url::Url` and `http::Uri` fields (`host`, `path`,
 `query.env`, ...) work with the default `url` and `http` features.
-`http::Uri` compared as a whole URL allocates its text form; field access does
-not.
+Those crates normalize before rulekit sees the text, so a value behaves as rulekit's own URL parsed from `url.as_str()` or `uri`'s display form (scheme and host lowercased); the original spelling is not recoverable.
 
 `FnInput` wraps a closure that resolves a path. `NoInput` has no fields.
 `Kv` / `KvInput` / `Value` remain for annotated JSON and other owned trees.

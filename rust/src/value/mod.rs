@@ -20,6 +20,7 @@ mod mac;
 mod query;
 mod text;
 mod url;
+mod url_text;
 
 use std::collections::HashMap;
 use std::fmt;
@@ -29,6 +30,7 @@ pub use ip::{Cidr, Ip};
 pub use mac::Mac;
 pub use text::TextForm;
 pub use url::Url;
+pub(crate) use url_text::UrlText;
 
 /// A value that could not be parsed as an IP address, CIDR, MAC address, or
 /// URL.
@@ -175,6 +177,8 @@ pub enum ValueRef<'a> {
     Mac(Mac),
     /// A URL.
     Url(&'a Url),
+    /// URL text built from borrowed parts (scheme and host lowercased on compare).
+    UrlText(UrlText<'a>),
     /// A compiled regex.
     Regex(&'a regex::Regex),
     /// A list.
@@ -353,6 +357,7 @@ impl<'a> ValueRef<'a> {
             ValueRef::Cidr(c) => Value::Cidr(c),
             ValueRef::Mac(m) => Value::Mac(m),
             ValueRef::Url(u) => Value::Url(Box::new(u.clone())),
+            ValueRef::UrlText(t) => Value::String(t.render()),
             ValueRef::Regex(r) => Value::Regex(Box::new(r.clone())),
             ValueRef::Array(a) => Value::Array(a.iter().map(ValueRef::to_owned).collect()),
             ValueRef::Object(ObjectRef::Map(m)) => Value::Object(m.clone()),
@@ -376,6 +381,7 @@ impl<'a> ValueRef<'a> {
             | ValueRef::Cidr(_)
             | ValueRef::Mac(_)
             | ValueRef::Url(_)
+            | ValueRef::UrlText(_)
             | ValueRef::Regex(_)
             | ValueRef::Object(_) => false,
         }
@@ -395,7 +401,7 @@ impl<'a> ValueRef<'a> {
             ValueRef::Ip(_) => "ip",
             ValueRef::Cidr(_) => "cidr",
             ValueRef::Mac(_) => "mac",
-            ValueRef::Url(_) => "url",
+            ValueRef::Url(_) | ValueRef::UrlText(_) => "url",
             ValueRef::Regex(_) => "regex",
             ValueRef::Array(_) => "array",
             ValueRef::Object(_) => "object",

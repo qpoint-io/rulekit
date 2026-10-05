@@ -308,8 +308,8 @@ fn http_uri_field_access_does_not_allocate() {
     let before = allocations();
     assert!(whole.eval(&(), &row, Opts::default()).pass());
     let used = allocations() - before;
-    // Measured: 3 allocations (Display into a String). Field access above is 0.
-    assert_eq!(used, 3, "http::Uri text form allocation count changed");
+    // Text form is borrowed parts; comparison must not allocate.
+    assert_eq!(used, 0, "http::Uri comparison allocated");
 }
 
 #[test]

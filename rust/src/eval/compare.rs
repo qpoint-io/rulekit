@@ -2,7 +2,7 @@
 
 use std::cmp::Ordering;
 
-use crate::value::{ArrayRef, Cidr, Ip, Mac, ValueRef};
+use crate::value::{ArrayRef, Cidr, Ip, Mac, UrlText, ValueRef};
 
 /// Comparison operators (`in` is handled by the `In` node).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -110,11 +110,13 @@ pub(crate) fn compare(left: ValueRef<'_>, op: CmpOp, right: ValueRef<'_>) -> Out
         ValueRef::Mac(mac) => compare_mac(mac, op, right),
         ValueRef::Url(url) => match right {
             ValueRef::Url(r) => compare_strings(url.as_str(), op, r.as_str()),
+            ValueRef::UrlText(t) => compare_url_text(t, op, url.as_str()),
             ValueRef::Str(_) | ValueRef::Regex(_) | ValueRef::Query(_) => {
                 compare_string(url.as_str(), op, right)
             }
             _ => incomparable(),
         },
+        ValueRef::UrlText(text) => compare_url_text_value(text, op, right),
         ValueRef::Bytes(b) => compare_bytes(b, op, right),
         ValueRef::Array(items) => compare_slice(items, op, |lv, op| compare(lv, op, right)),
         ValueRef::Null | ValueRef::Regex(_) | ValueRef::Object(_) => incomparable(),
@@ -157,6 +159,7 @@ pub(crate) fn compare_slice(
 fn compare_string(left: &str, op: CmpOp, right: ValueRef<'_>) -> Outcome {
     match right {
         ValueRef::Str(r) | ValueRef::Query(r) => compare_strings(left, op, r),
+        ValueRef::UrlText(t) => compare_url_text(t, op, left),
         ValueRef::Regex(re) => match op {
             CmpOp::Eq | CmpOp::Contains => pass(re.is_match(left)),
             CmpOp::Ne => pass(!re.is_match(left)),
@@ -168,6 +171,39 @@ fn compare_string(left: &str, op: CmpOp, right: ValueRef<'_>) -> Outcome {
         }
         ValueRef::Bytes(b) => compare_byte_slices(left.as_bytes(), op, b),
         _ => incomparable(),
+    }
+}
+
+fn compare_url_text_value(text: UrlText<'_>, op: CmpOp, right: ValueRef<'_>) -> Outcome {
+    match right {
+        ValueRef::Str(s) | ValueRef::Query(s) => compare_url_text(text, op, s),
+        ValueRef::Url(u) => compare_url_text(text, op, u.as_str()),
+        ValueRef::UrlText(r) => {
+            // Both sides are parts. Compare via the right-hand text only when
+            // it is short enough to borrow... fall back to owned text forms.
+            // Equality of two http URIs is rare; build both texts.
+            let left = text.render();
+            let right = r.render();
+            compare_strings(&left, op, &right)
+        }
+        ValueRef::Regex(re) => {
+            let owned = text.render();
+            match op {
+                CmpOp::Eq | CmpOp::Contains => pass(re.is_match(&owned)),
+                CmpOp::Ne => pass(!re.is_match(&owned)),
+                _ => unsupported(),
+            }
+        }
+        _ => incomparable(),
+    }
+}
+
+fn compare_url_text(text: UrlText<'_>, op: CmpOp, right: &str) -> Outcome {
+    match op {
+        CmpOp::Eq => pass(text.eq_text(right)),
+        CmpOp::Ne => pass(!text.eq_text(right)),
+        CmpOp::Contains => pass(text.contains_text(right)),
+        _ => unsupported(),
     }
 }
 

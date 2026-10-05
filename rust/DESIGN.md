@@ -24,10 +24,10 @@ visited.
 `Vec<u8>` and `&[u8]` are lists of numbers. A blanket list impl cannot also
 treat them as byte strings. Bytes stay `Value::Bytes`.
 
-The `url` and `http` features are on by default. `url::Url` field access and
-comparison borrow `as_str()` (the crate's serialization, not the original
-spelling). `http::Uri` field access borrows; reading the URI as a value
-allocates its `Display` form (3 allocations on a short URI).
+The `url` and `http` features are on by default. `url::Url` and `http::Uri`
+behave as rulekit's URL parsed from `as_str()` / the display form after those
+crates normalize; the original spelling is not recoverable. Field access and
+URI comparison borrow.
 
 
 ## 1. Crate layout
