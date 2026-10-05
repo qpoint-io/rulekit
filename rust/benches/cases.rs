@@ -280,10 +280,7 @@ impl DerivedBench {
                 ("host", s("api.acme.com")),
                 ("port", Value::Int(8443)),
                 ("tags", Value::Array(vec![s("db"), s("api")])),
-                (
-                    "headers",
-                    object(vec![("x-env", s("prod"))]),
-                ),
+                ("headers", object(vec![("x-env", s("prod"))])),
             ]),
         );
         Self {
