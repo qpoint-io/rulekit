@@ -148,21 +148,82 @@ func parseInt[T interface{ string | []byte }](data T) (any, error) {
 	return nil, fmt.Errorf("parsing integer: invalid value %q", raw)
 }
 
-// parseIntLiteral parses decimal integers and 0x, 0o, and 0b prefixed
-// integers, with optional _ separators. Leading zeros are decimal, so 010 is
-// ten. Values above the int64 range are returned as uint64.
+// parseIntLiteral parses an integer literal: an optional sign, then either
+// decimal digits (leading zeros are decimal, so 010 is ten) or a 0x, 0o, or 0b
+// prefix followed by digits in that base. Digits may be separated by single
+// underscores, and one may follow a base prefix. Values above the int64 range
+// are returned as uint64.
 func parseIntLiteral(s string) (any, bool) {
-	base := 0
-	if digits := strings.TrimPrefix(s, "-"); len(digits) > 1 && digits[0] == '0' && digits[1] >= '0' && digits[1] <= '9' {
-		base = 10
+	sign, digits := splitSign(s)
+	base := 10
+	if len(digits) > 2 && digits[0] == '0' {
+		switch digits[1] {
+		case 'x', 'X':
+			base = 16
+		case 'o', 'O':
+			base = 8
+		case 'b', 'B':
+			base = 2
+		}
+		if base != 10 {
+			digits = strings.TrimPrefix(digits[2:], "_")
+		}
 	}
-	if n, err := strconv.ParseInt(s, base, 64); err == nil {
+	if digits == "" || digits[0] == '_' || digits[len(digits)-1] == '_' || strings.Contains(digits, "__") {
+		return nil, false
+	}
+	digits = strings.ReplaceAll(digits, "_", "")
+	if n, err := strconv.ParseInt(sign+digits, base, 64); err == nil {
 		return n, true
 	}
-	if n, err := strconv.ParseUint(s, base, 64); err == nil {
-		return n, true
+	if sign != "-" {
+		if n, err := strconv.ParseUint(digits, base, 64); err == nil {
+			return n, true
+		}
 	}
 	return nil, false
+}
+
+// isFloatLiteral reports whether s is a decimal float: an optional sign,
+// digits, then a fraction (5., 1.5), an exponent (1e3), or both (1.5e-3).
+func isFloatLiteral(s string) bool {
+	_, s = splitSign(s)
+	i := skipDigits(s, 0)
+	if i == 0 {
+		return false
+	}
+	fraction, exponent := false, false
+	if i < len(s) && s[i] == '.' {
+		fraction = true
+		i = skipDigits(s, i+1)
+	}
+	if i < len(s) && (s[i] == 'e' || s[i] == 'E') {
+		i++
+		if i < len(s) && (s[i] == '+' || s[i] == '-') {
+			i++
+		}
+		start := i
+		i = skipDigits(s, i)
+		if i == start {
+			return false
+		}
+		exponent = true
+	}
+	return i == len(s) && (fraction || exponent)
+}
+
+func splitSign(s string) (sign, rest string) {
+	if s != "" && (s[0] == '+' || s[0] == '-') {
+		return s[:1], s[1:]
+	}
+	return "", s
+}
+
+func skipDigits(s string, i int) int {
+	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+		i++
+	}
+	return i
 }
 
 func parseFloat[T interface{ string | []byte }](data T) (float64, error) {
@@ -569,11 +630,7 @@ func isInteger(s string) bool {
 }
 
 func isFloat(s string) bool {
-	if !strings.Contains(s, ".") {
-		return false
-	}
-	_, err := strconv.ParseFloat(s, 64)
-	return err == nil
+	return isFloatLiteral(s)
 }
 
 func isHexString(s string) bool {
