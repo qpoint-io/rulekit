@@ -41,6 +41,9 @@ mod tests {
         assert_eq!(quote("user-agent"), r#""user-agent""#);
         assert_eq!(quote("it\"s\\"), r#""it\"s\\""#);
         assert_eq!(quote("a\tb\n\r\x01\x7f"), r#""a\tb\n\r\u0001\u007f""#);
-        assert_eq!(quote("ñame é \u{a0}\u{ad}\u{e0000}"), "\"ñame é \u{a0}\u{ad}\u{e0000}\"");
+        assert_eq!(
+            quote("ñame é \u{a0}\u{ad}\u{e0000}"),
+            "\"ñame é \u{a0}\u{ad}\u{e0000}\""
+        );
     }
 }

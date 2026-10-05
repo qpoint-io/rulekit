@@ -53,7 +53,10 @@ fn form_decode(s: &str) -> Cow<'_, str> {
     while i < b.len() {
         match b[i] {
             b'+' => out.push(b' '),
-            b'%' if i + 2 < b.len() && b[i + 1].is_ascii_hexdigit() && b[i + 2].is_ascii_hexdigit() => {
+            b'%' if i + 2 < b.len()
+                && b[i + 1].is_ascii_hexdigit()
+                && b[i + 2].is_ascii_hexdigit() =>
+            {
                 out.push(hex(b[i + 1]) << 4 | hex(b[i + 2]));
                 i += 2;
             }

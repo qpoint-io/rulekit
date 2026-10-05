@@ -37,8 +37,9 @@ impl Span {
 }
 
 impl Url {
-    /// Parses an RFC 3986 URI reference (absolute or relative). Input that
-    /// does not match the grammar is an error.
+    /// Parses a URL by the shared rules: an RFC 3986 URI reference (absolute
+    /// or relative) in ASCII, with no `%` escapes in the host and no IPvFuture
+    /// literal. Anything else is an error.
     pub fn parse(s: &str) -> Result<Url, String> {
         let r = UriRef::parse(s).map_err(|e| format!("invalid URL {s:?}: {e}"))?;
         let at = |part: &str| Span {
@@ -54,6 +55,12 @@ impl Url {
         let (mut host, mut port, mut user) = (Span::EMPTY, Span::EMPTY, None);
         if let Some(auth) = r.authority() {
             let h = at(auth.host());
+            if auth.host().contains('%') {
+                return Err(format!("invalid URL {s:?}: percent escape in host"));
+            }
+            if auth.host().starts_with("[v") || auth.host().starts_with("[V") {
+                return Err(format!("invalid URL {s:?}: IPvFuture host"));
+            }
             buf[h.start..h.end].make_ascii_lowercase();
             host = if auth.host().starts_with('[') {
                 Span {
@@ -313,8 +320,9 @@ mod tests {
         ),
     ];
 
-    /// Accepted, but Go 1.27.1 `net/url` gives a different text form or
-    /// field (noted per row); pending a common rule.
+    /// Accepted by the shared rules, where Go's `net/url` gives a different
+    /// text form or field (noted per row); rulekit's Go `URL` follows the
+    /// shared rules.
     const ACCEPT_UNLIKE_GO: &[Row] = &[
         // Go drops an empty fragment from the text form: "http://h".
         (
@@ -367,27 +375,6 @@ mod tests {
         ("http:p", "http:p", ["http", "", "", "p", "", ""], None),
         // Go: no authority, path "///p".
         ("///p", "///p", ["", "", "", "/p", "", ""], None),
-        // Go rejects IPvFuture literals.
-        (
-            "http://[v1.Ab:C]/",
-            "http://[v1.ab:c]/",
-            ["http", "v1.ab:c", "", "/", "", ""],
-            None,
-        ),
-        // Go rejects an escaped ASCII byte in a host.
-        (
-            "http://Ex%41mple.COM/",
-            "http://ex%41mple.com/",
-            ["http", "ex%41mple.com", "", "/", "", ""],
-            None,
-        ),
-        // Go decodes the host ("hé") and prints it "http://h%C3%A9/".
-        (
-            "http://h%C3%A9/",
-            "http://h%c3%a9/",
-            ["http", "h%c3%a9", "", "/", "", ""],
-            None,
-        ),
     ];
 
     /// Inputs that are not RFC 3986 URI references and that Go 1.27.1
@@ -414,9 +401,13 @@ mod tests {
         " http://h",
     ];
 
-    /// Inputs that are not RFC 3986 URI references but that Go 1.27.1
-    /// `net/url` accepts; pending a common rule.
+    /// Inputs the shared rules reject but Go's `net/url` accepts (rulekit's
+    /// Go `URL` rejects them too).
     const REJECT_UNLIKE_GO: &[&str] = &[
+        // An IPvFuture literal or a percent escape in the host.
+        "http://[v1.Ab:C]/",
+        "http://Ex%41mple.COM/",
+        "http://h%C3%A9/",
         // Characters outside RFC 3986 in the path, query, or fragment.
         "http://h/a b",
         "http://h/é",

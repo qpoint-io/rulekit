@@ -430,9 +430,15 @@ impl Node {
                 Ok(None) => {
                     let mut missing = Missing::new();
                     missing.push(&**text);
-                    EvalResult { missing, ..EvalResult::value(Val::Ref(ValueRef::Null)) }
+                    EvalResult {
+                        missing,
+                        ..EvalResult::value(Val::Ref(ValueRef::Null))
+                    }
                 }
-                Err(source) => EvalResult::error(Error::Input { field: text.to_string(), source }),
+                Err(source) => EvalResult::error(Error::Input {
+                    field: text.to_string(),
+                    source,
+                }),
             },
             Kind::Array(items) => eval_array::<TRACE, C, I>(items, s),
             Kind::Call { target, args } => call::<TRACE, C, I>(target, args, s),
@@ -621,11 +627,19 @@ fn merge<'a, const TRACE: bool>(
     match (left.ok(), right.ok()) {
         // Exactly one side is incomplete: return it, keeping both traces.
         (true, false) => {
-            let trace = if TRACE { combine([left.trace, right.trace.take()]) } else { None };
+            let trace = if TRACE {
+                combine([left.trace, right.trace.take()])
+            } else {
+                None
+            };
             right.with_trace(trace)
         }
         (false, true) => {
-            let trace = if TRACE { combine([left.trace.take(), right.trace]) } else { None };
+            let trace = if TRACE {
+                combine([left.trace.take(), right.trace])
+            } else {
+                None
+            };
             left.with_trace(trace)
         }
         (both_ok, _) => {
