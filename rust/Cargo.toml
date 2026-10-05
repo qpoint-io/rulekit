@@ -6,7 +6,8 @@ rust-version = "1.88"
 license = "MIT"
 description = "Expression-based rules engine (Rust port of qpoint-io/rulekit)"
 repository = "https://github.com/qpoint-io/rulekit"
-include = ["src/**", "Cargo.toml"]
+include = ["src/**", "Cargo.toml", "README.md"]
+readme = "README.md"
 
 [dependencies]
 base64 = "0.23.1"
@@ -18,3 +19,21 @@ regex-syntax = "0.8.11"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
 smallvec = { version = "1", features = ["const_generics", "union"] }
+
+[dev-dependencies]
+criterion = "0.8.2"
+
+[[bench]]
+name = "eval"
+harness = false
+
+[[bench]]
+name = "allocs"
+harness = false
+
+[profile.bench]
+lto = "fat"
+codegen-units = 1
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(rulekit_size_probe)"] }
