@@ -212,6 +212,51 @@ The public AST view is read-only. Build edited expressions by parsing replacemen
 
 `AST.Tokens()` returns the token stream with byte spans plus leading and trailing whitespace/comment trivia for source-aware tools.
 
+`json.Marshal(ast)` encodes the AST as JSON with the source, the node tree, and the tokens (excluding EOF). `ast.JSON()` returns the same document as Go values.
+
+```go
+ast, err := rulekit.ParseAST(`age >= 18`)
+if err != nil { /* ... */ }
+data, err := json.Marshal(ast)
+```
+
+```json
+{
+  "source": "age >= 18",
+  "root": {
+    "id": "root",
+    "kind": "binary",
+    "text": "age >= 18",
+    "operator": ">=",
+    "raw": ">=",
+    "span": {"start": 0, "end": 9, "startLine": 1, "startColumn": 1, "endLine": 1, "endColumn": 10},
+    "children": [
+      {
+        "id": "root.0",
+        "kind": "path",
+        "text": "age",
+        "path": "age",
+        "span": {"start": 0, "end": 3, "startLine": 1, "startColumn": 1, "endLine": 1, "endColumn": 4}
+      },
+      {
+        "id": "root.1",
+        "kind": "literal",
+        "text": "18",
+        "raw": "18",
+        "span": {"start": 7, "end": 9, "startLine": 1, "startColumn": 8, "endLine": 1, "endColumn": 10}
+      }
+    ]
+  },
+  "tokens": [
+    {"kind": "FIELD", "role": "id", "raw": "age", "span": {"start": 0, "end": 3, "startLine": 1, "startColumn": 1, "endLine": 1, "endColumn": 4}},
+    {"kind": "GE", "role": "kw", "raw": ">=", "span": {"start": 4, "end": 6, "startLine": 1, "startColumn": 5, "endLine": 1, "endColumn": 7}},
+    {"kind": "INT", "role": "num", "raw": "18", "span": {"start": 7, "end": 9, "startLine": 1, "startColumn": 8, "endLine": 1, "endColumn": 10}}
+  ]
+}
+```
+
+Node IDs are tree positions: `root`, then `<parent id>.<child index>`. `text` is the node's compact expression. Unary and binary nodes carry the normalized `operator` and its source spelling in `raw`; literals carry their source token in `raw`, calls their function name, and paths their rendered `path`. Spans are byte offsets with 1-based lines and byte columns. Token `role` is `id`, `str`, `num`, `kw`, or `pun`.
+
 Use `Print` and `Format` for explicit output modes:
 
 ```go
