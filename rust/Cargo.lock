@@ -134,6 +134,7 @@ dependencies = [
  "foldhash",
  "ipnet",
  "regex",
+ "regex-syntax",
  "serde",
  "serde_json",
  "smallvec",
