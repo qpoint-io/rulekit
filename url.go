@@ -25,6 +25,9 @@ type URL struct {
 	path     string
 	query    string
 	fragment string
+	// fields holds the field values boxed once at parse time, so reading a
+	// field during evaluation does not allocate. nil means missing.
+	fields map[string]any
 }
 
 // ParseURL parses s by the shared URL rules.
@@ -126,6 +129,18 @@ func parseURL(s string) (URL, error) {
 	}
 	u.text = b.String()
 	u.fragment = decodeOrKeep(u.fragment)
+	u.fields = map[string]any{"path": u.path, "query": urlQuery(u.query)}
+	for key, value := range map[string]string{"scheme": u.scheme, "host": u.host, "fragment": u.fragment} {
+		if value != "" {
+			u.fields[key] = value
+		}
+	}
+	if u.hasUser && u.user != "" {
+		u.fields["user"] = u.user
+	}
+	if port, ok := portNumber(u.port); ok {
+		u.fields["port"] = port
+	}
 	return u, nil
 }
 
@@ -231,24 +246,6 @@ func decodeOrKeep(s string) string {
 
 // urlValueField resolves a field of a URL value.
 func urlValueField(u URL, key string) (any, bool) {
-	switch key {
-	case "scheme":
-		return nonEmpty(u.scheme)
-	case "host":
-		return nonEmpty(u.host)
-	case "port":
-		return portNumber(u.port)
-	case "path":
-		return u.path, true
-	case "query":
-		return urlQuery(u.query), true
-	case "fragment":
-		return nonEmpty(u.fragment)
-	case "user":
-		if !u.hasUser {
-			return nil, false
-		}
-		return nonEmpty(u.user)
-	}
-	return nil, false
+	v, ok := u.fields[key]
+	return v, ok
 }
