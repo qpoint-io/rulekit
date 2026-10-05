@@ -488,7 +488,7 @@ func (l *lexer) scanRegex(delim byte, leading string) token {
 		return tok
 	}
 	end := l.pos
-	for end < len(l.input) && unicode.IsLetter(rune(l.input[end])) {
+	for end < len(l.input) && ('a' <= l.input[end] && l.input[end] <= 'z' || 'A' <= l.input[end] && l.input[end] <= 'Z') {
 		end++
 	}
 	flags := l.input[l.pos:end]
