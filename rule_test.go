@@ -990,6 +990,25 @@ func TestFunctionParsing(t *testing.T) {
 	require.Equal(t, `func_name(fieldarg, 192.168.0.0, [1, 2, 3], nested_func(true))`, parsed.String())
 }
 
+func TestIntegerLiterals(t *testing.T) {
+	for expr, want := range map[string]any{
+		`x == 10`:                   10,
+		`x == 010`:                  10, // leading zeros are decimal, not octal
+		`x == -010`:                 -10,
+		`x == 0x1f`:                 31,
+		`x == 0o17`:                 15,
+		`x == 0b101`:                5,
+		`x == 1_000`:                1000,
+		`x == 0`:                    0,
+		`x == 00`:                   0,
+		`x == 18446744073709551615`: uint64(18446744073709551615),
+	} {
+		assertRulep(t, expr, kv{"x": want}).Ok().DoesPass(true)
+	}
+	assertRulep(t, `18446744073709551615 > 9223372036854775807`, nil).Ok().DoesPass(true)
+	assertRulep(t, `-1 < 18446744073709551615`, nil).Ok().DoesPass(true)
+}
+
 func TestMacros(t *testing.T) {
 	r := MustParse(`dst_k8s_svc() && user != "root"`)
 	macros := MacroSet{}

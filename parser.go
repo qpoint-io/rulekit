@@ -142,13 +142,27 @@ func parseAbsoluteURL(str string) (*url.URL, bool) {
 
 func parseInt[T interface{ string | []byte }](data T) (any, error) {
 	raw := string(data)
-	if n, err := strconv.ParseInt(raw, 0, 64); err == nil {
-		return n, nil
-	}
-	if n, err := strconv.ParseUint(raw, 0, 64); err == nil {
+	if n, ok := parseIntLiteral(raw); ok {
 		return n, nil
 	}
 	return nil, fmt.Errorf("parsing integer: invalid value %q", raw)
+}
+
+// parseIntLiteral parses decimal integers and 0x, 0o, and 0b prefixed
+// integers, with optional _ separators. Leading zeros are decimal, so 010 is
+// ten. Values above the int64 range are returned as uint64.
+func parseIntLiteral(s string) (any, bool) {
+	base := 0
+	if digits := strings.TrimPrefix(s, "-"); len(digits) > 1 && digits[0] == '0' && digits[1] >= '0' && digits[1] <= '9' {
+		base = 10
+	}
+	if n, err := strconv.ParseInt(s, base, 64); err == nil {
+		return n, true
+	}
+	if n, err := strconv.ParseUint(s, base, 64); err == nil {
+		return n, true
+	}
+	return nil, false
 }
 
 func parseFloat[T interface{ string | []byte }](data T) (float64, error) {
@@ -550,15 +564,8 @@ func isField(s string) bool {
 }
 
 func isInteger(s string) bool {
-	if s == "" || s == "+" || s == "-" {
-		return false
-	}
-	_, err := strconv.ParseInt(s, 0, 64)
-	if err == nil {
-		return true
-	}
-	_, err = strconv.ParseUint(s, 0, 64)
-	return err == nil
+	_, ok := parseIntLiteral(s)
+	return ok
 }
 
 func isFloat(s string) bool {
