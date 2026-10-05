@@ -83,7 +83,7 @@ func pathString(segments []pathSegment, keepBrackets bool) string {
 
 		if (keepBrackets && seg.bracket) || !isIdentifierSegment(seg.key) {
 			raw.WriteString("[")
-			raw.WriteString(strconv.Quote(seg.key))
+			raw.WriteString(quoteKey(seg.key))
 			raw.WriteString("]")
 			continue
 		}
@@ -94,6 +94,36 @@ func pathString(segments []pathSegment, keepBrackets bool) string {
 		raw.WriteString(seg.key)
 	}
 	return raw.String()
+}
+
+// quoteKey quotes a bracket key: it escapes `"` and `\`, writes \n, \r, and \t
+// as escapes, and writes other control characters (U+0000–U+001F and U+007F)
+// as \u00XX. Every other character, including non-ASCII, is written as is.
+func quoteKey(key string) string {
+	var b strings.Builder
+	b.Grow(len(key) + 2)
+	b.WriteByte('"')
+	for i := 0; i < len(key); i++ {
+		switch c := key[i]; {
+		case c == '"' || c == '\\':
+			b.WriteByte('\\')
+			b.WriteByte(c)
+		case c == '\n':
+			b.WriteString(`\n`)
+		case c == '\r':
+			b.WriteString(`\r`)
+		case c == '\t':
+			b.WriteString(`\t`)
+		case c < 0x20 || c == 0x7f:
+			b.WriteString(`\u00`)
+			b.WriteByte("0123456789abcdef"[c>>4])
+			b.WriteByte("0123456789abcdef"[c&0xf])
+		default:
+			b.WriteByte(c)
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
 }
 
 func (p *PathValue) Print(PrintMode) string {

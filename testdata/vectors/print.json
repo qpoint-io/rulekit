@@ -121,6 +121,11 @@
       "name": "string: matches prints as =~ with flags",
       "expr": "ua matches /curl/i",
       "expect": {"print": {"string": "ua =~ /curl/i"}}
+    },
+    {
+      "name": "string: bracket keys escape quotes, backslashes, and control characters only",
+      "expr": "x[\"a\\\"b\\\\c\\td\\u0001e\\u007ff\u00adg\u00e9\"] == 1",
+      "expect": {"print": {"string": "x[\"a\\\"b\\\\c\\td\\u0001e\\u007ff\u00adg\u00e9\"] == 1"}}
     }
   ]
 }

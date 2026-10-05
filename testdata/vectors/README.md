@@ -112,6 +112,20 @@ exactly these forms, whatever their platform libraries print:
 
 `text_forms.json` pins each rule.
 
+## Other shared rules
+
+- **Bracket keys** print as `"..."` with `"` and `\` escaped, `\n`, `\r`, and
+  `\t` as escapes, other control characters (U+0000–U+001F, U+007F) as
+  `\u00XX`, and every other character as is.
+- **URL query values** are decoded like HTML forms (`&` separates pairs, `+` is
+  a space, `%XX` is decoded, invalid escapes are kept). If the decoded bytes are
+  not valid UTF-8, the value is the text as written.
+- **JSON input** (`DecodeJSON`) must be exactly one JSON value; anything but
+  whitespace after it is an error. Objects and arrays may nest at most 100
+  levels, counting the root object. Integers outside the int64 and uint64
+  ranges are errors, not floats. Typed `float64` strings must be decimal
+  numbers (no hex floats, `inf`, or `nan`).
+
 ## Traces
 
 `trace` describes the root of the trace tree. Every key is optional; only the

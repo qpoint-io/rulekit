@@ -21,3 +21,15 @@ func TestDecodeJSONErrors(t *testing.T) {
 	_, err = DecodeJSON([]byte(`{"src": {"$type": "ip", "value": "1.2.3.4"}}`), JSONOptions{TypedDocument: true, AnnotatedKeys: true})
 	require.EqualError(t, err, `json options AnnotatedKeys and TypedDocument are mutually exclusive`)
 }
+
+// Trailing data cannot be expressed as a test vector (vector inputs are JSON
+// objects), so it is pinned here and in the Rust tests.
+func TestDecodeJSONRejectsTrailingData(t *testing.T) {
+	_, err := DecodeJSON([]byte("{\"a\": 1}  \n\t"), JSONOptions{})
+	require.NoError(t, err)
+
+	for _, data := range []string{`{"a": 1} {"b": 2}`, `{"a": 1}x`, `{"a": 1}]`} {
+		_, err := DecodeJSON([]byte(data), JSONOptions{})
+		require.Error(t, err, data)
+	}
+}

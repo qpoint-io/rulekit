@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // valueField resolves a built-in field of a typed value, such as url.host or
@@ -106,7 +107,8 @@ func queryField(raw, key string) (any, bool) {
 }
 
 // formDecode decodes "+" and percent escapes in a urlencoded name or value,
-// keeping invalid escapes as written. Invalid UTF-8 becomes U+FFFD.
+// keeping invalid escapes as written. If the decoded bytes are not valid
+// UTF-8, the text is returned as written.
 func formDecode(s string) string {
 	if !strings.ContainsAny(s, "+%") {
 		return s
@@ -123,7 +125,10 @@ func formDecode(s string) string {
 			b = append(b, c)
 		}
 	}
-	return strings.ToValidUTF8(string(b), "\uFFFD")
+	if !utf8.Valid(b) {
+		return s
+	}
+	return string(b)
 }
 
 func isHexDigit(c byte) bool {

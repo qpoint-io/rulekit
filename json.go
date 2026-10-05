@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"strconv"
@@ -20,10 +21,18 @@ type JSONOptions struct {
 	TypedDocument bool
 }
 
-// DecodeJSON decodes a JSON object into a Rulekit KV value map.
+// maxJSONDepth is the deepest nesting of objects and arrays DecodeJSON accepts,
+// counting the root object as one level.
+const maxJSONDepth = 100
+
+// DecodeJSON decodes a JSON object into a Rulekit KV value map. The input must
+// be a single JSON value; anything but whitespace after it is an error.
 func DecodeJSON(data []byte, opts JSONOptions) (KV, error) {
 	if opts.AnnotatedKeys && opts.TypedDocument {
 		return nil, fmt.Errorf("json options AnnotatedKeys and TypedDocument are mutually exclusive")
+	}
+	if err := checkJSONDepth(data); err != nil {
+		return nil, err
 	}
 
 	dec := json.NewDecoder(bytes.NewReader(data))
@@ -32,6 +41,9 @@ func DecodeJSON(data []byte, opts JSONOptions) (KV, error) {
 	var raw any
 	if err := dec.Decode(&raw); err != nil {
 		return nil, err
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return nil, fmt.Errorf("unexpected data after the JSON value")
 	}
 	normalized, err := normalizeJSONValue(raw, opts)
 	if err != nil {
@@ -42,6 +54,34 @@ func DecodeJSON(data []byte, opts JSONOptions) (KV, error) {
 		return nil, fmt.Errorf("json root must be an object")
 	}
 	return KV(kv), nil
+}
+
+// checkJSONDepth rejects documents nested deeper than maxJSONDepth. Brackets
+// inside strings are skipped; syntax errors are left to the decoder.
+func checkJSONDepth(data []byte) error {
+	depth, inString, escaped := 0, false, false
+	for _, c := range data {
+		switch {
+		case inString:
+			switch {
+			case escaped:
+				escaped = false
+			case c == '\\':
+				escaped = true
+			case c == '"':
+				inString = false
+			}
+		case c == '"':
+			inString = true
+		case c == '{' || c == '[':
+			if depth++; depth > maxJSONDepth {
+				return fmt.Errorf("json nesting exceeds %d levels", maxJSONDepth)
+			}
+		case c == '}' || c == ']':
+			depth--
+		}
+	}
+	return nil
 }
 
 func normalizeJSONValue(value any, opts JSONOptions) (any, error) {
@@ -316,7 +356,16 @@ func float64Scalar(value any) (float64, error) {
 	if err != nil {
 		return 0, err
 	}
+	// Accept decimal numbers only (as in JSON), not hex floats, inf, or nan.
+	if !isFloat(s) && !isDecimalInteger(s) {
+		return 0, fmt.Errorf("invalid float64 %q", s)
+	}
 	return strconv.ParseFloat(s, 64)
+}
+
+func isDecimalInteger(s string) bool {
+	_, digits := splitSign(s)
+	return digits != "" && skipDigits(digits, 0) == len(digits)
 }
 
 func numericString(value any) (string, error) {

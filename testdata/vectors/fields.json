@@ -97,6 +97,8 @@
     {"name": "query: invalid percent escape is kept", "expr": "u.query.c == \"%zz\"", "input": {"u.$url": "http://h/?c=%zz"}, "expect": {"value": true}},
     {"name": "query: names are decoded", "expr": "u.query[\"a b\"] == \"1\"", "input": {"u.$url": "http://h/?a%20b=1"}, "expect": {"value": true}},
     {"name": "query: name without value is empty", "expr": "u.query.flag == \"\"", "input": {"u.$url": "http://h/?flag"}, "expect": {"value": true}},
+    {"name": "query: value decoding to invalid UTF-8 stays as written", "expr": "u.query.c == \"%ff\"", "input": {"u.$url": "http://h/?c=%ff"}, "expect": {"value": true}},
+    {"name": "query: utf-8 escapes are decoded", "expr": "u.query.c == \"é\"", "input": {"u.$url": "http://h/?c=%C3%A9"}, "expect": {"value": true}},
     {"name": "query: empty pairs are skipped", "expr": "u.query.a == \"1\"", "input": {"u.$url": "http://h/?&&a=1&"}, "expect": {"value": true}},
     {"name": "query: repeated name is a list", "expr": "u.query.t == [\"x\", \"y\"]", "input": {"u.$url": "http://h/?t=x&t=y"}, "expect": {"value": true}},
     {"name": "query: whole query compares as its text", "expr": "u.query == \"a=1&b=2\"", "input": {"u.$url": "http://h/?a=1&b=2"}, "expect": {"value": true}},
