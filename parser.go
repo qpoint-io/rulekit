@@ -184,9 +184,9 @@ func parseIntLiteral(s string) (any, bool) {
 	return nil, false
 }
 
-// isFloatLiteral reports whether s is a decimal float: an optional sign,
-// digits, then a fraction (5., 1.5), an exponent (1e3), or both (1.5e-3).
-func isFloatLiteral(s string) bool {
+// isFloat reports whether s is a decimal float: an optional sign, digits,
+// then a fraction (5., 1.5), an exponent (1e3), or both (1.5e-3).
+func isFloat(s string) bool {
 	_, s = splitSign(s)
 	i := skipDigits(s, 0)
 	if i == 0 {
@@ -627,10 +627,6 @@ func isField(s string) bool {
 func isInteger(s string) bool {
 	_, ok := parseIntLiteral(s)
 	return ok
-}
-
-func isFloat(s string) bool {
-	return isFloatLiteral(s)
 }
 
 func isHexString(s string) bool {
