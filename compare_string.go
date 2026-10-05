@@ -12,6 +12,9 @@ func compareString(left string, op int, right any) compareOutcome {
 	case string:
 		// string ? string
 		return compareStringString(left, op, right)
+	case urlQuery:
+		// string ? query
+		return compareStringString(left, op, string(right))
 	case *regexp.Regexp:
 		// string ? regexp
 		return compareStringRegex(left, op, right)

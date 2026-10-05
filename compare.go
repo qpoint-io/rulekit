@@ -41,6 +41,10 @@ func compareDetailed(left any, op int, right any) compareOutcome {
 		// string ? any
 		return compareString(lv, op, right)
 
+	case urlQuery:
+		// query ? any
+		return compareString(string(lv), op, right)
+
 	case []string:
 		// []string ? any
 		return compareStringSlice(lv, op, right)
@@ -241,7 +245,9 @@ func diagnosticType(value any) string {
 		return "regex"
 	case []any, []string, []int, []int64, []uint, []uint64, []float32, []float64, []net.IP:
 		return "array"
-	case map[string]any, url.Values:
+	case urlQuery:
+		return "string"
+	case map[string]any:
 		return "object"
 	}
 	return "unknown"

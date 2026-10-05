@@ -91,6 +91,14 @@
       },
       "expect": {"value": null, "missing_fields": ["bare.query.env"]}
     },
+    {"name": "query: semicolon is not a separator", "expr": "u.query.a == \"1;b=2\"", "input": {"u.$url": "http://h/?a=1;b=2"}, "expect": {"value": true}},
+    {"name": "query: plus is a space", "expr": "u.query.d == \"x y\"", "input": {"u.$url": "http://h/?d=x+y"}, "expect": {"value": true}},
+    {"name": "query: invalid percent escape is kept", "expr": "u.query.c == \"%zz\"", "input": {"u.$url": "http://h/?c=%zz"}, "expect": {"value": true}},
+    {"name": "query: names are decoded", "expr": "u.query[\"a b\"] == \"1\"", "input": {"u.$url": "http://h/?a%20b=1"}, "expect": {"value": true}},
+    {"name": "query: name without value is empty", "expr": "u.query.flag == \"\"", "input": {"u.$url": "http://h/?flag"}, "expect": {"value": true}},
+    {"name": "query: empty pairs are skipped", "expr": "u.query.a == \"1\"", "input": {"u.$url": "http://h/?&&a=1&"}, "expect": {"value": true}},
+    {"name": "query: repeated name is a list", "expr": "u.query.t == [\"x\", \"y\"]", "input": {"u.$url": "http://h/?t=x&t=y"}, "expect": {"value": true}},
+    {"name": "query: whole query compares as its text", "expr": "u.query == \"a=1&b=2\"", "input": {"u.$url": "http://h/?a=1&b=2"}, "expect": {"value": true}},
     {
       "name": "absent url part is missing: bare.fragment",
       "expr": "bare.fragment == \"\"",

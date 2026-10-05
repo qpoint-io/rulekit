@@ -162,7 +162,7 @@ device.mac.oui == 00:1a:2b
 | URL | `host` | Lowercase host name without the port |
 | URL | `port` | Port number, if the URL has one |
 | URL | `path` | Path, e.g. `"/api/v1"` (`""` if empty) |
-| URL | `query["name"]` or `query.name` | Query parameter value; a parameter given more than once is a list |
+| URL | `query["name"]` or `query.name` | Query parameter value, decoded like an HTML form: pairs are separated by `&`, `+` is a space, and `%XX` escapes are decoded. A parameter given more than once is a list. `query` on its own is the raw query text |
 | URL | `fragment` | Text after `#` |
 | URL | `user` | User name |
 | IP address | `version` | `"v4"` or `"v6"` |
