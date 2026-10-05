@@ -16,6 +16,34 @@ pub(crate) enum CmpOp {
     Contains,
 }
 
+impl CmpOp {
+    /// Printed spelling (`==`, `contains`, ...).
+    pub(crate) fn symbol(self) -> &'static str {
+        match self {
+            CmpOp::Eq => "==",
+            CmpOp::Ne => "!=",
+            CmpOp::Gt => ">",
+            CmpOp::Ge => ">=",
+            CmpOp::Lt => "<",
+            CmpOp::Le => "<=",
+            CmpOp::Contains => "contains",
+        }
+    }
+
+    /// Machine name (`eq`, `contains`, ...).
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            CmpOp::Eq => "eq",
+            CmpOp::Ne => "ne",
+            CmpOp::Gt => "gt",
+            CmpOp::Ge => "ge",
+            CmpOp::Lt => "lt",
+            CmpOp::Le => "le",
+            CmpOp::Contains => "contains",
+        }
+    }
+}
+
 /// Why a comparison could not be made (reported in traces).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum Diagnostic {

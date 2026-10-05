@@ -19,8 +19,9 @@ pub use url::Url;
 pub type Map<V> = HashMap<String, V, foldhash::fast::RandomState>;
 
 /// An owned value: input data, a literal, or a function result.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub enum Value {
+    #[default]
     Null,
     Bool(bool),
     Int(i64),

@@ -1,22 +1,43 @@
 //! Compiled rules and evaluation (port of `ast.go` `lowerAST`, `nodes.go`,
-//! `values.go`, and `functions.go`).
+//! `values.go`, `functions.go`, and `trace.go`).
+//!
+//! Evaluation is generic over `const TRACE: bool`. `Rule::eval` branches on
+//! the trace flag once; the untraced instantiation contains no trace code.
 
 mod compare;
+pub(crate) mod trace;
 
 use smallvec::SmallVec;
 
-use crate::ast::{Ast, LiteralKind, NodeData, NodeId, Operator, Segment};
+use crate::ast::{Ast, AstKind, LiteralKind, NodeData, NodeId, Operator, Segment};
 use crate::env::Env;
 use crate::error::{Error, ParseError};
 use crate::input::Input;
 use crate::literal::parse_literal;
-use crate::print::path_string;
+use crate::print::{canonical, path_string};
 use crate::value::{ArrayRef, Val, Value, ValueRef};
 use compare::{CmpOp, compare, compare_slice};
+use trace::{Diagnostic, Trace, combine};
 
-/// A compiled expression node.
+/// A compiled expression node. `meta` identifies the AST node for traces; it
+/// is `None` only for the base operator under a negated `not in`/`not
+/// contains`/`not matches`, which Go traces as one node.
 #[derive(Clone, Debug)]
-pub(crate) enum Node {
+pub(crate) struct Node {
+    kind: Kind,
+    meta: Option<Meta>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct Meta {
+    pub id: NodeId,
+    pub kind: AstKind,
+    /// Canonical expression of the node.
+    pub expr: Box<str>,
+}
+
+#[derive(Clone, Debug)]
+enum Kind {
     And(Box<Node>, Box<Node>),
     Or(Box<Node>, Box<Node>),
     Not(Box<Node>),
@@ -48,7 +69,7 @@ pub(crate) enum Node {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) enum Call {
+enum Call {
     StartsWith,
     Named(Box<str>),
 }
@@ -56,12 +77,12 @@ pub(crate) enum Call {
 /// Lower an AST node (Go `lowerAST`). Literal values are parsed here; the
 /// first invalid literal, in evaluation order, is the error.
 pub(crate) fn lower(ast: &Ast, id: NodeId) -> Result<Node, ParseError> {
-    Ok(match ast.data(id) {
-        NodeData::Literal { span, kind } => Node::Literal(
+    let kind = match ast.data(id) {
+        NodeData::Literal { span, kind } => Kind::Literal(
             parse_literal(*kind, ast.text(*span))
                 .map_err(|err| ParseError::at(ast.source(), span.start, err))?,
         ),
-        NodeData::Path { segments, .. } => Node::Path {
+        NodeData::Path { segments, .. } => Kind::Path {
             segments: segments.clone(),
             text: path_string(segments).into_boxed_str(),
         },
@@ -70,14 +91,17 @@ pub(crate) fn lower(ast: &Ast, id: NodeId) -> Result<Node, ParseError> {
                 .iter()
                 .map(|&item| lower(ast, item))
                 .collect::<Result<Vec<_>, _>>()?;
-            if items.iter().all(|item| matches!(item, Node::Literal(_))) {
-                let values = items.into_iter().map(|item| match item {
-                    Node::Literal(v) => v,
+            if items
+                .iter()
+                .all(|item| matches!(item.kind, Kind::Literal(_)))
+            {
+                let values = items.into_iter().map(|item| match item.kind {
+                    Kind::Literal(v) => v,
                     _ => unreachable!("checked above"),
                 });
-                Node::ConstArray(values.collect())
+                Kind::ConstArray(values.collect())
             } else {
-                Node::Array(items.into_boxed_slice())
+                Kind::Array(items.into_boxed_slice())
             }
         }
         NodeData::Call { name, args, .. } => {
@@ -91,12 +115,12 @@ pub(crate) fn lower(ast: &Ast, id: NodeId) -> Result<Node, ParseError> {
             } else {
                 Call::Named(name.into())
             };
-            Node::Call {
+            Kind::Call {
                 target,
                 args: args.into_boxed_slice(),
             }
         }
-        NodeData::Unary { operand, .. } => Node::Not(Box::new(lower(ast, *operand)?)),
+        NodeData::Unary { operand, .. } => Kind::Not(Box::new(lower(ast, *operand)?)),
         NodeData::Binary {
             op,
             negated,
@@ -113,14 +137,14 @@ pub(crate) fn lower(ast: &Ast, id: NodeId) -> Result<Node, ParseError> {
             );
             let lhs = Box::new(lower(ast, *lhs)?);
             let rhs = Box::new(lower(ast, *rhs)?);
-            let cmp = |op| Node::Compare {
+            let cmp = |op| Kind::Compare {
                 op,
                 lhs: lhs.clone(),
                 rhs: rhs.clone(),
             };
-            let node = match op {
-                Operator::And => Node::And(lhs, rhs),
-                Operator::Or => Node::Or(lhs, rhs),
+            let base = match op {
+                Operator::And => Kind::And(lhs, rhs),
+                Operator::Or => Kind::Or(lhs, rhs),
                 Operator::Eq => cmp(CmpOp::Eq),
                 Operator::Ne => cmp(CmpOp::Ne),
                 Operator::Gt => cmp(CmpOp::Gt),
@@ -128,18 +152,30 @@ pub(crate) fn lower(ast: &Ast, id: NodeId) -> Result<Node, ParseError> {
                 Operator::Lt => cmp(CmpOp::Lt),
                 Operator::Le => cmp(CmpOp::Le),
                 Operator::Contains => cmp(CmpOp::Contains),
-                Operator::Matches => Node::Match { lhs, rhs },
+                Operator::Matches => Kind::Match { lhs, rhs },
                 // `x in <CIDR>` is CIDR containment, i.e. `x == <CIDR>`.
                 Operator::In if rhs_is_cidr => cmp(CmpOp::Eq),
-                Operator::In => Node::In { lhs, rhs },
+                Operator::In => Kind::In { lhs, rhs },
                 Operator::Not => unreachable!("not is unary"),
             };
             if *negated {
-                Node::Not(Box::new(node))
+                Kind::Not(Box::new(Node {
+                    kind: base,
+                    meta: None,
+                }))
             } else {
-                node
+                base
             }
         }
+    };
+    let meta = Meta {
+        id,
+        kind: ast.node(id).kind(),
+        expr: canonical(ast, id).into_boxed_str(),
+    };
+    Ok(Node {
+        kind,
+        meta: Some(meta),
     })
 }
 
@@ -152,6 +188,7 @@ pub struct EvalResult<'a> {
     value: Val<'a>,
     error: Option<Box<Error>>,
     missing: Missing<'a>,
+    trace: Option<Box<Trace>>,
 }
 
 impl<'a> EvalResult<'a> {
@@ -160,6 +197,7 @@ impl<'a> EvalResult<'a> {
             value,
             error: None,
             missing: Missing::new(),
+            trace: None,
         }
     }
 
@@ -169,19 +207,25 @@ impl<'a> EvalResult<'a> {
 
     fn error(error: Error) -> Self {
         EvalResult {
-            value: Val::Ref(ValueRef::Null),
             error: Some(Box::new(error)),
-            missing: Missing::new(),
+            ..Self::value(Val::Ref(ValueRef::Null))
         }
     }
 
-    /// Keep only the error and missing fields (Go returns these without a value).
-    fn incomplete(self) -> Self {
+    /// Keep only the error and missing fields (Go returns these without a
+    /// value), with the given trace.
+    fn incomplete(self, trace: Option<Box<Trace>>) -> Self {
         EvalResult {
             value: Val::Ref(ValueRef::Null),
             error: self.error,
             missing: self.missing,
+            trace,
         }
+    }
+
+    fn with_trace(mut self, trace: Option<Box<Trace>>) -> Self {
+        self.trace = trace;
+        self
     }
 
     /// The result value; `Null` when the rule did not produce one.
@@ -200,6 +244,11 @@ impl<'a> EvalResult<'a> {
     /// Fields the rule needed but the input lacked.
     pub fn missing_fields(&self) -> &[&'a str] {
         &self.missing
+    }
+
+    /// The evaluation trace, when tracing was enabled.
+    pub fn trace(&self) -> Option<&Trace> {
+        self.trace.as_deref()
     }
 
     /// No error and no missing fields.
@@ -260,78 +309,98 @@ pub(crate) struct Scope<'a, C: ?Sized, I: ?Sized> {
 type Buf<'a, const N: usize> = SmallVec<[Val<'a>; N]>;
 
 impl Node {
-    pub(crate) fn eval<'a, C: ?Sized, I: Input<C> + ?Sized>(
+    /// Evaluate the node; with `TRACE`, describe it (Go `tracedRule`).
+    pub(crate) fn eval<'a, const TRACE: bool, C: ?Sized, I: Input<C> + ?Sized>(
         &'a self,
         s: &Scope<'a, C, I>,
     ) -> EvalResult<'a> {
-        match self {
-            Node::And(l, r) => {
-                let left = l.eval(s);
+        let mut r = self.eval_kind::<TRACE, C, I>(s);
+        if TRACE && let Some(meta) = &self.meta {
+            let inner = r.trace.take();
+            r.trace = Some(Box::new(trace::wrap(meta, &r, inner)));
+        }
+        r
+    }
+
+    /// Go `prunedTrace`.
+    fn pruned(&self) -> Option<Box<Trace>> {
+        self.meta.as_ref().map(|meta| Box::new(trace::pruned(meta)))
+    }
+
+    fn eval_kind<'a, const TRACE: bool, C: ?Sized, I: Input<C> + ?Sized>(
+        &'a self,
+        s: &Scope<'a, C, I>,
+    ) -> EvalResult<'a> {
+        match &self.kind {
+            Kind::And(l, r) => {
+                let mut left = l.eval::<TRACE, C, I>(s);
                 if left.fail() {
+                    if TRACE {
+                        left.trace = combine([left.trace.take(), r.pruned()]);
+                    }
                     return left;
                 }
-                let right = r.eval(s);
+                let mut right = r.eval::<TRACE, C, I>(s);
                 if right.fail() {
+                    if TRACE {
+                        right.trace = combine([left.trace.take(), right.trace.take()]);
+                    }
                     return right;
                 }
-                merge(left, right, |l, r| l.pass() && r.pass())
+                merge::<TRACE>(left, right, |l, r| l.pass() && r.pass())
             }
-            Node::Or(l, r) => {
-                let left = l.eval(s);
+            Kind::Or(l, r) => {
+                let mut left = l.eval::<TRACE, C, I>(s);
                 if left.pass() {
+                    if TRACE {
+                        left.trace = combine([left.trace.take(), r.pruned()]);
+                    }
                     return left;
                 }
-                let right = r.eval(s);
+                let mut right = r.eval::<TRACE, C, I>(s);
                 if right.pass() {
+                    if TRACE {
+                        right.trace = combine([left.trace.take(), right.trace.take()]);
+                    }
                     return right;
                 }
-                merge(left, right, |l, r| l.pass() || r.pass())
+                merge::<TRACE>(left, right, |l, r| l.pass() || r.pass())
             }
-            Node::Not(inner) => {
-                let r = inner.eval(s);
+            Kind::Not(inner) => {
+                let mut r = inner.eval::<TRACE, C, I>(s);
+                // A negated operator has no traced node between it and its
+                // operands, so its operand traces become its children.
+                let trace = if TRACE {
+                    match r.trace.take() {
+                        Some(t) if t.node.is_none() => Some(t),
+                        other => combine([other]),
+                    }
+                } else {
+                    None
+                };
                 if !r.ok() {
-                    return r.incomplete();
+                    return r.incomplete(trace);
                 }
-                EvalResult::bool(r.value.as_ref().is_zero())
+                EvalResult::bool(r.value.as_ref().is_zero()).with_trace(trace)
             }
-            Node::Compare { op, lhs, rhs } => {
-                let (mut lbuf, mut rbuf) = (Buf::<8>::new(), Buf::<8>::new());
-                let lv = match lhs.operand(s, &mut lbuf) {
-                    Ok(v) => v,
-                    Err(r) => return r,
-                };
-                let rv = match rhs.operand(s, &mut rbuf) {
-                    Ok(v) => v,
-                    Err(r) => return r,
-                };
-                EvalResult::bool(compare(view(&lv, &lbuf), *op, view(&rv, &rbuf)).pass)
+            Kind::Compare { op, lhs, rhs } => self.binary::<TRACE, C, I>(lhs, rhs, s, |lv, rv| {
+                let outcome = compare(lv, *op, rv);
+                (
+                    outcome.pass,
+                    if TRACE {
+                        Diagnostic::new(outcome.diagnostic, lv, *op, rv)
+                    } else {
+                        None
+                    },
+                )
+            }),
+            Kind::Match { lhs, rhs } => {
+                self.binary::<TRACE, C, I>(lhs, rhs, s, |lv, rv| (matches(lv, rv), None))
             }
-            Node::Match { lhs, rhs } => {
-                let (mut lbuf, mut rbuf) = (Buf::<8>::new(), Buf::<8>::new());
-                let lv = match lhs.operand(s, &mut lbuf) {
-                    Ok(v) => v,
-                    Err(r) => return r,
-                };
-                let rv = match rhs.operand(s, &mut rbuf) {
-                    Ok(v) => v,
-                    Err(r) => return r,
-                };
-                EvalResult::bool(matches(view(&lv, &lbuf), view(&rv, &rbuf)))
-            }
-            Node::In { lhs, rhs } => {
-                let (mut lbuf, mut rbuf) = (Buf::<8>::new(), Buf::<8>::new());
-                let lv = match lhs.operand(s, &mut lbuf) {
-                    Ok(v) => v,
-                    Err(r) => return r,
-                };
-                let rv = match rhs.operand(s, &mut rbuf) {
-                    Ok(v) => v,
-                    Err(r) => return r,
-                };
-                let (lv, rv) = (view(&lv, &lbuf), view(&rv, &rbuf));
+            Kind::In { lhs, rhs } => self.binary::<TRACE, C, I>(lhs, rhs, s, |lv, rv| {
+                // The parser guarantees a list on the right.
                 let ValueRef::Array(_) = rv else {
-                    // The right side must be a list (the parser guarantees it).
-                    return EvalResult::value(Val::Ref(ValueRef::Null));
+                    return (false, None);
                 };
                 // `x in list` is `list contains x`; a list-valued x is in the
                 // list when ANY of its elements is.
@@ -341,28 +410,36 @@ impl Node {
                     }
                     _ => compare(rv, CmpOp::Contains, lv),
                 };
-                EvalResult::bool(outcome.pass)
-            }
-            Node::Literal(v) => EvalResult::value(Val::Ref(v.as_ref())),
-            Node::ConstArray(items) => {
+                let diagnostic = if TRACE {
+                    Diagnostic::new(outcome.diagnostic, rv, CmpOp::Contains, lv)
+                } else {
+                    None
+                };
+                (outcome.pass, diagnostic)
+            }),
+            Kind::Literal(v) => EvalResult::value(Val::Ref(v.as_ref())),
+            Kind::ConstArray(items) => {
                 EvalResult::value(Val::Ref(ValueRef::Array(ArrayRef::Values(items))))
             }
-            Node::Path { segments, text } => match s.input.get(s.ctx, segments) {
+            Kind::Path { segments, text } => match s.input.get(s.ctx, segments) {
                 Ok(Some(v)) => EvalResult::value(v),
-                Ok(None) => EvalResult {
-                    value: Val::Ref(ValueRef::Null),
-                    error: None,
-                    missing: smallvec_one(text),
-                },
+                Ok(None) => {
+                    let mut missing = Missing::new();
+                    missing.push(&**text);
+                    EvalResult {
+                        missing,
+                        ..EvalResult::value(Val::Ref(ValueRef::Null))
+                    }
+                }
                 Err(source) => EvalResult::error(Error::Input {
                     field: text.to_string(),
                     source,
                 }),
             },
-            Node::Array(items) => {
+            Kind::Array(items) => {
                 let mut values = Vec::with_capacity(items.len());
                 for item in items.iter() {
-                    let r = item.eval(s);
+                    let r = item.eval::<TRACE, C, I>(s);
                     if !r.ok() {
                         return r;
                     }
@@ -370,99 +447,143 @@ impl Node {
                 }
                 EvalResult::value(Val::Owned(Value::Array(values)))
             }
-            Node::Call { target, args } => self.call(target, args, s),
+            Kind::Call { target, args } => call::<TRACE, C, I>(target, args, s),
         }
     }
 
-    /// Evaluate an operand of a comparison. A non-constant array literal is
-    /// evaluated into `buf` (returning `None`) so comparing against it does
-    /// not allocate. A non-ok operand ends the comparison with its error and
-    /// missing fields.
-    fn operand<'a, C: ?Sized, I: Input<C> + ?Sized, const N: usize>(
+    /// Go `nodeCompare`/`nodeMatch`/`nodeIn`: evaluate both operands (a
+    /// non-ok left operand prunes the right), then apply `f`, which returns
+    /// the result and, when tracing, a diagnostic.
+    fn binary<'a, const TRACE: bool, C: ?Sized, I: Input<C> + ?Sized>(
+        &'a self,
+        lhs: &'a Node,
+        rhs: &'a Node,
+        s: &Scope<'a, C, I>,
+        f: impl FnOnce(ValueRef<'_>, ValueRef<'_>) -> (bool, Option<Diagnostic>),
+    ) -> EvalResult<'a> {
+        let (mut lbuf, mut rbuf) = (Buf::<8>::new(), Buf::<8>::new());
+        let (mut left, left_in_buf) = lhs.operand::<TRACE, C, I, 8>(s, &mut lbuf);
+        if !left.ok() {
+            let trace = if TRACE {
+                combine([left.trace.take(), rhs.pruned()])
+            } else {
+                None
+            };
+            return left.incomplete(trace);
+        }
+        let (mut right, right_in_buf) = rhs.operand::<TRACE, C, I, 8>(s, &mut rbuf);
+        let trace = if TRACE {
+            combine([left.trace.take(), right.trace.take()])
+        } else {
+            None
+        };
+        if !right.ok() {
+            return right.incomplete(trace);
+        }
+        let lv = if left_in_buf {
+            ValueRef::Array(ArrayRef::Vals(&lbuf))
+        } else {
+            left.value.as_ref()
+        };
+        let rv = if right_in_buf {
+            ValueRef::Array(ArrayRef::Vals(&rbuf))
+        } else {
+            right.value.as_ref()
+        };
+        let (pass, diagnostic) = f(lv, rv);
+        let mut trace = trace;
+        if let Some(diagnostic) = diagnostic {
+            trace.get_or_insert_default().diagnostics.push(diagnostic);
+        }
+        EvalResult::bool(pass).with_trace(trace)
+    }
+
+    /// Evaluate a comparison operand. Untraced, a non-constant array literal
+    /// is evaluated into `buf` (the bool is true) so comparing against it does
+    /// not allocate; traced, it is evaluated as a node like in Go.
+    fn operand<'a, const TRACE: bool, C: ?Sized, I: Input<C> + ?Sized, const N: usize>(
         &'a self,
         s: &Scope<'a, C, I>,
         buf: &mut Buf<'a, N>,
-    ) -> Result<Option<Val<'a>>, EvalResult<'a>> {
-        if let Node::Array(items) = self {
+    ) -> (EvalResult<'a>, bool) {
+        if !TRACE && let Kind::Array(items) = &self.kind {
             for item in items.iter() {
-                let r = item.eval(s);
+                let r = item.eval::<TRACE, C, I>(s);
                 if !r.ok() {
-                    return Err(r.incomplete());
+                    return (r, false);
                 }
                 buf.push(r.value);
             }
-            return Ok(None);
+            return (EvalResult::value(Val::Ref(ValueRef::Null)), true);
         }
-        let r = self.eval(s);
-        if !r.ok() {
-            return Err(r.incomplete());
-        }
-        Ok(Some(r.value))
+        (self.eval::<TRACE, C, I>(s), false)
     }
+}
 
-    fn call<'a, C: ?Sized, I: Input<C> + ?Sized>(
-        &'a self,
-        target: &'a Call,
-        args: &'a [Node],
-        s: &Scope<'a, C, I>,
-    ) -> EvalResult<'a> {
-        let name = match target {
-            Call::StartsWith => {
-                let mut vals = Buf::<2>::new();
-                if let Err(r) = eval_args(args, s, &mut vals) {
-                    return r;
-                }
-                return match starts_with(&vals) {
-                    Ok(b) => EvalResult::bool(b),
-                    Err(e) => EvalResult::error(e),
-                };
-            }
-            Call::Named(name) => name,
-        };
-        if let Some(function) = s.env.functions.get(&**name) {
-            if function.args().len() != args.len() {
-                return EvalResult::error(Error::ArgCount {
-                    function: name.to_string(),
-                    expected: function.args().len(),
-                    got: args.len(),
-                });
-            }
-            let mut vals = Buf::<4>::new();
-            if let Err(r) = eval_args(args, s, &mut vals) {
+fn call<'a, const TRACE: bool, C: ?Sized, I: Input<C> + ?Sized>(
+    target: &'a Call,
+    args: &'a [Node],
+    s: &Scope<'a, C, I>,
+) -> EvalResult<'a> {
+    let name = match target {
+        Call::StartsWith => {
+            let mut vals = Buf::<2>::new();
+            if let Err(r) = eval_args::<TRACE, C, I, 2>(args, s, &mut vals) {
                 return r;
             }
-            return match function.call(name, s.ctx, &vals) {
-                Ok(v) => EvalResult::value(v),
+            return match starts_with(&vals) {
+                Ok(b) => EvalResult::bool(b),
                 Err(e) => EvalResult::error(e),
             };
         }
-        if let Some(macro_) = s.env.macros.get(&**name) {
-            if !args.is_empty() {
-                return EvalResult::error(Error::MacroArgs {
-                    name: name.to_string(),
-                    got: args.len(),
-                });
-            }
-            return macro_.rule.root.eval(s);
+        Call::Named(name) => name,
+    };
+    if let Some(function) = s.env.functions.get(&**name) {
+        if function.args().len() != args.len() {
+            return EvalResult::error(Error::ArgCount {
+                function: name.to_string(),
+                expected: function.args().len(),
+                got: args.len(),
+            });
         }
-        EvalResult::error(Error::UnknownFunction(name.to_string()))
+        let mut vals = Buf::<4>::new();
+        if let Err(r) = eval_args::<TRACE, C, I, 4>(args, s, &mut vals) {
+            return r;
+        }
+        return match function.call(name, s.ctx, &vals) {
+            Ok(v) => EvalResult::value(v),
+            Err(e) => EvalResult::error(e),
+        };
     }
-}
-
-fn smallvec_one(text: &str) -> Missing<'_> {
-    let mut missing = Missing::new();
-    missing.push(text);
-    missing
+    if let Some(macro_) = s.env.macros.get(&**name) {
+        if !args.is_empty() {
+            return EvalResult::error(Error::MacroArgs {
+                name: name.to_string(),
+                got: args.len(),
+            });
+        }
+        let mut r = macro_.rule.root.eval::<TRACE, C, I>(s);
+        if TRACE && let Some(root) = r.trace.take() {
+            // Go wraps the expansion in a node for the macro source; the call
+            // node adopts that node's children, i.e. the expansion's root.
+            r.trace = Some(Box::new(Trace {
+                children: vec![*root],
+                ..Trace::default()
+            }));
+        }
+        return r;
+    }
+    EvalResult::error(Error::UnknownFunction(name.to_string()))
 }
 
 /// Evaluate call arguments in order; the first non-ok argument is the result.
-fn eval_args<'a, C: ?Sized, I: Input<C> + ?Sized, const N: usize>(
+fn eval_args<'a, const TRACE: bool, C: ?Sized, I: Input<C> + ?Sized, const N: usize>(
     args: &'a [Node],
     s: &Scope<'a, C, I>,
     vals: &mut Buf<'a, N>,
 ) -> Result<(), EvalResult<'a>> {
     for arg in args {
-        let r = arg.eval(s);
+        let r = arg.eval::<TRACE, C, I>(s);
         if !r.ok() {
             return Err(r);
         }
@@ -471,18 +592,10 @@ fn eval_args<'a, C: ?Sized, I: Input<C> + ?Sized, const N: usize>(
     Ok(())
 }
 
-/// Borrow an operand evaluated by [`Node::operand`].
-fn view<'b, const N: usize>(value: &'b Option<Val<'_>>, buf: &'b Buf<'_, N>) -> ValueRef<'b> {
-    match value {
-        Some(v) => v.as_ref(),
-        None => ValueRef::Array(ArrayRef::Vals(buf.as_slice())),
-    }
-}
-
 /// Go `nodeAnd`/`nodeOr` after short-circuiting: if exactly one side is
-/// incomplete, return it; otherwise merge errors and missing fields, with a
-/// value only when both sides completed.
-fn merge<'a>(
+/// incomplete, return it as is; otherwise merge errors and missing fields,
+/// with a value only when both sides completed.
+fn merge<'a, const TRACE: bool>(
     left: EvalResult<'a>,
     right: EvalResult<'a>,
     value: impl Fn(&EvalResult, &EvalResult) -> bool,
@@ -490,12 +603,23 @@ fn merge<'a>(
     match (left.ok(), right.ok()) {
         (true, false) => right,
         (false, true) => left,
-        (true, true) => EvalResult::bool(value(&left, &right)),
-        (false, false) => EvalResult {
-            value: Val::Ref(ValueRef::Null),
-            error: coalesce(left.error, right.error),
-            missing: union(left.missing, right.missing),
-        },
+        (both_ok, _) => {
+            let value = if both_ok {
+                Val::Ref(ValueRef::Bool(value(&left, &right)))
+            } else {
+                Val::Ref(ValueRef::Null)
+            };
+            EvalResult {
+                value,
+                error: coalesce(left.error, right.error),
+                missing: union(left.missing, right.missing),
+                trace: if TRACE {
+                    combine([left.trace, right.trace])
+                } else {
+                    None
+                },
+            }
+        }
     }
 }
 

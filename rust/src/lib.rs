@@ -28,6 +28,7 @@ pub use ast::Ast;
 pub use env::{ArgSpec, Args, Env, EnvBuilder, FromArg, Function, Macro, Type};
 pub use error::{BoxError, Error, ParseError};
 pub use eval::EvalResult;
+pub use eval::trace::{Diagnostic, DiagnosticCode, Trace, TraceStatus};
 pub use input::{FnInput, Input, Kv, KvEntry, KvInput, Lazy, NoInput};
 pub use json_input::{JsonOptions, decode_json};
 pub use print::{PrintMode, format};
@@ -56,6 +57,9 @@ pub fn compile(ast: Arc<Ast>) -> Result<Rule, ParseError> {
 pub struct Opts<'e, C: ?Sized = ()> {
     /// Custom functions and macros.
     pub env: &'e Env<C>,
+    /// Record an evaluation [`Trace`]. Untraced evaluation runs code with no
+    /// trace bookkeeping at all.
+    pub trace: bool,
 }
 
 impl<C: ?Sized> Clone for Opts<'_, C> {
@@ -68,7 +72,12 @@ impl<C: ?Sized> Copy for Opts<'_, C> {}
 
 impl<'e, C: ?Sized> Opts<'e, C> {
     pub fn new(env: &'e Env<C>) -> Self {
-        Opts { env }
+        Opts { env, trace: false }
+    }
+
+    /// The same options with tracing on or off.
+    pub fn with_trace(self, trace: bool) -> Self {
+        Opts { trace, ..self }
     }
 }
 
@@ -76,7 +85,10 @@ static EMPTY_ENV: LazyLock<Env> = LazyLock::new(Env::new);
 
 impl Default for Opts<'static> {
     fn default() -> Self {
-        Opts { env: &EMPTY_ENV }
+        Opts {
+            env: &EMPTY_ENV,
+            trace: false,
+        }
     }
 }
 
@@ -99,11 +111,16 @@ impl Rule {
         ctx: &'a C,
         opts: Opts<'a, C>,
     ) -> EvalResult<'a> {
-        self.root.eval(&eval::Scope {
+        let scope = eval::Scope {
             input,
             ctx,
             env: opts.env,
-        })
+        };
+        if opts.trace {
+            self.root.eval::<true, C, I>(&scope)
+        } else {
+            self.root.eval::<false, C, I>(&scope)
+        }
     }
 }
 
