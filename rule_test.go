@@ -1243,3 +1243,23 @@ func TestRegexFlags(t *testing.T) {
 	assertRulep(t, `ua matches /curl/and ok`, kv{"ua": "curl", "ok": true}).Ok().DoesPass(true)
 	require.Equal(t, `ua =~ /curl/i`, MustParse(`ua matches /curl/i`).String())
 }
+
+func TestRegexDialect(t *testing.T) {
+	// Forms whose meaning differs between regex engines are rejected.
+	for _, pattern := range []string{
+		`/\<a/`, `/a\>/`, `/\Qa.b\E/`, `/\0/`, `/\12/`, `/\b{start}a/`,
+		`/\p{^L}/`, `/a{,3}/`, `/[\d-z]/`, `/[\p{L}-z]/`,
+		`/[a[b]]/`, `/[[a]]/`, `/[a-z&&b]/`, `/[a--b]/`, `/[a~~b]/`,
+	} {
+		assertParseError(t, `x matches `+pattern)
+	}
+	// Equivalent forms that mean the same everywhere are accepted.
+	for _, pattern := range []string{
+		`/\ba/`, `/\x{1F600}/`, `/a{0,3}/`, `/\P{L}/`, `/[\d\-z]/`, `/[a-z]/`,
+		`/[[:alpha:]]/`, `/[[:^digit:]x]/`, `/[\[\]]/`, `/[]a]/`, `/[^]a]/`, `/[a-]/`, `/[a&b~c-]/`,
+		`/\{,3\}/`, `/a{2}/`,
+	} {
+		_, err := Parse(`x matches ` + pattern)
+		require.NoError(t, err, pattern)
+	}
+}

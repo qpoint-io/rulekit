@@ -147,6 +147,9 @@ func parseRegex[T interface{ string | []byte }](data T) (*regexp.Regexp, error) 
 	if flags := raw[end+1:]; flags != "" {
 		pattern = "(?" + flags + ")" + pattern
 	}
+	if err := checkRegexDialect(pattern); err != nil {
+		return nil, err
+	}
 	return regexp.Compile(pattern)
 }
 
