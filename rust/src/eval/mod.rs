@@ -18,7 +18,7 @@ use crate::env::Env;
 use crate::error::{Error, ParseError};
 use crate::input::Input;
 use crate::literal::parse_literal;
-use crate::print::{canonical, path_string};
+use crate::print::{canonical_all, path_string};
 use crate::value::{ArrayRef, Val, Value, ValueRef};
 use compare::{CmpOp, compare, compare_slice};
 use trace::{Diagnostic, Frag, Trace, combine};
@@ -82,6 +82,12 @@ enum Call {
 /// Lower an AST node (Go `lowerAST`). Literal values are parsed here; the
 /// first invalid literal, in evaluation order, is the error.
 pub(crate) fn lower(ast: &Ast, id: NodeId) -> Result<Node, ParseError> {
+    lower_node(ast, &mut canonical_all(ast), id)
+}
+
+/// Lower one node; `texts` holds each node's canonical expression (taken by
+/// the node's trace metadata).
+fn lower_node(ast: &Ast, texts: &mut [String], id: NodeId) -> Result<Node, ParseError> {
     let kind = match ast.data(id) {
         NodeData::Literal { span, kind } => Kind::Literal(
             parse_literal(*kind, ast.text(*span))
@@ -94,7 +100,7 @@ pub(crate) fn lower(ast: &Ast, id: NodeId) -> Result<Node, ParseError> {
         NodeData::Array { items, .. } => {
             let items = items
                 .iter()
-                .map(|&item| lower(ast, item))
+                .map(|&item| lower_node(ast, texts, item))
                 .collect::<Result<Vec<_>, _>>()?;
             if items
                 .iter()
@@ -112,7 +118,7 @@ pub(crate) fn lower(ast: &Ast, id: NodeId) -> Result<Node, ParseError> {
         NodeData::Call { name, args, .. } => {
             let args = args
                 .iter()
-                .map(|&arg| lower(ast, arg))
+                .map(|&arg| lower_node(ast, texts, arg))
                 .collect::<Result<Vec<_>, _>>()?;
             let name = ast.text(*name);
             let target = if name == "starts_with" {
@@ -125,7 +131,7 @@ pub(crate) fn lower(ast: &Ast, id: NodeId) -> Result<Node, ParseError> {
                 args: args.into_boxed_slice(),
             }
         }
-        NodeData::Unary { operand, .. } => Kind::Not(Box::new(lower(ast, *operand)?)),
+        NodeData::Unary { operand, .. } => Kind::Not(Box::new(lower_node(ast, texts, *operand)?)),
         NodeData::Binary {
             op,
             negated,
@@ -140,28 +146,27 @@ pub(crate) fn lower(ast: &Ast, id: NodeId) -> Result<Node, ParseError> {
                     ..
                 }
             );
-            let lhs = Box::new(lower(ast, *lhs)?);
-            let rhs = Box::new(lower(ast, *rhs)?);
-            let cmp = |op| Kind::Compare {
-                op,
-                lhs: lhs.clone(),
-                rhs: rhs.clone(),
-            };
-            let base = match op {
-                Operator::And => Kind::And(lhs, rhs),
-                Operator::Or => Kind::Or(lhs, rhs),
-                Operator::Eq => cmp(CmpOp::Eq),
-                Operator::Ne => cmp(CmpOp::Ne),
-                Operator::Gt => cmp(CmpOp::Gt),
-                Operator::Ge => cmp(CmpOp::Ge),
-                Operator::Lt => cmp(CmpOp::Lt),
-                Operator::Le => cmp(CmpOp::Le),
-                Operator::Contains => cmp(CmpOp::Contains),
-                Operator::Matches => Kind::Match { lhs, rhs },
+            let lhs = Box::new(lower_node(ast, texts, *lhs)?);
+            let rhs = Box::new(lower_node(ast, texts, *rhs)?);
+            let cmp = |op| match op {
+                Operator::Eq => Some(CmpOp::Eq),
+                Operator::Ne => Some(CmpOp::Ne),
+                Operator::Gt => Some(CmpOp::Gt),
+                Operator::Ge => Some(CmpOp::Ge),
+                Operator::Lt => Some(CmpOp::Lt),
+                Operator::Le => Some(CmpOp::Le),
+                Operator::Contains => Some(CmpOp::Contains),
                 // `x in <CIDR>` is CIDR containment, i.e. `x == <CIDR>`.
-                Operator::In if rhs_is_cidr => cmp(CmpOp::Eq),
-                Operator::In => Kind::In { lhs, rhs },
-                Operator::Not => unreachable!("not is unary"),
+                Operator::In if rhs_is_cidr => Some(CmpOp::Eq),
+                _ => None,
+            };
+            let base = match (op, cmp(*op)) {
+                (_, Some(op)) => Kind::Compare { op, lhs, rhs },
+                (Operator::And, _) => Kind::And(lhs, rhs),
+                (Operator::Or, _) => Kind::Or(lhs, rhs),
+                (Operator::Matches, _) => Kind::Match { lhs, rhs },
+                (Operator::In, _) => Kind::In { lhs, rhs },
+                _ => unreachable!("not is unary; comparisons are handled above"),
             };
             if *negated {
                 Kind::Not(Box::new(Node {
@@ -176,7 +181,7 @@ pub(crate) fn lower(ast: &Ast, id: NodeId) -> Result<Node, ParseError> {
     let meta = Meta {
         id,
         kind: ast.node(id).kind(),
-        expr: canonical(ast, id).into_boxed_str(),
+        expr: std::mem::take(&mut texts[id.index()]).into_boxed_str(),
     };
     Ok(Node {
         kind,

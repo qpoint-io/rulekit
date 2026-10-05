@@ -510,6 +510,11 @@ impl Ast {
         })
     }
 
+    #[cfg(test)]
+    pub(crate) fn node_id(&self, index: usize) -> NodeId {
+        NodeId(u32::try_from(index).expect("index fits u32"))
+    }
+
     pub(crate) fn data(&self, id: NodeId) -> &NodeData {
         &self.nodes[id.index()]
     }
