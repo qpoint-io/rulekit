@@ -1,366 +1,105 @@
-//! IP addresses and CIDR networks: a hand port of Go's `net.ParseIP` /
-//! `net.ParseCIDR` acceptance (which delegate to `net/netip.ParseAddr`) and
-//! of the text forms in `testdata/vectors/README.md` ("Text forms").
+//! IP addresses and CIDR networks on `std::net` and `ipnet`, plus rulekit's
+//! own rules: an IPv4-mapped IPv6 address or network is IPv4, and the text
+//! forms of `testdata/vectors/README.md` ("Text forms"), which std's
+//! `Display` produces once mapped values are normalized to IPv4.
 
+use ipnet::{IpNet, Ipv4Net};
 use std::fmt;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::IpAddr;
 
 /// An IP address. An IPv4-mapped IPv6 address (`::ffff:a.b.c.d`) is
 /// normalized to IPv4 at construction, so equality, hashing, `is_v4` and the
-/// text form all treat it as the IPv4 address it maps, as Go's `net.IP` does.
+/// text form all treat it as the IPv4 address it maps.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Ip(IpAddr);
 
 impl Ip {
-    /// Parses `s` exactly as Go's `net.ParseIP` accepts it.
+    /// Parses `s` with std's `IpAddr` grammar: dotted decimal IPv4 without
+    /// leading zeros, or IPv6 without a zone.
     pub fn parse(s: &str) -> Option<Ip> {
-        parse_addr(s.as_bytes()).map(Ip::from_addr)
+        s.parse().ok().map(Ip::from_addr)
     }
 
     /// Wraps `a`, normalizing an IPv4-mapped IPv6 address to IPv4.
     pub fn from_addr(a: IpAddr) -> Ip {
-        match a {
-            IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
-                Some(v4) => Ip(IpAddr::V4(v4)),
-                None => Ip(a),
-            },
-            IpAddr::V4(_) => Ip(a),
-        }
+        Ip(a.to_canonical())
     }
 
     pub fn addr(self) -> IpAddr {
         self.0
     }
 
-    /// Go `ip.To4() != nil`: IPv4 or IPv4-mapped IPv6.
+    /// IPv4 or IPv4-mapped IPv6.
     pub fn is_v4(self) -> bool {
         self.0.is_ipv4()
     }
 }
 
+/// std's `Display` is the text form: dotted decimal for IPv4, RFC 5952 for
+/// IPv6. Its one embedded-dotted case (`::ffff:a.b.c.d`) cannot occur, as
+/// mapped addresses are IPv4 here.
 impl fmt::Display for Ip {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.0 {
-            IpAddr::V4(v4) => write_v4(f, v4),
-            IpAddr::V6(v6) => write_v6(f, v6),
-        }
+        self.0.fmt(f)
     }
 }
 
-/// Dotted decimal without leading zeros.
-fn write_v4(f: &mut fmt::Formatter<'_>, a: Ipv4Addr) -> fmt::Result {
-    let [a, b, c, d] = a.octets();
-    write!(f, "{a}.{b}.{c}.{d}")
-}
-
-/// RFC 5952, as netip `Addr.appendTo6`: lowercase hex without leading zeros,
-/// the first longest run of two or more zero groups replaced by `::`, no
-/// embedded dotted form.
-fn write_v6(f: &mut fmt::Formatter<'_>, a: Ipv6Addr) -> fmt::Result {
-    let g = a.segments();
-    // 8 means "no run": the loop index never reaches it.
-    let (mut zero_start, mut zero_end) = (8, 8);
-    for i in 0..8 {
-        let mut j = i;
-        while j < 8 && g[j] == 0 {
-            j += 1;
-        }
-        // `>` (not `>=`) keeps the first run on a tie.
-        if j - i >= 2 && j - i > zero_end - zero_start {
-            zero_start = i;
-            zero_end = j;
-        }
-    }
-    let mut i = 0;
-    while i < 8 {
-        if i == zero_start {
-            f.write_str("::")?;
-            i = zero_end;
-            if i >= 8 {
-                break;
-            }
-        } else if i > 0 {
-            f.write_str(":")?;
-        }
-        write!(f, "{:x}", g[i])?;
-        i += 1;
-    }
-    Ok(())
-}
-
-/// A CIDR network: the network address with host bits cleared, and the
-/// prefix length.
+/// A CIDR network with host bits cleared.
 ///
-/// An IPv4-mapped network (`::ffff:10.0.0.0/104`) is stored as the IPv4
-/// network it denotes (`10.0.0.0/8`): Go prints it that way, reports version
-/// `v4` and prefix 8 (`cidrField`), and its `Contains` compares only the last
-/// four bytes against IPv4 (or mapped) addresses, exactly as for an IPv4 net.
-/// A mapped address with prefix < 96 masks away the `ffff`, so its network is
-/// a plain IPv6 one (`::ffff:0.0.0.0/80` is `::/80`).
+/// An IPv4-mapped network (`::ffff:10.0.0.0/104`) is the IPv4 network it
+/// denotes (`10.0.0.0/8`, prefix 8). A mapped address with prefix < 96
+/// masks away the `ffff`, so its network is a plain IPv6 one
+/// (`::ffff:0.0.0.0/80` is `::/80`).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct Cidr {
-    network: Ip,
-    /// At most 32 for an IPv4 network, at most 128 for IPv6.
-    prefix: u8,
-}
+pub struct Cidr(IpNet);
 
 impl Cidr {
-    /// Parses `s` exactly as Go's `net.ParseCIDR` accepts it.
+    /// Parses `address/prefix`: the address as [`Ip::parse`] reads it, the
+    /// prefix as ASCII decimal digits (leading zeros allowed) no larger than
+    /// the address's bit length.
     pub fn parse(s: &str) -> Option<Cidr> {
-        let (addr, mask) = s.split_once('/')?;
-        let addr = parse_addr(addr.as_bytes())?;
-        let bits = match addr {
-            IpAddr::V4(_) => 32,
-            IpAddr::V6(_) => 128,
-        };
-        let n = dtoi(mask.as_bytes())?;
-        if n > bits {
+        let (addr, prefix) = s.split_once('/')?;
+        // `u8::from_str` also accepts a leading `+`.
+        if !prefix.bytes().all(|b| b.is_ascii_digit()) {
             return None;
         }
-        // n <= 128 from here on.
-        let prefix = n as u8;
-        Some(match addr {
-            IpAddr::V4(v4) => Cidr {
-                network: Ip(IpAddr::V4(Ipv4Addr::from_bits(
-                    v4.to_bits() & mask32(prefix),
-                ))),
-                prefix,
+        let net = IpNet::new(addr.parse().ok()?, prefix.parse().ok()?).ok()?;
+        Some(Cidr(match net.trunc() {
+            IpNet::V6(n) => match (n.network().to_ipv4_mapped(), n.prefix_len().checked_sub(96)) {
+                // A prefix of 96..=128 leaves at most 32 bits.
+                (Some(v4), Some(p)) => IpNet::V4(Ipv4Net::new_assert(v4, p)),
+                _ => IpNet::V6(n),
             },
-            IpAddr::V6(v6) => {
-                let net = Ipv6Addr::from_bits(v6.to_bits() & mask128(prefix));
-                match net.to_ipv4_mapped() {
-                    // The ffff in bytes 10..12 survives masking only when
-                    // prefix >= 96, so this cannot underflow.
-                    Some(v4) => Cidr {
-                        network: Ip(IpAddr::V4(v4)),
-                        prefix: prefix - 96,
-                    },
-                    None => Cidr {
-                        network: Ip(IpAddr::V6(net)),
-                        prefix,
-                    },
-                }
-            }
-        })
+            n => n,
+        }))
     }
 
     pub fn network(self) -> Ip {
-        self.network
+        // Normalized at construction: an IPv6 network is never mapped.
+        Ip(self.0.network())
     }
 
     /// The prefix length; for an IPv4-mapped network, the IPv4 prefix
-    /// (`::ffff:10.0.0.0/104` is 8), as Go's `cidrField`.
+    /// (`::ffff:10.0.0.0/104` is 8).
     pub fn prefix(self) -> u8 {
-        self.prefix
+        self.0.prefix_len()
     }
 
     pub fn is_v4(self) -> bool {
-        self.network.is_v4()
+        matches!(self.0, IpNet::V4(_))
     }
 
-    /// Go `(*net.IPNet).Contains`: an IPv4 network contains only IPv4 (and
-    /// IPv4-mapped) addresses, an IPv6 network only non-mapped IPv6 ones
-    /// (`::/0` does not contain `1.2.3.4`).
+    /// An IPv4 network contains only IPv4 (incl. mapped) addresses, an IPv6
+    /// network only non-mapped IPv6 ones (`::/0` does not contain `1.2.3.4`).
     pub fn contains(self, ip: Ip) -> bool {
-        match (self.network.0, ip.0) {
-            (IpAddr::V4(n), IpAddr::V4(a)) => {
-                let m = mask32(self.prefix);
-                n.to_bits() & m == a.to_bits() & m
-            }
-            (IpAddr::V6(n), IpAddr::V6(a)) => {
-                let m = mask128(self.prefix);
-                n.to_bits() & m == a.to_bits() & m
-            }
-            _ => false,
-        }
+        self.0.contains(&ip.0)
     }
 }
 
 impl fmt::Display for Cidr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}/{}", self.network, self.prefix)
+        self.0.fmt(f)
     }
-}
-
-fn mask32(prefix: u8) -> u32 {
-    u32::MAX.checked_shl(32 - u32::from(prefix)).unwrap_or(0)
-}
-
-fn mask128(prefix: u8) -> u128 {
-    u128::MAX.checked_shl(128 - u32::from(prefix)).unwrap_or(0)
-}
-
-/// Go `net.dtoi` requiring the whole string: one or more ASCII digits (any
-/// number of leading zeros; no sign, no space), failing once the value
-/// reaches 0xFFFFFF.
-fn dtoi(s: &[u8]) -> Option<u32> {
-    const BIG: u32 = 0xFF_FFFF;
-    if s.is_empty() {
-        return None;
-    }
-    let mut n: u32 = 0;
-    for &c in s {
-        if !c.is_ascii_digit() {
-            return None;
-        }
-        n = n * 10 + u32::from(c - b'0');
-        if n >= BIG {
-            return None;
-        }
-    }
-    Some(n)
-}
-
-/// Go `netip.ParseAddr` minus zones (`net.ParseIP` rejects any zone, and an
-/// empty zone is an error anyway). The first `.`, `:` or `%` picks the form.
-/// A mapped IPv6 address is returned unnormalized, so callers can tell its
-/// bit length (128) from an IPv4 one (32).
-fn parse_addr(s: &[u8]) -> Option<IpAddr> {
-    for &c in s {
-        match c {
-            b'.' => return parse_v4_fields(s).map(|o| IpAddr::V4(Ipv4Addr::from(o))),
-            b':' => return parse_v6(s).map(IpAddr::V6),
-            b'%' => return None,
-            _ => {}
-        }
-    }
-    None
-}
-
-/// Go `netip.parseIPv4Fields`: four decimal fields 0..=255, each non-empty
-/// and without leading zeros.
-fn parse_v4_fields(s: &[u8]) -> Option<[u8; 4]> {
-    let mut fields = [0u8; 4];
-    let mut val: u32 = 0;
-    let mut pos = 0;
-    let mut dig_len = 0;
-    for (i, &c) in s.iter().enumerate() {
-        if c.is_ascii_digit() {
-            if dig_len == 1 && val == 0 {
-                return None;
-            }
-            val = val * 10 + u32::from(c - b'0');
-            dig_len += 1;
-            if val > 255 {
-                return None;
-            }
-        } else if c == b'.' {
-            if i == 0 || i == s.len() - 1 || s[i - 1] == b'.' {
-                return None;
-            }
-            if pos == 3 {
-                return None;
-            }
-            fields[pos] = val as u8;
-            pos += 1;
-            val = 0;
-            dig_len = 0;
-        } else {
-            return None;
-        }
-    }
-    if pos < 3 {
-        return None;
-    }
-    fields[3] = val as u8;
-    Some(fields)
-}
-
-/// Go `netip.parseIPv6` for input without a zone (any `%` is rejected).
-fn parse_v6(input: &[u8]) -> Option<Ipv6Addr> {
-    if input.contains(&b'%') {
-        return None;
-    }
-    let mut s = input;
-    let mut ip = [0u8; 16];
-    let mut ellipsis: Option<usize> = None;
-
-    if s.len() >= 2 && s[0] == b':' && s[1] == b':' {
-        ellipsis = Some(0);
-        s = &s[2..];
-        if s.is_empty() {
-            return Some(Ipv6Addr::UNSPECIFIED);
-        }
-    }
-
-    let mut i = 0;
-    while i < 16 {
-        let mut off = 0;
-        let mut acc: u32 = 0;
-        while off < s.len() {
-            let c = s[off];
-            let d = match c {
-                b'0'..=b'9' => c - b'0',
-                b'a'..=b'f' => c - b'a' + 10,
-                b'A'..=b'F' => c - b'A' + 10,
-                _ => break,
-            };
-            // More than 4 digits in a group (so the value is < 2^16).
-            if off > 3 {
-                return None;
-            }
-            acc = (acc << 4) + u32::from(d);
-            off += 1;
-        }
-        if off == 0 {
-            return None;
-        }
-
-        // Followed by a dot: the trailing embedded IPv4, parsed from the
-        // start of this group (its hex digits are reread as decimal).
-        if off < s.len() && s[off] == b'.' {
-            if ellipsis.is_none() && i != 12 {
-                return None;
-            }
-            if i + 4 > 16 {
-                return None;
-            }
-            ip[i..i + 4].copy_from_slice(&parse_v4_fields(s)?);
-            s = &[];
-            i += 4;
-            break;
-        }
-
-        ip[i] = (acc >> 8) as u8;
-        ip[i + 1] = acc as u8;
-        i += 2;
-
-        s = &s[off..];
-        if s.is_empty() {
-            break;
-        }
-        if s[0] != b':' || s.len() == 1 {
-            return None;
-        }
-        s = &s[1..];
-
-        if s[0] == b':' {
-            if ellipsis.is_some() {
-                return None;
-            }
-            ellipsis = Some(i);
-            s = &s[1..];
-            if s.is_empty() {
-                break;
-            }
-        }
-    }
-
-    if !s.is_empty() {
-        return None;
-    }
-
-    if i < 16 {
-        // Too short without `::`; otherwise expand it.
-        let e = ellipsis?;
-        let n = 16 - i;
-        ip.copy_within(e..i, e + n);
-        ip[e..e + n].fill(0);
-    } else if ellipsis.is_some() {
-        // The `::` must stand for at least one zero group.
-        return None;
-    }
-    Some(Ipv6Addr::from(ip))
 }
 
 #[cfg(test)]
@@ -369,8 +108,10 @@ mod tests {
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
     // Expectations below were produced by Go 1.27.1 (net.ParseIP, net.ParseCIDR,
-    // IP.String, IPNet.String, IPNet.Contains, rulekit fields.go cidrField),
-    // and agree with a ~520k-case randomized differential run.
+    // IP.String, IPNet.String, IPNet.Contains, rulekit fields.go cidrField).
+    // A differential run against Go (~8.6M parse inputs: random, mutated,
+    // exhaustive short strings, structured IPv6 group shapes; 400k Contains
+    // pairs) found no difference.
 
     /// (input, Some((text, is_v4)) or None): Go 1.27.1 net.ParseIP + IP.String.
     const IP_CASES: &[(&str, Option<(&str, bool)>)] = &[
@@ -576,6 +317,13 @@ mod tests {
         ("1::/0128", Some(("1::/128", 128, false))),
         ("1::/00", Some(("::/0", 0, false))),
         ("::1.2.3.4/96", Some(("::/96", 96, false))),
+        // ipnet's own `FromStr` would accept leading-zero octets and reject
+        // prefixes longer than 2 (IPv4) or 3 (IPv6) digits.
+        ("010.0.0.1/8", None),
+        ("::ffff:010.0.0.1/104", None),
+        ("::/0008", Some(("::/8", 8, false))),
+        ("10.0.0.1/0032", Some(("10.0.0.1/32", 32, true))),
+        ("1.2.3.4/+32", None),
     ];
 
     /// (cidr, ip, Go (*net.IPNet).Contains).
