@@ -755,7 +755,9 @@ func (p *parser) parsePrimary() (astNode, error) {
 		}
 		return p.parseArray(tok)
 	case op_NOT:
-		right, err := p.parseExpr(4)
+		// not binds looser than comparisons and tighter than and/or, so
+		// `not a == 1` is `not (a == 1)`.
+		right, err := p.parseExpr(infixPrecedence(op_EQ))
 		if err != nil {
 			return nil, err
 		}

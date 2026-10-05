@@ -89,7 +89,7 @@ The Result also provides additional helper methods:
 | ---------- | ------ | -------------------------------------------------------------------- |
 | `or`       | `\|\|` | Logical OR                                                           |
 | `and`      | `&&`   | Logical AND                                                          |
-| `not`      | `!`    | Logical NOT                                                          |
+| `not`      | `!`    | Logical NOT. Binds looser than comparisons, so `not a == 1` means `not (a == 1)` |
 | `()`       |        | Parentheses for grouping                                             |
 | `==`       | `eq`   | Equal to                                                             |
 | `!=`       | `ne`   | Not equal to                                                         |

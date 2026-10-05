@@ -216,7 +216,16 @@ func (n *nodeMatch) apply(lv any, rv any) bool {
 }
 
 func (n *nodeMatch) String() string {
-	return n.lv.String() + " =~ " + n.rv.String()
+	return operandString(n.lv) + " =~ " + operandString(n.rv)
+}
+
+// operandString prints a comparison operand, parenthesizing negations because
+// not binds looser than comparisons.
+func operandString(r Rule) string {
+	if _, ok := unwrapTracedRule(r).(*nodeNot); ok {
+		return "(" + r.String() + ")"
+	}
+	return r.String()
 }
 
 func (n *nodeMatch) Print(PrintMode) string {
@@ -265,7 +274,7 @@ func (n *nodeCompare) Eval(ctx context.Context, input Input, opts Opts) Result {
 }
 
 func (n *nodeCompare) String() string {
-	return n.lv.String() + " " + operatorToString(n.op) + " " + n.rv.String()
+	return operandString(n.lv) + " " + operatorToString(n.op) + " " + operandString(n.rv)
 }
 
 func (n *nodeCompare) Print(PrintMode) string {
@@ -332,7 +341,7 @@ func (n *nodeIn) Eval(ctx context.Context, input Input, opts Opts) Result {
 }
 
 func (n *nodeIn) String() string {
-	return n.lv.String() + " in " + n.rv.String()
+	return operandString(n.lv) + " in " + operandString(n.rv)
 }
 
 func (n *nodeIn) Print(PrintMode) string {

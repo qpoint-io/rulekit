@@ -510,6 +510,10 @@
       "expect": {"value": true}
     },
     {"name": "not negates true", "expr": "not (a == 1)", "input": {"a": 1}, "expect": {"value": false}},
-    {"name": "not negates false", "expr": "not (a == 1)", "input": {"a": 2}, "expect": {"value": true}}
+    {"name": "not negates false", "expr": "not (a == 1)", "input": {"a": 2}, "expect": {"value": true}},
+    {"name": "not binds looser than comparison", "expr": "not a == 1", "input": {"a": 2}, "expect": {"value": true}},
+    {"name": "! binds looser than comparison", "expr": "!a == 1", "input": {"a": 1}, "expect": {"value": false}},
+    {"name": "not binds tighter than and", "expr": "not a == 1 and b", "input": {"a": 1, "b": true}, "expect": {"value": false}},
+    {"name": "parenthesized not as comparison operand", "expr": "(not a) == false", "input": {"a": true}, "expect": {"value": true}}
   ]
 }

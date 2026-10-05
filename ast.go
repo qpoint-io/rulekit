@@ -329,6 +329,11 @@ func printASTWithParent(node astNode, parentPrec int, rightChild bool) string {
 			right = "(" + printAST(n.right) + ")"
 		}
 		out = "not " + right
+		// not binds looser than comparisons, so it needs parentheses as a
+		// comparison operand.
+		if parentPrec >= astPrecedence(&astBinary{op: astOpEQ}) {
+			return "(" + out + ")"
+		}
 	case *astBinary:
 		out = printASTWithParent(n.left, prec, false) + " " + astOperatorString(n.op) + " " + printASTWithParent(n.right, prec, true)
 	}
