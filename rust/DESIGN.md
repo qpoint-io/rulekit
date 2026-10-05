@@ -69,11 +69,13 @@ live outside `rust/` anyway) never enter the published package.
 | crate | why |
 |---|---|
 | `regex` | matching engine (brief) |
-| (none) | `regex-syntax` is not used: regex parsing is a port of Go's parser (§5) |
+| `regex-syntax` | parse patterns for the shared regex dialect checks and rewrites (§5) |
+| `ipnet` | CIDR networks (with std `IpAddr` for addresses and text) |
+| `fluent-uri` | RFC 3986 URL parsing without normalization |
+| `base64` | `$base64` decoding (standard, padded) |
 | `serde`, `serde_json` | AST JSON, `decode_json`, vectors (D13: always on) |
 | `smallvec` | inline missing-field lists and call-argument buffers (alloc-free hot path) |
 | `foldhash` | fast hasher for `Map` (Go's map hashing is far faster than SipHash) |
-| `base64` | `$base64` decoding (`STANDARD`, after stripping `\r`/`\n` like Go) |
 | dev: `criterion` | benches |
 
 No `url`, no `ipnet`, no `std` IP `Display`/`FromStr` for anything user-visible (brief).
@@ -103,7 +105,8 @@ pub enum Value {
 }
 ```
 
-`Ip` wraps `std::net::IpAddr` (storage only; text is ours). `Cidr { network: Ip, prefix: u8 }`
+`Ip` wraps `std::net::IpAddr` (parsing and text from std; IPv4-mapped canonicalized to V4);
+`Cidr` wraps `ipnet::IpNet` (address parsed with std, prefix as decimal digits). `Cidr { network: Ip, prefix: u8 }`
 stores the host-bits-cleared network. An IPv4-mapped network is stored as the IPv4 network
 it stands for (`::ffff:10.0.0.0/104` = `10.0.0.0/8`, prefix 8), which matches every Go
 observable (text, version, `prefix` field, `Contains`). `Url` stores the original text, the
@@ -145,21 +148,17 @@ array literals evaluated as a *result* (see §4).
 
 `TextForm<'a>` = `Borrowed(&'a str)` or `Inline { buf: [u8; 48], len: u8 }`. IPv6 max is
 39 bytes, CIDR max 43, MAC max 23; URL text is precomputed and borrowed. So stringable
-comparisons and `starts_with` never allocate. Algorithms are hand-written to the table in
-`testdata/vectors/README.md` (RFC 5952 longest-run/first-on-tie, no single-group `::`, no
-embedded dotted form, mapped → IPv4, mapped CIDR → IPv4 with prefix − 96, lowercase MAC).
+comparisons and `starts_with` never allocate. IP and CIDR text comes from std / ipnet
+`Display` after mapped addresses are canonicalized, which matches the table in
+`testdata/vectors/README.md`; MAC text is lowercase pairs.
 
 ### Parsing typed values
 
-- IP / CIDR: hand port of Go `net.ParseIP` / `net.ParseCIDR` acceptance rules (IPv4 octets
-  without leading zeros, `::` rules, embedded IPv4 tail, no zones; CIDR prefix decimal ≤
-  bits). Used by the lexer too, so token classification matches Go exactly.
-- MAC: port of `mac.go`.
-- URL: port of Go `net/url.Parse` (the subset reachable: scheme, opaque, userinfo, host
-  incl. `[v6]:port`, path/RawPath validity, query, fragment, and its error cases) and of
-  `URL.String()` / `EscapedPath()` / `Hostname()` / `Port()`. Go's behaviour *is* the text
-  form ("as written, scheme+host lowercased, disallowed chars percent-encoded"), so porting
-  is lower-risk than re-deriving it.
+- IP / CIDR: std `IpAddr::from_str` plus a decimal prefix and `ipnet` truncation; 0
+  differences from Go on ~2.4M differential inputs. Used by the lexer too.
+- MAC: rulekit's own `mac.go` rule (6 or 8 bytes; `:`/`-` pairs or `.` groups of four).
+- URL: `fluent-uri` (RFC 3986 URI-reference, no normalization); the text form is the input
+  as written with scheme and host lowercased.
 
 ## 3. AST
 
@@ -241,47 +240,28 @@ enum NodeKind {
 
 ## 5. Regex dialect (`src/regex/`)
 
-Decision (coordinator, Phase 1): full Go parity, not a regex-syntax walk. regex-syntax
-cannot parse several patterns Go accepts (`(?)`, `(?i-i)`, `a{01}` as literal text, ...)
-and uses Unicode 16 where Go 1.27.1 uses Unicode 17.
+Phase 4 decision (owner): no hand ports of Go library code. Regexes use `regex-syntax` +
+`regex` with a dialect both Go and Rust accept identically; the Go side enforces the same
+dialect in `checkRegexDialect`. The earlier Go `regexp/syntax` port is archived in
+`archive/go-ports/`.
 
-1. `literal_pattern`: port of `parseRegex` (pattern ends at the last delimiter, duplicate
-   flags rejected, `(?flags)` prefix).
-2. `check_regex_dialect`: byte-for-byte port of Go `checkRegexDialect`.
-3. `parse`: port of Go `regexp/syntax.Parse(s, Perl)`: same accept/reject decisions and
-   error messages, including nested-repetition, repeat-count (1000), `repeatIsValid`,
-   max-height/size/runes checks, flags (`i m s U` inline; `x u R` rejected), escapes, named
-   groups, Unicode names (Go's `canonicalName` loose matching), POSIX classes.
-4. `emit`: prints Go's parse tree as a `regex`-crate pattern in which every class (`\pX`,
-   POSIX, `\d\w\s`, `.`, case-folded literals) is written as explicit code point ranges from
-   Go's tables and Go's `SimpleFold`. `(?i)` is never emitted; laziness is explicit; `\b` →
-   `(?-u:\b)`, `\B` → `(?-u:\B)(?:\b|\B)` (works around a `regex` bug where `(?-u:\B)` holds
-   inside a UTF-8 sequence).
-5. `regex::RegexBuilder` with size limit 128 MiB (Go's own budget; `\pL{1000}` needs ~64 MB)
-   and nest limit 8000. Patterns compile once, at compile time of the rule.
+1. `literal_pattern`: rulekit's `parseRegex` extraction (pattern ends at the last delimiter,
+   duplicate flags rejected, `(?flags)` prefix).
+2. `check_regex_dialect`: rulekit's own dialect check from `regex.go`.
+3. Parse with `regex_syntax::ast` and reject Rust-only or ambiguous syntax: inline flags
+   other than `i m s U`, class set operations, nested classes, `\<` `\>` `\b{..}` and other
+   special assertions, `\u`/`\U`, nested repetition, counts over 1000 or with leading
+   zeros, Go's nested-count budget, more than 50 open groups, capture names outside
+   `[A-Za-z_][A-Za-z0-9_]*`, and Unicode names outside the allow list.
+4. Rewrite `\d \D \w \W \s \S` to Go's ASCII sets (`\s` = `[\t\n\f\r ]`), `\b` to
+   `(?-u:\b)`, `\B` to `(?:(?-u:\B)(?:\b|\B))` (works around a `regex` 1.13 bug), and
+   Unicode names to explicit `gc=`/`sc=` queries. `(?i)` folding of Perl classes matches Go.
+5. `regex::RegexBuilder` with size limit 128 MiB.
 
-Unicode data: `src/regex/unicode_names.rs` is generated by `rust/tools/unicode_names`
-(a standalone Go module, not part of the rulekit Go package):
-`cd rust/tools/unicode_names && go run . > ../../src/regex/unicode_names.rs`. It is pinned
-to the Go version in the repository's `go.mod` (go1.27.1, Unicode 17.0.0).
-`rust/tools/check_unicode_names.sh` regenerates it and fails if the output differs (or if
-the installed Go is not the pinned version). The same tables back `strconv.IsPrint` for
-quoting path keys (`print/quote.rs`).
-
-Verification (Phase 1): 0 accept/reject, message, or match differences against Go on all
-vector regexes, 447 hand-written patterns × 138 haystacks (Kelvin sign, Unicode 17 code
-points included), 26 limit cases, and 260k fuzzed patterns.
-
-Known differences:
-- Compile-size limit: some Unicode-heavy patterns Go accepts exceed the `regex` crate's
-  128 MiB compiled-size limit (e.g. five copies of `(?:\pL{1000}){1}`, or
-  `(?:(?:\pL\pN\p{Greek}\pM){250}){4}`); they are rejected with Go's text
-  `expression too large`. `\pL{1000}\pL{1000}\pL{1000}` still compiles (~0.3 s).
-- Near-limit cases: Go checks height/size after alternation factoring (not ported) and has
-  size-cache quirks; accept/reject can differ only for alternations with shared prefixes
-  very close to the 1000-depth or ~3.36M-instruction limits. All tested limit cases agree.
-- Debug builds: the `regex` crate's recursive compiler overflows a 2 MiB thread stack at
-  ~800 nested captures (Go accepts 999); release builds handle every Go-legal depth tried.
+Unicode property names: the allow list (`UNICODE_CLASSES`) holds the names Go 1.27.1 and
+regex-syntax both accept with identical membership under `\p`, `\P`, and `(?i)`, with Go's
+spelling rules. Membership follows each engine's Unicode version (Go: 17, regex-syntax: 16);
+vectors stay off code points that differ.
 
 ## 6. Input, lazy values, Ctx
 
@@ -437,16 +417,11 @@ impl<'a> Args<'_, 'a> {
 ## 10. JSON input (`json_input.rs`)
 
 `decode_json<C>(bytes, JsonOptions { annotated_keys, typed_document }) -> Result<Kv<C>, Error>`
-ports `json.go` exactly. Phase 2 decision: a small hand-written JSON reader (no serde)
-mirrors Go's `encoding/json` decoder where it matters: numbers keep their source text (Go
-`UseNumber`, so `int64`/`uint64` typed values parse the text and an integer beyond u64 is an
-error), duplicate keys keep the last value, invalid UTF-8 and lone surrogates become U+FFFD,
-nesting is limited to 10000, and data after the first value is ignored (`Decoder.Decode`).
-Also ported: duplicate-key detection after suffix stripping, the suffix list order,
-annotated values normalized before conversion (so `"n.$int64": 1e3` is 1000), typed-document
-rules, `hex` with colons stripped, and base64 Std with `\r`/`\n` skipped. Known gap: Go's
-`ParseFloat` also accepts hexadecimal floats and `_` in typed `float64` strings; Rust rejects
-them.
+keeps `json.go`'s semantics layer (annotated keys, typed documents, normalization). Parsing
+uses `serde_json` with the additive `raw_value` feature so numbers keep their source text
+(never `arbitrary_precision`): integers outside int64/uint64 are errors. Exactly one JSON
+value (trailing non-whitespace is an error), at most 100 nesting levels counting the root,
+typed `float64` strings decimal only. Base64 uses the `base64` crate's standard padded engine.
 
 ## 11. Vectors (`tests/vectors.rs`)
 
