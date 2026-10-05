@@ -26,6 +26,8 @@ struct Req<'a, T> {
     port: u16,
     #[rulekit(rename = "user-agent")]
     ua: Option<&'a str>,
+    #[rulekit(skip)]
+    secret: String,
     tags: Vec<String>,
     user: User<'a>,
     headers: HashMap<String, String>,
@@ -39,6 +41,7 @@ fn derived_struct_reads_only_touched_fields() {
         host: "api.acme.com",
         port: 8443,
         ua: Some("curl"),
+        secret: "nope".into(),
         tags: vec!["db".into(), "api".into()],
         user: User {
             id: 42,
@@ -54,14 +57,15 @@ fn derived_struct_reads_only_touched_fields() {
     .unwrap();
     assert!(rule.eval(&(), &req, Opts::default()).pass());
 
-    let missing = rulekit::parse("absent == 1").unwrap();
+    let missing = rulekit::parse("secret == \"nope\" or absent == 1").unwrap();
     assert_eq!(
         missing
             .eval(&(), &req, Opts::default())
             .missing_fields()
             .collect::<Vec<_>>(),
-        ["absent"]
+        ["secret", "absent"]
     );
+    assert_eq!(req.secret, "nope");
 }
 
 #[test]
