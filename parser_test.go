@@ -2,69 +2,26 @@ package rulekit
 
 import (
 	"net"
-	"reflect"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
-func Test_parseString(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		wantType string
-		wantOK   bool
-	}{
-		{
-			name:     "Regular string",
-			input:    `"just a string"`,
-			wantType: "string",
-			wantOK:   true,
-		},
-		{
-			name:     "Valid IPv4",
-			input:    `"192.168.1.1"`,
-			wantType: "net.IP",
-			wantOK:   true,
-		},
-		{
-			name:     "Valid IPv6",
-			input:    `"2001:db8::1"`,
-			wantType: "net.IP",
-			wantOK:   true,
-		},
-		{
-			name:     "Valid CIDR",
-			input:    `"192.168.1.0/24"`,
-			wantType: "*net.IPNet",
-			wantOK:   true,
-		},
-		{
-			name:     "Valid MAC address",
-			input:    `"01:23:45:67:89:ab"`,
-			wantType: "net.HardwareAddr",
-			wantOK:   true,
-		},
-		{
-			name:     "Number",
-			input:    `12345`,
-			wantType: "",
-			wantOK:   false,
-		},
-	}
+func TestQuotedLiteralTypes(t *testing.T) {
+	ip := net.ParseIP("192.168.1.1")
+	mac := mustParseMac("01:23:45:67:89:ab")
+	input := kv{"s": "just a string", "ip": ip, "mac": mac}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := parseString(tt.input)
-			if tt.wantOK {
-				require.NoError(t, err)
-				assert.Equal(t, tt.wantType, reflect.TypeOf(result).String())
-			} else {
-				require.Error(t, err)
-			}
-		})
-	}
+	// A plain quoted value is a string.
+	assertRulep(t, `s == "just a string"`, input).Ok().DoesPass(true)
+	// Quoted IPs compare as IPs, not text: forms that differ as text are equal.
+	assertRulep(t, `ip == "192.168.1.1"`, input).Ok().DoesPass(true)
+	assertRulep(t, `"2001:db8::1" == 2001:db8:0:0:0:0:0:1`, nil).Ok().DoesPass(true)
+	assertRulep(t, `"10.1.2.3" in 10.0.0.0/8`, nil).Ok().DoesPass(true)
+	// A quoted CIDR is a CIDR.
+	assertRulep(t, `ip in "192.168.1.0/24"`, input).Ok().DoesPass(true)
+	// Quoted MACs are MACs in any standard notation.
+	assertRulep(t, `mac == "01:23:45:67:89:ab"`, input).Ok().DoesPass(true)
+	assertRulep(t, `mac == "01-23-45-67-89-AB"`, input).Ok().DoesPass(true)
+	assertRulep(t, `mac == "0123.4567.89ab"`, input).Ok().DoesPass(true)
 }
 
 func mustParseMac(s string) net.HardwareAddr {

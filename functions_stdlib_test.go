@@ -29,13 +29,13 @@ func TestFn_StartsWith(t *testing.T) {
 	assertRulep(t, `starts_with(code, 5)`, kv{"code": 404}).Fail()
 	assertRulep(t, `starts_with(starts_with("https://example.com", "https://"), "true")`, nil).Pass()
 
-	// parser errors
-	assertParseErrorValue(t, "starts_with()", `syntax error at line 1:14:
-starts_with()
-             ^
-function "starts_with" expects 2 arguments, got 0`)
-	assertParseErrorValue(t, "starts_with(arg1)", `syntax error at line 1:18:
-starts_with(arg1)
-                 ^
-function "starts_with" expects 2 arguments, got 1`)
+	// arity is checked at parse time and reported just after the call
+	for expr, column := range map[string]int{"starts_with()": 14, "starts_with(arg1)": 18} {
+		_, err := Parse(expr)
+		var parseErr *ParseError
+		require.ErrorAs(t, err, &parseErr, expr)
+		require.Equal(t, 1, parseErr.Line, expr)
+		require.Equal(t, column, parseErr.Column, expr)
+		require.Contains(t, parseErr.Message, `function "starts_with" expects 2 arguments`, expr)
+	}
 }

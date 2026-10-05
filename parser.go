@@ -95,10 +95,8 @@ func parseString[T interface{ string | []byte }](data T) (any, error) {
 		return ip, nil
 	} else if _, ipnet, err := net.ParseCIDR(str); err == nil {
 		return ipnet, nil
-	} else if strings.Count(str, ":") == 5 || strings.Count(str, ":") == 7 {
-		if mac, err := net.ParseMAC(str); err == nil {
-			return mac, nil
-		}
+	} else if mac, err := net.ParseMAC(str); err == nil && (len(mac) == 6 || len(mac) == 8) {
+		return mac, nil
 	}
 	if u, ok := parseAbsoluteURL(str); ok {
 		return u, nil
@@ -646,7 +644,7 @@ func (p *parser) parseExpr(minPrec int) (astNode, error) {
 			if err != nil {
 				return nil, err
 			}
-			if !astLiteralIs(right, token_IP_CIDR) {
+			if !astLiteralIs(right, token_IP_CIDR) && !astQuotedCIDR(right) {
 				if _, ok := right.(*astArray); !ok {
 					return nil, p.errorf(tok, "in requires an array or CIDR value")
 				}
