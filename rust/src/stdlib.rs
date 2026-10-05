@@ -18,6 +18,7 @@ impl Args for StartsWithArgs<'static> {
         Param::new("value", <TextForm<'static> as FromArg<'static>>::TYPE),
         Param::new("prefix", <TextForm<'static> as FromArg<'static>>::TYPE),
     ];
+    #[inline(always)]
     fn parse<'a>(vals: &'a [Val<'a>]) -> Result<StartsWithArgs<'a>, Error> {
         Ok(StartsWithArgs {
             value: crate::func::__private::arg(vals, 0, "value")?,
@@ -39,6 +40,7 @@ pub(crate) fn params(name: &str) -> Option<&'static [Param]> {
 }
 
 /// Call `starts_with` with evaluated arguments.
+#[inline(always)]
 pub(crate) fn call_starts_with<'a>(vals: &[Val<'_>]) -> Result<Val<'a>, CallFailure> {
     invoke::<(), StartsWithArgs, bool, _>(&starts_with, &(), vals)
         .map_err(|failure| failure.named("starts_with"))

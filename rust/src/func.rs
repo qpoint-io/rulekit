@@ -174,6 +174,7 @@ from_arg!(&'a regex::Regex, "regex", ValueRef::Regex(v) => v);
 /// their text.
 impl<'a> FromArg<'a> for TextForm<'a> {
     const TYPE: &'static str = "string";
+    #[inline(always)]
     fn from_arg(value: ValueRef<'a>) -> Option<Self> {
         value.text()
     }
@@ -459,6 +460,7 @@ pub(crate) fn check_arity(name: &str, params: &[Param], got: usize) -> Result<()
 }
 
 /// Convert the arguments, call `f`, and convert its result.
+#[inline(always)]
 pub(crate) fn invoke<'a, C, A, R, F>(
     f: &F,
     ctx: &'a C,
@@ -486,6 +488,7 @@ pub mod __private {
     use crate::value::Val;
 
     /// The argument at `index` as `T`.
+    #[inline(always)]
     pub fn arg<'a, T: FromArg<'a>>(
         vals: &'a [Val<'a>],
         index: usize,
