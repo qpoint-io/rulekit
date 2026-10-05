@@ -501,4 +501,19 @@ pub mod __private {
             got: value.type_name().to_owned(),
         })
     }
+
+    /// Resolve `path` against a derived-input field. The turbofish on `T`
+    /// is spanned at the field type so an unsupported type points there.
+    #[inline(always)]
+    pub fn field<'a, C, T>(
+        value: &'a T,
+        ctx: &'a C,
+        path: &[crate::ast::Segment],
+    ) -> Result<Option<crate::value::Val<'a>>, crate::error::BoxError>
+    where
+        C: ?Sized,
+        T: crate::InputValue<C>,
+    {
+        crate::InputValue::get(value, ctx, path)
+    }
 }

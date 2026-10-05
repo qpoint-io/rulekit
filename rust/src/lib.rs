@@ -93,6 +93,10 @@ pub use print::{Edit, PrintMode, format, rewrite};
 /// trait for the rules.
 #[cfg(feature = "derive")]
 pub use rulekit_macros::Args;
+/// Derive [`Input`](trait@Input) for a struct of named fields. See the trait
+/// for the rules.
+#[cfg(feature = "derive")]
+pub use rulekit_macros::Input;
 
 /// A compiled rule, ready to evaluate.
 ///

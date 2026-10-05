@@ -1,0 +1,5 @@
+error: `Input` needs a struct with named fields
+ --> tests/ui/input_tuple.rs:2:8
+  |
+2 | struct Req(i64);
+  |        ^^^

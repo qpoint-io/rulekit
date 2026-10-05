@@ -1,5 +1,5 @@
 //! Derive macros for [rulekit](https://docs.rs/rulekit). Use them through
-//! the `rulekit` crate (`#[derive(rulekit::Args)]`), not directly.
+//! the `rulekit` crate (`#[derive(rulekit::Args)]`, `#[derive(rulekit::Input)]`), not directly.
 
 use proc_macro::TokenStream;
 use proc_macro2::{Span, TokenStream as TokenStream2};
@@ -181,5 +181,221 @@ impl VisitMut for StaticLifetime<'_> {
         if lifetime.ident == self.0.ident {
             *lifetime = Lifetime::new("'static", lifetime.span());
         }
+    }
+}
+
+/// Derive `rulekit::Input` for a struct of named fields.
+///
+/// The generated [`Input::get`](rulekit::Input::get) matches the first path
+/// segment against field names (`#[rulekit(rename = "...")]` to change one,
+/// `#[rulekit(skip)]` to omit one) and resolves the rest of the path on that
+/// field only. An unknown field is absent. Lifetimes and type parameters are
+/// kept; each field type must implement `rulekit::InputValue`.
+#[proc_macro_derive(Input, attributes(rulekit))]
+pub fn derive_input(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    expand_input(&input)
+        .unwrap_or_else(Error::into_compile_error)
+        .into()
+}
+
+struct InputField {
+    ident: syn::Ident,
+    name: String,
+    ty: Type,
+}
+
+fn expand_input(input: &DeriveInput) -> Result<TokenStream2, Error> {
+    let ident = &input.ident;
+    let fields = match &input.data {
+        Data::Struct(data) => match &data.fields {
+            Fields::Named(named) => &named.named,
+            _ => {
+                return Err(Error::new(
+                    ident.span(),
+                    "`Input` needs a struct with named fields",
+                ));
+            }
+        },
+        _ => {
+            return Err(Error::new(
+                ident.span(),
+                "`Input` can only be derived for a struct with named fields",
+            ));
+        }
+    };
+
+    let mut taken = std::collections::HashSet::new();
+    let mut parsed = Vec::new();
+    for field in fields {
+        let ident = field.ident.clone().expect("named field");
+        let mut name = ident.to_string();
+        let mut skip = false;
+        let mut renamed = false;
+        for attr in &field.attrs {
+            if !attr.path().is_ident("rulekit") {
+                continue;
+            }
+            attr.parse_nested_meta(|meta| {
+                if meta.path.is_ident("rename") {
+                    let lit: LitStr = meta.value()?.parse()?;
+                    if lit.value().is_empty() {
+                        return Err(Error::new(lit.span(), "field name must not be empty"));
+                    }
+                    name = lit.value();
+                    renamed = true;
+                    Ok(())
+                } else if meta.path.is_ident("skip") {
+                    skip = true;
+                    Ok(())
+                } else {
+                    Err(meta.error(
+                        "unknown `rulekit` attribute; expected `rename = \"...\"` or `skip`",
+                    ))
+                }
+            })?;
+        }
+        if skip && renamed {
+            return Err(Error::new(
+                field.span(),
+                "`skip` and `rename` cannot be combined",
+            ));
+        }
+        if skip {
+            continue;
+        }
+        if !taken.insert(name.clone()) {
+            return Err(Error::new(
+                field.span(),
+                format!("duplicate input field `{name}`"),
+            ));
+        }
+        parsed.push(InputField {
+            ident,
+            name,
+            ty: field.ty.clone(),
+        });
+    }
+
+    let ctx = ctx_param(&input.generics);
+    let params = &input.generics.params;
+    let impl_params = if params.is_empty() {
+        quote!(#ctx: ?Sized)
+    } else {
+        quote!(#params, #ctx: ?Sized)
+    };
+    let (_, ty_generics, _) = input.generics.split_for_impl();
+
+    let arms = parsed.iter().map(|f| {
+        let (name, ident, ty) = (&f.name, &f.ident, &f.ty);
+        quote_spanned! {ty.span()=>
+            #name => ::rulekit::__private::field::<#ctx, #ty>(&self.#ident, ctx, rest),
+        }
+    });
+    let type_params: Vec<String> = input
+        .generics
+        .type_params()
+        .map(|p| p.ident.to_string())
+        .collect();
+    // Only generic field types go in the where clause. A concrete type is
+    // checked by the spanned `field` call, so an unsupported type fails here
+    // with the error on the field.
+    let bounds: Vec<TokenStream2> = parsed
+        .iter()
+        .filter(|f| mentions_type_param(&f.ty, &type_params))
+        .map(|f| {
+            let ty = &f.ty;
+            quote_spanned!(ty.span() => #ty: ::rulekit::InputValue<#ctx>)
+        })
+        .collect();
+    let orig_where = input.generics.where_clause.as_ref().map(|clause| {
+        let preds = &clause.predicates;
+        quote!(#preds,)
+    });
+
+    let bounds = &bounds;
+    Ok(quote! {
+        impl<#impl_params> ::rulekit::Input<#ctx> for #ident #ty_generics
+        where
+            #orig_where
+            #(#bounds,)*
+        {
+            fn get<'__rulekit>(
+                &'__rulekit self,
+                ctx: &'__rulekit #ctx,
+                path: &[::rulekit::ast::Segment],
+            ) -> ::core::result::Result<
+                ::core::option::Option<::rulekit::value::Val<'__rulekit>>,
+                ::rulekit::BoxError,
+            > {
+                let Some((head, rest)) = path.split_first() else {
+                    return ::core::result::Result::Ok(::core::option::Option::Some(
+                        ::rulekit::value::Val::Ref(::rulekit::value::ValueRef::Object(
+                            ::rulekit::value::ObjectRef::Opaque,
+                        )),
+                    ));
+                };
+                match head {
+                    ::rulekit::ast::Segment::Key { key, .. } => match key.as_str() {
+                        #(#arms)*
+                        _ => ::core::result::Result::Ok(::core::option::Option::None),
+                    },
+                    ::rulekit::ast::Segment::Index(_) => {
+                        ::core::result::Result::Ok(::core::option::Option::None)
+                    }
+                }
+            }
+        }
+
+        impl<#impl_params> ::rulekit::InputValue<#ctx> for #ident #ty_generics
+        where
+            #orig_where
+            #(#bounds,)*
+        {
+            fn get<'__rulekit>(
+                &'__rulekit self,
+                ctx: &'__rulekit #ctx,
+                path: &[::rulekit::ast::Segment],
+            ) -> ::core::result::Result<
+                ::core::option::Option<::rulekit::value::Val<'__rulekit>>,
+                ::rulekit::BoxError,
+            > {
+                ::rulekit::Input::get(self, ctx, path)
+            }
+        }
+    })
+}
+
+fn ctx_param(generics: &syn::Generics) -> syn::Ident {
+    let name = if generics.type_params().any(|p| p.ident == "C") {
+        "__C"
+    } else {
+        "C"
+    };
+    syn::Ident::new(name, Span::call_site())
+}
+
+fn mentions_type_param(ty: &Type, params: &[String]) -> bool {
+    match ty {
+        Type::Path(path) => path.path.segments.iter().any(|seg| {
+            params.iter().any(|p| seg.ident == p)
+                || match &seg.arguments {
+                    syn::PathArguments::AngleBracketed(args) => {
+                        args.args.iter().any(|arg| match arg {
+                            syn::GenericArgument::Type(ty) => mentions_type_param(ty, params),
+                            _ => false,
+                        })
+                    }
+                    _ => false,
+                }
+        }),
+        Type::Reference(ty) => mentions_type_param(&ty.elem, params),
+        Type::Slice(ty) => mentions_type_param(&ty.elem, params),
+        Type::Array(ty) => mentions_type_param(&ty.elem, params),
+        Type::Tuple(ty) => ty.elems.iter().any(|ty| mentions_type_param(ty, params)),
+        Type::Paren(ty) => mentions_type_param(&ty.elem, params),
+        Type::Group(ty) => mentions_type_param(&ty.elem, params),
+        Type::Ptr(ty) => mentions_type_param(&ty.elem, params),
+        _ => false,
     }
 }

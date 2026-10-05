@@ -1,0 +1,5 @@
+error: `Input` can only be derived for a struct with named fields
+ --> tests/ui/input_enum.rs:2:6
+  |
+2 | enum Req {
+  |      ^^^
