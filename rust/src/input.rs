@@ -1,6 +1,7 @@
 //! Evaluation inputs (port of `input.go` and the path walk in `values.go`).
 
-use std::sync::Arc;
+use std::fmt;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::ast::Segment;
 use crate::error::BoxError;
@@ -67,6 +68,83 @@ pub enum KvEntry<C: ?Sized = ()> {
     Object(Kv<C>),
     /// A nested input that resolves the rest of any path through it.
     Input(Arc<dyn Input<C> + Send + Sync>),
+    /// A value computed on first use (Go `LazyValue`/`LazyContextValue`).
+    Lazy(Lazy<C>),
+}
+
+type LazyFn<C> = dyn Fn(&C) -> Result<KvEntry<C>, BoxError> + Send + Sync;
+
+/// A value computed from the evaluation context the first time a rule reads
+/// it, then memoized in this entry.
+///
+/// Resolution is single-flight: concurrent evaluations sharing one
+/// [`KvInput`] call the function once. Errors are not memoized, so a later
+/// read retries. Once resolved, reads take no lock. Cloning gives a fresh,
+/// unresolved entry, so memoization is per input instance.
+pub struct Lazy<C: ?Sized = ()> {
+    f: Arc<LazyFn<C>>,
+    value: OnceLock<Box<KvEntry<C>>>,
+    lock: Mutex<()>,
+}
+
+impl<C: ?Sized> Lazy<C> {
+    pub fn new<T, F>(f: F) -> Self
+    where
+        T: Into<KvEntry<C>>,
+        F: Fn(&C) -> Result<T, BoxError> + Send + Sync + 'static,
+    {
+        Lazy {
+            f: Arc::new(move |ctx: &C| f(ctx).map(Into::into)),
+            value: OnceLock::new(),
+            lock: Mutex::new(()),
+        }
+    }
+
+    fn resolve(&self, ctx: &C) -> Result<&KvEntry<C>, BoxError> {
+        if let Some(v) = self.value.get() {
+            return Ok(&**v);
+        }
+        // Held across the call: one resolution per entry, while other
+        // entries resolve independently.
+        let _guard = self
+            .lock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(v) = self.value.get() {
+            return Ok(&**v);
+        }
+        let v = Box::new((self.f)(ctx)?);
+        Ok(&**self.value.get_or_init(|| v))
+    }
+}
+
+impl<C: ?Sized> Clone for Lazy<C> {
+    fn clone(&self) -> Self {
+        Lazy {
+            f: self.f.clone(),
+            value: OnceLock::new(),
+            lock: Mutex::new(()),
+        }
+    }
+}
+
+impl<C: ?Sized> fmt::Debug for Lazy<C> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Lazy")
+            .field("resolved", &self.value.get().is_some())
+            .finish()
+    }
+}
+
+impl<C: ?Sized> Clone for KvEntry<C> {
+    fn clone(&self) -> Self {
+        match self {
+            KvEntry::Value(v) => KvEntry::Value(v.clone()),
+            KvEntry::Object(kv) => KvEntry::Object(kv.clone()),
+            KvEntry::Input(input) => KvEntry::Input(input.clone()),
+            KvEntry::Lazy(lazy) => KvEntry::Lazy(lazy.clone()),
+        }
+    }
 }
 
 impl<C: ?Sized> From<Value> for KvEntry<C> {
@@ -115,7 +193,7 @@ impl<C: ?Sized> Input<C> for KvInput<C> {
             }
             let next = match segment {
                 Segment::Index(index) => index_value(cursor, *index),
-                Segment::Key { key, .. } => key_value(cursor, key),
+                Segment::Key { key, .. } => key_value(cursor, key, ctx)?,
             };
             match next {
                 Some(next) => cursor = next,
@@ -129,12 +207,20 @@ impl<C: ?Sized> Input<C> for KvInput<C> {
     }
 }
 
-fn entry<C: ?Sized>(entry: &KvEntry<C>) -> Cursor<'_, C> {
-    match entry {
+/// The cursor for a map entry, resolving a lazy entry (Go `resolveLazy`).
+/// A lazy that yields another lazy is not resolved again: like a Go func
+/// value, it is an opaque value.
+fn entry<'a, C: ?Sized>(entry: &'a KvEntry<C>, ctx: &'a C) -> Result<Cursor<'a, C>, BoxError> {
+    let entry = match entry {
+        KvEntry::Lazy(lazy) => lazy.resolve(ctx)?,
+        other => other,
+    };
+    Ok(match entry {
         KvEntry::Value(v) => Cursor::Val(Val::Ref(v.as_ref())),
         KvEntry::Object(kv) => Cursor::Kv(kv),
         KvEntry::Input(input) => Cursor::Input(input.as_ref()),
-    }
+        KvEntry::Lazy(_) => Cursor::Val(Val::Ref(ValueRef::Object(ObjectRef::Opaque))),
+    })
 }
 
 /// Go `indexAny`: only lists can be indexed.
@@ -151,9 +237,16 @@ fn index_value<C: ?Sized>(cursor: Cursor<'_, C>, index: usize) -> Option<Cursor<
 }
 
 /// A map key, or a built-in field of a typed value.
-fn key_value<'a, C: ?Sized>(cursor: Cursor<'a, C>, key: &str) -> Option<Cursor<'a, C>> {
-    match cursor {
-        Cursor::Kv(kv) => kv.get(key).map(entry),
+fn key_value<'a, C: ?Sized>(
+    cursor: Cursor<'a, C>,
+    key: &str,
+    ctx: &'a C,
+) -> Result<Option<Cursor<'a, C>>, BoxError> {
+    Ok(match cursor {
+        Cursor::Kv(kv) => match kv.get(key) {
+            Some(e) => Some(entry(e, ctx)?),
+            None => None,
+        },
         Cursor::Input(_) => unreachable!("inputs take over the rest of the path"),
         Cursor::Val(Val::Ref(ValueRef::Object(ObjectRef::Map(map)))) => {
             map.get(key).map(|v| Cursor::Val(Val::Ref(v.as_ref())))
@@ -166,5 +259,5 @@ fn key_value<'a, C: ?Sized>(cursor: Cursor<'a, C>, key: &str) -> Option<Cursor<'
         Cursor::Val(Val::Owned(v)) => {
             value_field(v.as_ref(), key).map(|f| Cursor::Val(Val::Owned(f.into_owned())))
         }
-    }
+    })
 }

@@ -28,7 +28,7 @@ pub use ast::Ast;
 pub use env::{ArgSpec, Args, Env, EnvBuilder, FromArg, Function, Macro, Type};
 pub use error::{BoxError, Error, ParseError};
 pub use eval::EvalResult;
-pub use input::{FnInput, Input, Kv, KvEntry, KvInput, NoInput};
+pub use input::{FnInput, Input, Kv, KvEntry, KvInput, Lazy, NoInput};
 pub use json_input::{JsonOptions, decode_json};
 pub use print::{PrintMode, format};
 
