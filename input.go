@@ -3,8 +3,6 @@ package rulekit
 import (
 	"context"
 	"fmt"
-	"strconv"
-	"strings"
 	"sync"
 )
 
@@ -118,7 +116,7 @@ func (k *kvInput) resolveLazy(ctx context.Context, path []pathSegment, value any
 	// find the per-path entry; the entry lock is held across the lazy call so
 	// each path resolves once and lazy funcs resolving other paths on the same
 	// input do not block on each other.
-	key := inputPathKey(path)
+	key := pathString(path, false)
 	k.mu.Lock()
 	entry := k.memo[key]
 	if entry == nil {
@@ -148,23 +146,6 @@ func (k *kvInput) resolveLazy(ctx context.Context, path []pathSegment, value any
 	}
 	entry.value, entry.done = resolved, true
 	return resolved, nil
-}
-
-func inputPathKey(path []pathSegment) string {
-	var raw strings.Builder
-	for _, segment := range path {
-		if segment.isIndex {
-			raw.WriteString("[")
-			raw.WriteString(strconv.Itoa(segment.index))
-			raw.WriteString("]")
-			continue
-		}
-		if raw.Len() > 0 {
-			raw.WriteString(".")
-		}
-		raw.WriteString(segment.key)
-	}
-	return raw.String()
 }
 
 func inputPathSegments(segments []pathSegment) []PathSegment {

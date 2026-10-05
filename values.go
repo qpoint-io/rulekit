@@ -57,8 +57,15 @@ func (p *PathValue) Eval(ctx context.Context, input Input, opts Opts) Result {
 }
 
 func (p *PathValue) String() string {
+	return pathString(p.segments, true)
+}
+
+// pathString renders path segments in rule syntax. Keys that are not plain
+// identifiers are always bracketed; keepBrackets also brackets identifier keys
+// that were written with brackets.
+func pathString(segments []pathSegment, keepBrackets bool) string {
 	var raw strings.Builder
-	for i, seg := range p.segments {
+	for i, seg := range segments {
 		if seg.isIndex {
 			raw.WriteString("[")
 			raw.WriteString(strconv.Itoa(seg.index))
@@ -66,7 +73,7 @@ func (p *PathValue) String() string {
 			continue
 		}
 
-		if seg.bracket || !isIdentifierSegment(seg.key) {
+		if (keepBrackets && seg.bracket) || !isIdentifierSegment(seg.key) {
 			raw.WriteString("[")
 			raw.WriteString(strconv.Quote(seg.key))
 			raw.WriteString("]")

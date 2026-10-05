@@ -27,6 +27,17 @@ func TestInputFromKVLazyValue(t *testing.T) {
 	require.Equal(t, 1, calls)
 }
 
+func TestInputFromKVLazyMemoKeepsBracketKeysDistinct(t *testing.T) {
+	lazy := func(v string) LazyValue { return func() (any, error) { return v, nil } }
+	input := FromKV(KV{
+		"a.b": lazy("flat"),
+		"a":   KV{"b": lazy("nested")},
+	})
+	result := MustParse(`["a.b"] == "flat" and a.b == "nested" and a["b"] == "nested"`).Eval(nil, input, Opts{})
+	require.NoError(t, result.Error)
+	require.True(t, result.Pass())
+}
+
 func TestInputFromKVLazyContextValue(t *testing.T) {
 	type contextKey string
 	rule := MustParse(`user == "root"`)
