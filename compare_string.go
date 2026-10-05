@@ -27,6 +27,9 @@ func compareString(left string, op int, right any) compareOutcome {
 	case HexString:
 		// string ? hex
 		return compareBytesBytes([]byte(left), op, right.Bytes)
+	case []byte:
+		// string ? bytes
+		return compareBytesBytes([]byte(left), op, right)
 	}
 	return incomparable()
 }

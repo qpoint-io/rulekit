@@ -118,6 +118,14 @@ func compareDetailed(left any, op int, right any) compareOutcome {
 		// url ? any
 		return compareURL(lv, op, right)
 
+	case []byte:
+		// bytes ? any
+		return compareBytes(lv, op, right)
+
+	case HexString:
+		// hex ? any
+		return compareBytes(lv.Bytes, op, right)
+
 	case []any:
 		// []any ? any
 		return compareSliceDetailed(lv, op, func(lv any, op int) compareOutcome {
