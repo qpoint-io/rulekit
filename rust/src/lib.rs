@@ -35,7 +35,7 @@
 //!     ("port".to_owned(), Value::Int(8080)),
 //! ]));
 //!
-//! let result = rule.eval(&input, &(), Opts::default());
+//! let result = rule.eval(&(), &input, Opts::default());
 //! if let Some(err) = result.error() {
 //!     panic!("evaluation failed: {err}");
 //! } else if result.unknown() {
@@ -72,7 +72,7 @@ use std::fmt;
 use std::sync::{Arc, LazyLock};
 
 pub use ast::Ast;
-pub use env::{ArgSpec, Args, Env, EnvBuilder, FromArg, Function, Macro, Type};
+pub use env::{ArgSpec, Args, Env, EnvBuilder, FnError, FromArg, Function, Macro, Type};
 pub use error::{BoxError, Error, ParseError};
 pub use eval::EvalResult;
 pub use eval::trace::{Diagnostic, DiagnosticCode, Trace, TraceStatus};
@@ -190,7 +190,7 @@ impl Default for Opts<'static> {
 
 impl Rule {
     /// The AST the rule was compiled from.
-    pub fn ast(&self) -> &Arc<Ast> {
+    pub fn ast(&self) -> &Ast {
         &self.ast
     }
 
@@ -200,7 +200,7 @@ impl Rule {
         format(&self.ast, mode)
     }
 
-    /// Evaluate the rule against `input`.
+    /// Evaluate the rule against `input` (Go `Rule.Eval(ctx, input, opts)`).
     ///
     /// `ctx` is the caller's evaluation context, passed to the input, to
     /// [`Lazy`] values, and to custom functions; use `&()` for none. The
@@ -213,8 +213,8 @@ impl Rule {
     /// [`EvalResult::error`].
     pub fn eval<'a, C: ?Sized, I: Input<C> + ?Sized>(
         &'a self,
-        input: &'a I,
         ctx: &'a C,
+        input: &'a I,
         opts: Opts<'a, C>,
     ) -> EvalResult<'a> {
         let scope = eval::Scope {

@@ -318,7 +318,7 @@ impl<C> Input<C> for KvInput<C> { … }
 
 ```rust
 impl Rule {
-    pub fn eval<'a, C, I>(&'a self, input: &'a I, ctx: &'a C, opts: &Opts<'a, C>) -> EvalResult<'a>
+    pub fn eval<'a, C, I>(&'a self, ctx: &'a C, input: &'a I, opts: Opts<'a, C>) -> EvalResult<'a>  // Go order: ctx, input, opts
     where I: Input<C> + ?Sized;
 }
 
@@ -458,7 +458,26 @@ side-by-side ns/op + allocs table. Release profile for benches: `lto = "fat"`,
 `codegen-units = 1`. Compiled size of the two tracer instantiations measured with
 `cargo bloat` when tracing lands (D7).
 
-## 13. Phase plan (unchanged from brief)
+## 13. Public API notes (Phases 5–6)
+
+- `Rule::eval(ctx, input, opts)` follows Go's argument order.
+- `Trace<'a>` borrows its expression, value, and missing fields from the rule and input;
+  `into_owned()` detaches it. Traces are built from fragments (`Frag`): an unnamed Go
+  `combineTrace` group is a plain `Vec`, not a boxed node.
+- Missing field names are `Cow<str>`: borrowed from compiled paths, owned when a function
+  reports them.
+- Custom functions return `Result<Val, FnError>`; `FnError::Missing` makes the result
+  unknown (Go `Function.Eval` returning `MissingFields`), `FnError::Error` is an
+  `Error::Function`.
+- `Ip`/`Cidr`/`Mac`/`Url::parse` return `Result<_, ValueParseError>`.
+- `Function::with_doc`/`doc` and `Macro::with_doc`/`doc`; `Env::macro_rule`; `Rule::ast()`
+  returns `&Ast`; `TextForm` is opaque; `Val: From<&str>`.
+- Trace expressions are built at compile time in one bottom-up pass (`canonical_all`).
+- `rewrite(&ast, &[Edit { target: NodeId, replacement: &Ast }], &mode)`.
+- Benchmarks: `benches/` (criterion + allocation counts), `bench/compare.sh` (Go vs Rust),
+  `bench/size.sh` (traced-eval instantiation size, via the `rulekit_size_probe` cfg).
+
+## 14. Phase plan (unchanged from brief)
 
 1. lexer/parser/AST/printer + AST JSON vectors (+ parse_errors, print, literals parse cases)
 2. values, text forms, compare, eval + eval/literals/paths/fields/text_forms/regex vectors

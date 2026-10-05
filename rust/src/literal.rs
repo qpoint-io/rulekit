@@ -231,12 +231,8 @@ pub(crate) fn parse_literal(kind: LiteralKind, raw: &str) -> Result<Value, Strin
         }
         LiteralKind::Float => parse_float(raw).map(Value::Float),
         LiteralKind::Bool => Ok(Value::Bool(raw.eq_ignore_ascii_case("true"))),
-        LiteralKind::Ip => Ip::parse(raw)
-            .map(Value::Ip)
-            .ok_or_else(|| "invalid IP address".to_owned()),
-        LiteralKind::Cidr => Cidr::parse(raw)
-            .map(Value::Cidr)
-            .ok_or_else(|| "invalid CIDR address".to_owned()),
+        LiteralKind::Ip => Ip::parse(raw).map(Value::Ip).map_err(|e| e.to_string()),
+        LiteralKind::Cidr => Cidr::parse(raw).map(Value::Cidr).map_err(|e| e.to_string()),
         LiteralKind::HexString => parse_hex(raw).map(Value::Bytes),
         LiteralKind::Regex => {
             crate::regex::compile_literal(raw).map(|re| Value::Regex(Box::new(re)))

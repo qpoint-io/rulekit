@@ -103,7 +103,44 @@ impl ArgSpec {
 }
 
 type FunctionImpl<C> =
-    dyn for<'a> Fn(&'a C, Args<'_, 'a>) -> Result<Val<'a>, BoxError> + Send + Sync;
+    dyn for<'a> Fn(&'a C, Args<'_, 'a>) -> Result<Val<'a>, FnError> + Send + Sync;
+
+/// Why a custom [`Function`] produced no value.
+///
+/// `?` converts any error type into [`FnError::Error`], including the
+/// [`Error`]s from [`Args::index`] and [`Args::by_name`].
+#[derive(Debug)]
+pub enum FnError {
+    /// The function needs fields the input lacks: the rule result is unknown
+    /// with these fields missing (like a missing field in the rule itself).
+    Missing(Vec<String>),
+    /// The function failed: the rule result is an [`Error::Function`].
+    Error(BoxError),
+}
+
+impl FnError {
+    /// A [`FnError::Missing`] for the given field names.
+    pub fn missing(fields: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        FnError::Missing(fields.into_iter().map(Into::into).collect())
+    }
+
+    /// A [`FnError::Error`] with a message.
+    pub fn msg(message: impl Into<String>) -> Self {
+        FnError::Error(message.into().into())
+    }
+}
+
+impl<E: std::error::Error + Send + Sync + 'static> From<E> for FnError {
+    fn from(error: E) -> Self {
+        FnError::Error(Box::new(error))
+    }
+}
+
+/// How a call failed, for the evaluator.
+pub(crate) enum CallFailure {
+    Error(Error),
+    Missing(Vec<String>),
+}
 
 /// A custom function callable from rules as `name(arg, ...)`.
 ///
@@ -111,7 +148,8 @@ type FunctionImpl<C> =
 /// call with another count is an [`Error::ArgCount`]. Arguments are
 /// evaluated first: if one is missing, the call is not made and the result
 /// is unknown. The implementation receives the evaluation context and the
-/// [`Args`], and returns a value or an error (reported as
+/// [`Args`], and returns a value, missing fields ([`FnError::Missing`]: the
+/// result is unknown), or an error ([`FnError::Error`], reported as
 /// [`Error::Function`]).
 ///
 /// Register functions in an [`Env`] with [`EnvBuilder::function`].
@@ -134,7 +172,7 @@ type FunctionImpl<C> =
 ///     },
 /// )
 /// .returns(Type::Int64)
-/// .doc("The smaller of n and max.");
+/// .with_doc("The smaller of n and max.");
 ///
 /// // A function returning data borrowed from the context.
 /// let tenant = Function::new([], |ctx: &Ctx, _| Ok(Val::Ref(ValueRef::Str(&ctx.tenant))));
@@ -146,7 +184,7 @@ type FunctionImpl<C> =
 ///
 /// let rule = rulekit::parse(r#"clamp(150, 100) == 100 and tenant() == "acme""#)?;
 /// let ctx = Ctx { tenant: "acme".into() };
-/// assert!(rule.eval(&NoInput, &ctx, Opts::new(&env)).pass());
+/// assert!(rule.eval(&ctx, &NoInput, Opts::new(&env)).pass());
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub struct Function<C: ?Sized = ()> {
@@ -185,7 +223,7 @@ impl<C: ?Sized> Function<C> {
     /// [`Val::Owned`] (for example with [`ValueRef::to_owned`]).
     pub fn new<F>(args: impl IntoIterator<Item = ArgSpec>, eval: F) -> Self
     where
-        F: for<'a> Fn(&'a C, Args<'_, 'a>) -> Result<Val<'a>, BoxError> + Send + Sync + 'static,
+        F: for<'a> Fn(&'a C, Args<'_, 'a>) -> Result<Val<'a>, FnError> + Send + Sync + 'static,
     {
         Function {
             args: args.into_iter().collect(),
@@ -202,8 +240,8 @@ impl<C: ?Sized> Function<C> {
         self
     }
 
-    /// Attach a description, for tools and documentation.
-    pub fn doc(mut self, doc: impl Into<String>) -> Self {
+    /// The same function with a description, for tools and documentation.
+    pub fn with_doc(mut self, doc: impl Into<String>) -> Self {
         self.doc = Some(doc.into());
         self
     }
@@ -218,8 +256,8 @@ impl<C: ?Sized> Function<C> {
         self.ret
     }
 
-    /// The description set with [`doc`](Self::doc).
-    pub fn documentation(&self) -> Option<&str> {
+    /// The description set with [`with_doc`](Self::with_doc).
+    pub fn doc(&self) -> Option<&str> {
         self.doc.as_deref()
     }
 
@@ -229,16 +267,16 @@ impl<C: ?Sized> Function<C> {
         name: &str,
         ctx: &'a C,
         vals: &[Val<'a>],
-    ) -> Result<Val<'a>, Error> {
+    ) -> Result<Val<'a>, CallFailure> {
         for (spec, val) in self.args.iter().zip(vals) {
             if let Some(ty) = spec.ty
                 && !ty.admits(val.as_ref())
             {
-                return Err(Error::InvalidArg {
+                return Err(CallFailure::Error(Error::InvalidArg {
                     name: spec.name.to_string(),
                     expected: ty.name().to_owned(),
                     got: val.as_ref().type_name().to_owned(),
-                });
+                }));
             }
         }
         (self.eval)(
@@ -248,9 +286,12 @@ impl<C: ?Sized> Function<C> {
                 vals,
             },
         )
-        .map_err(|source| Error::Function {
-            name: name.to_owned(),
-            source,
+        .map_err(|failure| match failure {
+            FnError::Missing(fields) => CallFailure::Missing(fields),
+            FnError::Error(source) => CallFailure::Error(Error::Function {
+                name: name.to_owned(),
+                source,
+            }),
         })
     }
 }
@@ -384,6 +425,7 @@ impl<'a> FromArg<'a> for ValueRef<'a> {
 #[derive(Clone, Debug)]
 pub struct Macro {
     source: String,
+    doc: Option<String>,
     pub(crate) rule: Rule,
 }
 
@@ -396,8 +438,20 @@ impl Macro {
     pub fn new(source: &str) -> Result<Macro, ParseError> {
         Ok(Macro {
             source: source.to_owned(),
+            doc: None,
             rule: crate::parse(source)?,
         })
+    }
+
+    /// The same macro with documentation, for tools that list macros.
+    pub fn with_doc(mut self, doc: impl Into<String>) -> Self {
+        self.doc = Some(doc.into());
+        self
+    }
+
+    /// The macro's documentation, if set.
+    pub fn doc(&self) -> Option<&str> {
+        self.doc.as_deref()
     }
 
     /// The macro body as written.
@@ -430,7 +484,7 @@ impl Macro {
 ///     ("domain".to_owned(), Value::String("api.internal".into())),
 ///     ("user".to_owned(), Value::String("alice".into())),
 /// ]));
-/// assert!(rule.eval(&input, &(), Opts::new(&env)).pass());
+/// assert!(rule.eval(&(), &input, Opts::new(&env)).pass());
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub struct Env<C: ?Sized = ()> {
@@ -475,7 +529,7 @@ impl<C: ?Sized> Env<C> {
     }
 
     /// The macro named `name`.
-    pub fn macro_(&self, name: &str) -> Option<&Macro> {
+    pub fn macro_rule(&self, name: &str) -> Option<&Macro> {
         self.macros.get(name)
     }
 }

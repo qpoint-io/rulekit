@@ -211,9 +211,9 @@ fn happy_path_eval_does_not_allocate() {
     for (name, expr, input, env) in &cases {
         let rule = rulekit::parse(expr).expect("parse");
         // Warm up: lazily built statics (e.g. regex caches) may allocate once.
-        drop(rule.eval(input, &(), Opts::new(env)));
+        drop(rule.eval(&(), input, Opts::new(env)));
         let before = allocations();
-        let result = rule.eval(input, &(), Opts::new(env).with_trace(false));
+        let result = rule.eval(&(), input, Opts::new(env).with_trace(false));
         let used = allocations() - before;
         assert!(result.error().is_none(), "{name}: {:?}", result.error());
         drop(result);
@@ -228,6 +228,6 @@ fn happy_path_eval_does_not_allocate() {
     let rule = rulekit::parse("[port]").expect("parse");
     let control = input(vec![("port", Value::Int(1))]);
     let before = allocations();
-    drop(rule.eval(&control, &(), Opts::new(&no_macros)));
+    drop(rule.eval(&(), &control, Opts::new(&no_macros)));
     assert!(allocations() > before, "allocation counter is not counting");
 }

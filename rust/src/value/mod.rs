@@ -11,7 +11,7 @@
 //!     ("tags".to_owned(), Value::Array(vec![Value::String("prod".into())])),
 //! ]);
 //! # let _ = input;
-//! # Ok::<(), String>(())
+//! # Ok::<(), rulekit::value::ValueParseError>(())
 //! ```
 
 mod fields;
@@ -28,6 +28,42 @@ pub use ip::{Cidr, Ip};
 pub use mac::Mac;
 pub use text::TextForm;
 pub use url::Url;
+
+/// A value that could not be parsed as an IP address, CIDR, MAC address, or
+/// URL.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ValueParseError {
+    kind: &'static str,
+    input: String,
+    reason: Option<String>,
+}
+
+impl ValueParseError {
+    pub(crate) fn new(kind: &'static str, input: &str, reason: Option<String>) -> Self {
+        ValueParseError {
+            kind,
+            input: input.to_owned(),
+            reason,
+        }
+    }
+
+    /// The input that failed to parse.
+    pub fn input(&self) -> &str {
+        &self.input
+    }
+}
+
+impl std::fmt::Display for ValueParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "invalid {} {:?}", self.kind, self.input)?;
+        if let Some(reason) = &self.reason {
+            write!(f, ": {reason}")?;
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for ValueParseError {}
 
 /// A string-keyed map (fast, non-cryptographic hashing).
 pub type Map<V> = HashMap<String, V, foldhash::fast::RandomState>;
@@ -230,6 +266,12 @@ impl From<Value> for Val<'_> {
     }
 }
 
+impl<'a> From<&'a str> for Val<'a> {
+    fn from(s: &'a str) -> Self {
+        Val::Ref(ValueRef::Str(s))
+    }
+}
+
 impl<'a> From<ValueRef<'a>> for Val<'a> {
     fn from(v: ValueRef<'a>) -> Self {
         Val::Ref(v)
@@ -305,8 +347,8 @@ impl<'a> ValueRef<'a> {
     /// text forms of IPs, CIDRs, MACs, URLs, and URL queries.
     pub fn text(self) -> Option<TextForm<'a>> {
         match self {
-            ValueRef::Str(s) | ValueRef::Query(s) => Some(TextForm::Borrowed(s)),
-            ValueRef::Url(u) => Some(TextForm::Borrowed(u.as_str())),
+            ValueRef::Str(s) | ValueRef::Query(s) => Some(TextForm::borrowed(s)),
+            ValueRef::Url(u) => Some(TextForm::borrowed(u.as_str())),
             ValueRef::Ip(ip) => Some(TextForm::display(ip)),
             ValueRef::Cidr(c) => Some(TextForm::display(c)),
             ValueRef::Mac(m) => Some(TextForm::display(m)),

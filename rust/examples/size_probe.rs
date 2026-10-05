@@ -8,6 +8,6 @@ fn main() {
     let kv = rulekit::decode_json::<()>(br#"{"a": 1}"#, JsonOptions::default()).expect("json");
     let input = KvInput::new(kv);
     let trace = args.len() > 2;
-    let result = rule.eval(&input, &(), Opts::default().with_trace(trace));
+    let result = rule.eval(&(), &input, Opts::default().with_trace(trace));
     println!("{}", result.pass());
 }

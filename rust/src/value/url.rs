@@ -2,6 +2,7 @@
 //! normalization. The text form is the URL as written with the scheme and
 //! host lowercased.
 
+use super::ValueParseError;
 use std::borrow::Cow;
 use std::fmt;
 
@@ -40,8 +41,9 @@ impl Url {
     /// Parses a URL by the shared rules: an RFC 3986 URI reference (absolute
     /// or relative) in ASCII, with no `%` escapes in the host and no IPvFuture
     /// literal. Anything else is an error.
-    pub fn parse(s: &str) -> Result<Url, String> {
-        let r = UriRef::parse(s).map_err(|e| format!("invalid URL {s:?}: {e}"))?;
+    pub fn parse(s: &str) -> Result<Url, ValueParseError> {
+        let r =
+            UriRef::parse(s).map_err(|e| ValueParseError::new("URL", s, Some(e.to_string())))?;
         let at = |part: &str| Span {
             start: part.as_ptr() as usize - s.as_ptr() as usize,
             end: part.as_ptr() as usize - s.as_ptr() as usize + part.len(),
@@ -56,10 +58,18 @@ impl Url {
         if let Some(auth) = r.authority() {
             let h = at(auth.host());
             if auth.host().contains('%') {
-                return Err(format!("invalid URL {s:?}: percent escape in host"));
+                return Err(ValueParseError::new(
+                    "URL",
+                    s,
+                    Some("percent escape in host".into()),
+                ));
             }
             if auth.host().starts_with("[v") || auth.host().starts_with("[V") {
-                return Err(format!("invalid URL {s:?}: IPvFuture host"));
+                return Err(ValueParseError::new(
+                    "URL",
+                    s,
+                    Some("IPvFuture host".into()),
+                ));
             }
             buf[h.start..h.end].make_ascii_lowercase();
             host = if auth.host().starts_with('[') {

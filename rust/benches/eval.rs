@@ -18,17 +18,17 @@ fn bench_eval(c: &mut Criterion) {
     for (name, rule, warm) in cases::lazy_cases() {
         let input = cases::lazy_input();
         if warm {
-            rule.eval(&input, &(), Opts::default());
+            rule.eval(&(), &input, Opts::default());
         }
         group.bench_function(name, |b| {
-            b.iter(|| black_box(rule.eval(&input, &(), Opts::default()).pass()))
+            b.iter(|| black_box(rule.eval(&(), &input, Opts::default()).pass()))
         });
     }
     let rule = rulekit::parse(r#"expensive == "value""#).unwrap();
     group.bench_function("resolved_per_eval", |b| {
         b.iter(|| {
             let input = cases::lazy_input();
-            black_box(rule.eval(&input, &(), Opts::default()).pass())
+            black_box(rule.eval(&(), &input, Opts::default()).pass())
         })
     });
     group.finish();

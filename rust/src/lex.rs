@@ -248,9 +248,9 @@ impl Lexer<'_> {
         };
         let kind = if let Some(kind) = keyword {
             kind
-        } else if Cidr::parse(raw).is_some() {
+        } else if Cidr::parse(raw).is_ok() {
             TokenKind::IpCidr
-        } else if Ip::parse(raw).is_some() {
+        } else if Ip::parse(raw).is_ok() {
             TokenKind::Ip
         } else if literal::parse_int(raw).is_some() {
             TokenKind::Int

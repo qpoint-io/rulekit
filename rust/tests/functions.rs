@@ -26,16 +26,16 @@ fn custom_function_reads_args_by_index_and_name() {
     let env = Env::builder().function("add", add).build().unwrap();
     let rule = rulekit::parse("add(x, 2) == 5").unwrap();
     let kv = input(&[("x", Value::Int(3))]);
-    assert!(rule.eval(&kv, &(), Opts::new(&env)).pass());
+    assert!(rule.eval(&(), &kv, Opts::new(&env)).pass());
 
     // A typed argument is checked before the function runs.
     let rule = rulekit::parse(r#"add(1, "2") == 3"#).unwrap();
-    let result = rule.eval(&NoInput, &(), Opts::new(&env));
+    let result = rule.eval(&(), &NoInput, Opts::new(&env));
     assert!(matches!(result.error(), Some(Error::InvalidArg { name, .. }) if name == "b"));
 
     // Wrong arity.
     let rule = rulekit::parse("add(1) == 1").unwrap();
-    let result = rule.eval(&NoInput, &(), Opts::new(&env));
+    let result = rule.eval(&(), &NoInput, Opts::new(&env));
     assert!(matches!(
         result.error(),
         Some(Error::ArgCount {
@@ -47,7 +47,7 @@ fn custom_function_reads_args_by_index_and_name() {
 
     // Missing arguments make the call unknown, not an error.
     let rule = rulekit::parse("add(y, 1) == 1").unwrap();
-    let result = rule.eval(&NoInput, &(), Opts::new(&env));
+    let result = rule.eval(&(), &NoInput, Opts::new(&env));
     assert!(result.unknown());
     assert_eq!(result.missing_fields(), ["y"]);
 }
@@ -63,7 +63,7 @@ fn functions_receive_the_context() {
     let ctx = Ctx {
         tenant: "acme".into(),
     };
-    assert!(rule.eval(&NoInput, &ctx, Opts::new(&env)).pass());
+    assert!(rule.eval(&ctx, &NoInput, Opts::new(&env)).pass());
 }
 
 #[test]
@@ -107,13 +107,53 @@ fn macros_expand_and_reject_arguments() {
     assert!(
         rulekit::parse("internal()")
             .unwrap()
-            .eval(&kv, &(), Opts::new(&env))
+            .eval(&(), &kv, Opts::new(&env))
             .pass()
     );
     let rule = rulekit::parse("internal(1)").unwrap();
-    let result = rule.eval(&kv, &(), Opts::new(&env));
+    let result = rule.eval(&(), &kv, Opts::new(&env));
     assert!(matches!(result.error(), Some(Error::MacroArgs { .. })));
     let rule = rulekit::parse("nope()").unwrap();
-    let result = rule.eval(&kv, &(), Opts::default());
+    let result = rule.eval(&(), &kv, Opts::default());
     assert!(matches!(result.error(), Some(Error::UnknownFunction(name)) if name == "nope"));
+}
+
+#[test]
+fn functions_can_report_missing_fields_and_errors() {
+    use rulekit::FnError;
+    let lookup = Function::new([ArgSpec::new("key")], |_: &(), args| {
+        match args.index::<&str>(0)? {
+            "known" => Ok(Val::from("value")),
+            "absent" => Err(FnError::missing(["geo.country"])),
+            _ => Err(FnError::msg("unsupported key")),
+        }
+    });
+    let env = Env::builder().function("lookup", lookup).build().unwrap();
+    let eval = |expr: &str| {
+        let rule = rulekit::parse(expr).unwrap();
+        let result = rule.eval(&(), &NoInput, Opts::new(&env));
+        (
+            result.pass(),
+            result
+                .missing_fields()
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>(),
+            result.error().is_some(),
+        )
+    };
+    assert_eq!(eval(r#"lookup("known") == "value""#), (true, vec![], false));
+    assert_eq!(
+        eval(r#"lookup("absent") == "x""#),
+        (false, vec!["geo.country".to_owned()], false)
+    );
+    assert_eq!(eval(r#"lookup("other") == "x""#), (false, vec![], true));
+}
+
+#[test]
+fn macros_and_functions_carry_docs() {
+    let m = rulekit::Macro::new("a == 1").unwrap().with_doc("A is one.");
+    assert_eq!(m.doc(), Some("A is one."));
+    let f = Function::<()>::new([], |_, _| Ok(Val::from("x"))).with_doc("Returns x.");
+    assert_eq!(f.doc(), Some("Returns x."));
 }

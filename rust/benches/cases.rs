@@ -18,7 +18,7 @@ pub struct EvalCase {
 impl EvalCase {
     pub fn eval(&self) -> bool {
         let opts = Opts::new(&self.env).with_trace(self.trace);
-        let result = self.rule.eval(&self.input, &(), opts);
+        let result = self.rule.eval(&(), &self.input, opts);
         assert!(
             result.error().is_none(),
             "{}: {:?}",

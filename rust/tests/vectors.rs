@@ -290,8 +290,8 @@ fn run_case(case: &Case, mode: &str, report: &mut Report) -> Result<(), String> 
         let eval = |trace: bool| {
             let opts = Opts::new(&env).with_trace(trace);
             match &input {
-                Some(input) => rule.eval(input, &(), opts),
-                None => rule.eval(&NoInput, &(), opts),
+                Some(input) => rule.eval(&(), input, opts),
+                None => rule.eval(&(), &NoInput, opts),
             }
         };
         let plain = eval(false);

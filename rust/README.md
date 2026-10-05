@@ -33,7 +33,7 @@ let input = KvInput::from_values(Map::from_iter([
     ("port".to_owned(), Value::Int(8080)),
 ]));
 
-let result = rule.eval(&input, &(), Opts::default());
+let result = rule.eval(&(), &input, Opts::default());
 if let Some(err) = result.error() {
     eprintln!("error evaluating rule: {err}");
 } else if result.unknown() {
@@ -45,7 +45,7 @@ if let Some(err) = result.error() {
 }
 ```
 
-`Rule::eval(input, ctx, opts)` returns an `EvalResult`:
+`Rule::eval(ctx, input, opts)` returns an `EvalResult`:
 
 - `value()`: the result value, usually a boolean
 - `error()`: an evaluation error (input or function failure, unknown function, bad argument)
@@ -87,7 +87,7 @@ let input = KvInput::new(Kv::from_iter([
 let rule = rulekit::parse(r#"method == "GET" and user == "alice""#)?;
 let env = Env::new();
 let ctx = Ctx { user: "alice".into() };
-assert!(rule.eval(&input, &ctx, Opts::new(&env)).pass());
+assert!(rule.eval(&ctx, &input, Opts::new(&env)).pass());
 ```
 
 `FnInput` wraps a closure that resolves a path; implement the `Input` trait
@@ -107,7 +107,7 @@ let opts = JsonOptions { annotated_keys: true, ..JsonOptions::default() };
 let input = KvInput::new(decode_json::<()>(data, opts)?);
 
 let rule = rulekit::parse("src in 10.0.0.0/8 and port == 443")?;
-assert!(rule.eval(&input, &(), Opts::default()).pass());
+assert!(rule.eval(&(), &input, Opts::default()).pass());
 ```
 
 ## Functions and macros
@@ -135,13 +135,16 @@ let env = Env::builder()
     .build()?;
 
 let rule = rulekit::parse("clamp(150, 100) == 100 and not is_internal()")?;
-let result = rule.eval(&NoInput, &(), Opts::new(&env));
+let result = rule.eval(&(), &NoInput, Opts::new(&env));
 assert_eq!(result.missing_fields(), ["ip"]);
 ```
 
 Typed arguments are checked before the function runs. Functions receive the
 evaluation context as their first argument and may return values borrowed
-from it.
+from it. A function returns `Err(FnError::missing([...]))` when it needs
+input that is not there (the rule result is then unknown), or any other
+error with `?` or `FnError::msg`. `Function::with_doc` and `Macro::with_doc`
+attach descriptions for tools.
 
 ## Tracing
 
@@ -151,7 +154,7 @@ from it.
 use rulekit::{NoInput, Opts, TraceStatus};
 
 let rule = rulekit::parse("port == 443 or tls")?;
-let result = rule.eval(&NoInput, &(), Opts::default().with_trace(true));
+let result = rule.eval(&(), &NoInput, Opts::default().with_trace(true));
 let trace = result.trace().unwrap();
 assert_eq!(trace.status(), TraceStatus::Missing);
 assert_eq!(trace.missing_fields(), ["port", "tls"]);
@@ -195,7 +198,7 @@ assert_eq!(out, "c == 2   -- first check\nand b");
 | Go | Rust |
 | --- | --- |
 | `Parse`, `ParseAST`, `Compile` | `parse`, `Ast::parse`, `compile` |
-| `rule.Eval(ctx, input, opts)` | `rule.eval(&input, &ctx, opts)` |
+| `rule.Eval(ctx, input, opts)` | `rule.eval(&ctx, &input, opts)` |
 | `Result` | `EvalResult` |
 | `Opts{Functions, Macros, Trace}` | `Opts { env, trace }` with `Env::builder()` |
 | `FromKV`, `KV` | `KvInput::new`, `Kv` |
@@ -204,6 +207,7 @@ assert_eq!(out, "c == 2   -- first check\nand b");
 | `DecodeJSON`, `JSONOptions` | `decode_json`, `JsonOptions` |
 | `MacroSet.Register` | `EnvBuilder::macro_source` |
 | `IndexFuncArg` | `Args::by_name` |
+| `Function.Eval` returning `Result` | a closure returning `Result<Val, FnError>` |
 | `Format`, `Rewrite`, `Edit` | `format`, `rewrite`, `Edit` |
 | `Source()`, `Compact()`, `Multiline(indent)` | `PrintMode::Source`, `Compact`, `Multiline(indent)` |
 

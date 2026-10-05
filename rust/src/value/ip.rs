@@ -3,6 +3,7 @@
 //! forms of `testdata/vectors/README.md` ("Text forms"), which std's
 //! `Display` produces once mapped values are normalized to IPv4.
 
+use super::ValueParseError;
 use ipnet::{IpNet, Ipv4Net};
 use std::fmt;
 use std::net::IpAddr;
@@ -16,8 +17,10 @@ pub struct Ip(IpAddr);
 impl Ip {
     /// Parses `s` with std's `IpAddr` grammar: dotted decimal IPv4 without
     /// leading zeros, or IPv6 without a zone.
-    pub fn parse(s: &str) -> Option<Ip> {
-        s.parse().ok().map(Ip::from_addr)
+    pub fn parse(s: &str) -> Result<Ip, ValueParseError> {
+        s.parse()
+            .map(Ip::from_addr)
+            .map_err(|_| ValueParseError::new("IP address", s, None))
     }
 
     /// Wraps `a`, normalizing an IPv4-mapped IPv6 address to IPv4.
@@ -58,7 +61,11 @@ impl Cidr {
     /// Parses `address/prefix`: the address as [`Ip::parse`] reads it, the
     /// prefix as ASCII decimal digits (leading zeros allowed) no larger than
     /// the address's bit length.
-    pub fn parse(s: &str) -> Option<Cidr> {
+    pub fn parse(s: &str) -> Result<Cidr, ValueParseError> {
+        Self::try_parse(s).ok_or_else(|| ValueParseError::new("CIDR", s, None))
+    }
+
+    fn try_parse(s: &str) -> Option<Cidr> {
         let (addr, prefix) = s.split_once('/')?;
         // `u8::from_str` also accepts a leading `+`.
         if !prefix.bytes().all(|b| b.is_ascii_digit()) {
@@ -540,7 +547,7 @@ mod tests {
     #[test]
     fn parse_ip_matches_go() {
         for &(input, want) in IP_CASES {
-            let got = Ip::parse(input).map(|ip| (ip.to_string(), ip.is_v4()));
+            let got = Ip::parse(input).ok().map(|ip| (ip.to_string(), ip.is_v4()));
             assert_eq!(
                 got.as_ref().map(|(t, v)| (t.as_str(), *v)),
                 want,
@@ -552,7 +559,9 @@ mod tests {
     #[test]
     fn parse_cidr_matches_go() {
         for &(input, want) in CIDR_CASES {
-            let got = Cidr::parse(input).map(|c| (c.to_string(), c.prefix(), c.is_v4()));
+            let got = Cidr::parse(input)
+                .ok()
+                .map(|c| (c.to_string(), c.prefix(), c.is_v4()));
             assert_eq!(
                 got.as_ref().map(|(t, p, v)| (t.as_str(), *p, *v)),
                 want,

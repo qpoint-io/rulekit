@@ -14,7 +14,7 @@ use std::borrow::Cow;
 use smallvec::SmallVec;
 
 use crate::ast::{Ast, AstKind, LiteralKind, NodeData, NodeId, Operator, Segment};
-use crate::env::Env;
+use crate::env::{CallFailure, Env};
 use crate::error::{Error, ParseError};
 use crate::input::Input;
 use crate::literal::parse_literal;
@@ -207,7 +207,7 @@ pub(crate) type Missing<'a> = SmallVec<[Cow<'a, str>; 2]>;
 /// use rulekit::{NoInput, Opts};
 ///
 /// let rule = rulekit::parse("port == 443 and tls")?;
-/// let result = rule.eval(&NoInput, &(), Opts::default());
+/// let result = rule.eval(&(), &NoInput, Opts::default());
 /// assert!(result.unknown());
 /// assert_eq!(result.missing_fields(), ["port", "tls"]);
 /// # Ok::<(), rulekit::ParseError>(())
@@ -580,7 +580,11 @@ fn call<'a, const TRACE: bool, C: ?Sized, I: Input<C> + ?Sized>(
         };
         let r = match function.call(name, s.ctx, &vals) {
             Ok(v) => EvalResult::of(v),
-            Err(e) => EvalResult::failed(e),
+            Err(CallFailure::Error(e)) => EvalResult::failed(e),
+            Err(CallFailure::Missing(fields)) => EvalResult {
+                missing: fields.into_iter().map(Cow::Owned).collect(),
+                ..EvalResult::of(Val::Ref(ValueRef::Null))
+            },
         };
         return r.with_trace(trace);
     }

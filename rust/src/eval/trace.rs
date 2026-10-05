@@ -128,7 +128,7 @@ impl Diagnostic {
 /// let rule = rulekit::parse("port == 443 or tls")?;
 /// let input = KvInput::from_values(Map::from_iter([("port".to_owned(), Value::Int(443))]));
 ///
-/// let result = rule.eval(&input, &(), Opts::default().with_trace(true));
+/// let result = rule.eval(&(), &input, Opts::default().with_trace(true));
 /// let trace = result.trace().expect("tracing was on");
 /// assert_eq!(trace.status(), TraceStatus::Passed);
 /// assert_eq!(trace.expr(), "port == 443 or tls");

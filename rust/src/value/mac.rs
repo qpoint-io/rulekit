@@ -1,6 +1,7 @@
 //! MAC addresses: a port of `mac.go` `parseMAC` and Go's
 //! `net.HardwareAddr.String` text form.
 
+use super::ValueParseError;
 use std::fmt;
 
 /// A MAC address of 6 or 8 bytes (3 for an [`oui`](Mac::oui)). Its
@@ -16,7 +17,11 @@ impl Mac {
     /// groups of four hex digits separated by `.` (`0123.4567.89ab`), 6 or 8
     /// bytes. The separator is the first of `:`, `-`, `.` present anywhere in
     /// `s` (in that priority).
-    pub fn parse(s: &str) -> Option<Mac> {
+    pub fn parse(s: &str) -> Result<Mac, ValueParseError> {
+        Self::try_parse(s).ok_or_else(|| ValueParseError::new("MAC address", s, None))
+    }
+
+    fn try_parse(s: &str) -> Option<Mac> {
         let s = s.as_bytes();
         let (sep, width) = if s.contains(&b':') {
             (b':', 2)
@@ -143,7 +148,7 @@ mod tests {
     #[test]
     fn parse_matches_go() {
         for &(input, want) in CASES {
-            let got = Mac::parse(input).map(|m| m.to_string());
+            let got = Mac::parse(input).ok().map(|m| m.to_string());
             assert_eq!(got.as_deref(), want, "parse({input:?})");
         }
     }

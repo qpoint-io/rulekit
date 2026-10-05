@@ -64,7 +64,7 @@ pub struct JsonOptions {
 /// let input = KvInput::new(decode_json::<()>(data, opts)?);
 ///
 /// let rule = rulekit::parse(r#"src in 10.0.0.0/8 and port == 443 and tags contains "prod""#)?;
-/// assert!(rule.eval(&input, &(), Opts::default()).pass());
+/// assert!(rule.eval(&(), &input, Opts::default()).pass());
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub fn decode_json<C: ?Sized>(data: &[u8], opts: JsonOptions) -> Result<Kv<C>, Error> {
@@ -462,17 +462,19 @@ fn scalar(typ: &str, value: Raw<'_>, encoding: &str) -> Result<Value, Error> {
     Ok(match typ {
         "ip" => {
             let s = value.string()?;
-            Value::Ip(Ip::parse(s).ok_or_else(|| err(format!("invalid ip {s:?}")))?)
+            Value::Ip(Ip::parse(s).map_err(|e| err(e.to_string()))?)
         }
         "cidr" => {
             let s = value.string()?;
-            Value::Cidr(Cidr::parse(s).ok_or_else(|| err(format!("invalid CIDR address: {s}")))?)
+            Value::Cidr(Cidr::parse(s).map_err(|e| err(e.to_string()))?)
         }
         "mac" => {
             let s = value.string()?;
-            Value::Mac(Mac::parse(s).ok_or_else(|| err(format!("invalid mac {s:?}")))?)
+            Value::Mac(Mac::parse(s).map_err(|e| err(e.to_string()))?)
         }
-        "url" => Value::Url(Box::new(Url::parse(value.string()?).map_err(err)?)),
+        "url" => Value::Url(Box::new(
+            Url::parse(value.string()?).map_err(|e| err(e.to_string()))?,
+        )),
         "bytes" => bytes(value, encoding)?,
         "hex" | "bytes_hex" => bytes(value, "hex")?,
         "base64" | "bytes_base64" => bytes(value, "base64")?,

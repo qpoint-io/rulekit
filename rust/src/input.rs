@@ -70,10 +70,10 @@ impl<C: ?Sized> Input<C> for NoInput {
 /// });
 ///
 /// let rule = rulekit::parse("port == 443")?;
-/// assert!(rule.eval(&input, &(), Opts::default()).pass());
+/// assert!(rule.eval(&(), &input, Opts::default()).pass());
 ///
 /// let rule = rulekit::parse("host == \"example.com\"")?;
-/// assert_eq!(rule.eval(&input, &(), Opts::default()).missing_fields(), ["host"]);
+/// assert_eq!(rule.eval(&(), &input, Opts::default()).missing_fields(), ["host"]);
 /// # Ok::<(), rulekit::ParseError>(())
 /// ```
 pub struct FnInput<F>(pub F);
@@ -237,7 +237,7 @@ impl<C: ?Sized> From<Value> for KvEntry<C> {
 /// )?;
 /// let env = Env::new();
 /// let ctx = Ctx { user: "alice".into() };
-/// assert!(rule.eval(&input, &ctx, Opts::new(&env)).pass());
+/// assert!(rule.eval(&ctx, &input, Opts::new(&env)).pass());
 /// # Ok::<(), rulekit::ParseError>(())
 /// ```
 pub struct KvInput<C: ?Sized = ()> {

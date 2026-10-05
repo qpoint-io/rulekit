@@ -9,19 +9,22 @@ const INLINE: usize = 48;
 /// A value's text form, from [`ValueRef::text`](super::ValueRef::text):
 /// borrowed, or formatted into an inline buffer. Dereferences to `str`.
 #[derive(Clone, Copy)]
-pub enum TextForm<'a> {
+pub struct TextForm<'a>(Repr<'a>);
+
+#[derive(Clone, Copy)]
+enum Repr<'a> {
     /// Text borrowed from the value.
     Borrowed(&'a str),
-    /// Text formatted inline (IPs, CIDRs, MACs).
-    Inline {
-        /// UTF-8 text in the first `len` bytes.
-        buf: [u8; INLINE],
-        /// The text length.
-        len: u8,
-    },
+    /// UTF-8 text formatted inline (IPs, CIDRs, MACs) in the first `len` bytes.
+    Inline { buf: [u8; INLINE], len: u8 },
 }
 
-impl TextForm<'_> {
+impl<'a> TextForm<'a> {
+    /// Text borrowed from a value.
+    pub(crate) fn borrowed(text: &'a str) -> Self {
+        TextForm(Repr::Borrowed(text))
+    }
+
     /// Format a short value (IP, CIDR, MAC) inline.
     pub(crate) fn display(value: impl fmt::Display) -> Self {
         let mut w = InlineWriter {
@@ -29,17 +32,17 @@ impl TextForm<'_> {
             len: 0,
         };
         fmt::write(&mut w, format_args!("{value}")).expect("text form fits the inline buffer");
-        TextForm::Inline {
+        TextForm(Repr::Inline {
             buf: w.buf,
             len: w.len as u8,
-        }
+        })
     }
 
     /// The text.
     pub fn as_str(&self) -> &str {
-        match self {
-            TextForm::Borrowed(s) => s,
-            TextForm::Inline { buf, len } => {
+        match &self.0 {
+            Repr::Borrowed(s) => s,
+            Repr::Inline { buf, len } => {
                 std::str::from_utf8(&buf[..usize::from(*len)]).expect("formatted text is UTF-8")
             }
         }

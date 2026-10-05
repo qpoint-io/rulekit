@@ -32,7 +32,7 @@ fn lazy_value_resolves_once() {
         })),
     )]));
     let rule = rulekit::parse(r#"expensive == "value" and expensive == "value""#).unwrap();
-    let result = rule.eval(&input, &(), Opts::default());
+    let result = rule.eval(&(), &input, Opts::default());
     assert!(result.error().is_none());
     assert!(result.pass());
     assert_eq!(calls.load(Ordering::SeqCst), 1);
@@ -47,7 +47,7 @@ fn lazy_memo_keeps_bracket_keys_distinct() {
     ]));
     let rule =
         rulekit::parse(r#"["a.b"] == "flat" and a.b == "nested" and a["b"] == "nested""#).unwrap();
-    let result = rule.eval(&input, &(), Opts::default());
+    let result = rule.eval(&(), &input, Opts::default());
     assert!(result.error().is_none());
     assert!(result.pass());
 }
@@ -67,7 +67,7 @@ fn lazy_value_reads_the_context() {
     let ctx = Ctx {
         user: "root".into(),
     };
-    let result = rule.eval(&input, &ctx, Opts::new(&env));
+    let result = rule.eval(&ctx, &input, Opts::new(&env));
     assert!(result.pass());
 }
 
@@ -91,7 +91,7 @@ fn nested_input_takes_over_the_subtree() {
     });
     let input = KvInput::new(kv(vec![("request", KvEntry::Input(Arc::new(request)))]));
     let rule = rulekit::parse(r#"request.headers["user-agent"] == "curl""#).unwrap();
-    let result = rule.eval(&input, &(), Opts::default());
+    let result = rule.eval(&(), &input, Opts::default());
     assert!(result.error().is_none());
     assert!(result.pass());
 }
@@ -142,7 +142,7 @@ fn concurrent_eval_resolves_each_lazy_once() {
             scope.spawn(move || {
                 for i in 0..50 {
                     let rule = &rules[(g + i) % rules.len()];
-                    let result = rule.eval(input, ctx, Opts::new(env));
+                    let result = rule.eval(ctx, input, Opts::new(env));
                     assert!(result.error().is_none() && result.pass(), "{rule}");
                 }
             });
@@ -168,8 +168,8 @@ fn lazy_errors_are_not_memoized() {
         })),
     )]));
     let rule = rulekit::parse(r#"flaky == "ok""#).unwrap();
-    assert!(rule.eval(&input, &(), Opts::default()).error().is_some());
-    let result = rule.eval(&input, &(), Opts::default());
+    assert!(rule.eval(&(), &input, Opts::default()).error().is_some());
+    let result = rule.eval(&(), &input, Opts::default());
     assert!(result.error().is_none());
     assert!(result.pass());
     assert_eq!(calls.load(Ordering::SeqCst), 2);
@@ -188,8 +188,8 @@ fn cloned_lazy_is_unresolved() {
     )]);
     let rule = rulekit::parse("x == 1").unwrap();
     let first = KvInput::new(tree.clone());
-    assert!(rule.eval(&first, &(), Opts::default()).pass());
+    assert!(rule.eval(&(), &first, Opts::default()).pass());
     let second = KvInput::new(tree);
-    assert!(rule.eval(&second, &(), Opts::default()).pass());
+    assert!(rule.eval(&(), &second, Opts::default()).pass());
     assert_eq!(calls.load(Ordering::SeqCst), 2);
 }

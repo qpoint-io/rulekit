@@ -55,16 +55,16 @@ fn main() {
     for (name, rule, warm) in cases::lazy_cases() {
         let input = cases::lazy_input();
         if warm {
-            rule.eval(&input, &(), Opts::default());
+            rule.eval(&(), &input, Opts::default());
         }
         measure(&format!("BenchmarkEvalLazyInput/{name}"), || {
-            black_box(rule.eval(&input, &(), Opts::default()).pass());
+            black_box(rule.eval(&(), &input, Opts::default()).pass());
         });
     }
     let rule = rulekit::parse(r#"expensive == "value""#).unwrap();
     measure("BenchmarkEvalLazyInput/resolved_per_eval", || {
         let input = cases::lazy_input();
-        black_box(rule.eval(&input, &(), Opts::default()).pass());
+        black_box(rule.eval(&(), &input, Opts::default()).pass());
     });
     let trace = cases::trace_case();
     measure("BenchmarkEvalTrace", || {
