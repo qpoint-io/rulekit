@@ -39,7 +39,7 @@ A field on its own (without an operator) will check if the field contains a non-
 ## Usage Example
 
 ```go
-import "github.com/qpoint-io/rulekit"
+import "github.com/qpoint-io/rulekit/v2"
 
 // ...
 
@@ -97,9 +97,9 @@ The Result also provides additional helper methods:
 | `>=`       | `ge`   | Greater than or equal to                                             |
 | `<`        | `lt`   | Less than                                                            |
 | `<=`       | `le`   | Less than or equal to                                                |
-| `contains` |        | Check if a value contains another value                              |
-| `in`       |        | Check if a value is contained within an array or an IP within a CIDR. If the left side is an array, the check passes when ANY of its elements matches (same as `==` and `contains`) |
-| `matches`  |        | Match against a regular expression                                   |
+| `contains` |        | A string contains a substring, an array contains an element, or a CIDR contains an IP |
+| `in`       |        | A value is an element of an array, or an IP is within a CIDR. If the left side is an array, the check passes when ANY of its elements matches (same as `==` and `contains`) |
+| `matches`  | `=~`   | Match against a regular expression                                   |
 
 ## Supported Types
 
@@ -120,7 +120,7 @@ The Result also provides additional helper methods:
 
 | Type         | Used As | Example                        | Description                                                                                   |
 | ------------ | ------- | ------------------------------ | --------------------------------------------------------------------------------------------- |
-| **Array**    | VALUE   | `[1, "string", true]`          | An array of mixed value types. Can be used with most operators including `in` and `contains`. |
+| **Array**    | VALUE   | `[1, "string", true]`          | An array of mixed value types. Use it on the right of `in`, `==` (any element is equal), or `!=` (no element is equal), or on the left of `contains`. |
 | **Function** | VALUE   | `starts_with(url, "https://")` | A function call with optional arguments. Can be built-in or custom.                           |
 | **Macro**    | VALUE   | `isValidRequest()`             | A zero-argument function that encapsulates a predefined rule.                                 |
 
