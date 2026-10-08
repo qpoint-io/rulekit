@@ -1,0 +1,5 @@
+error: unknown rename rule; expected one of "lowercase", "UPPERCASE", "PascalCase", "camelCase", "snake_case", "SCREAMING_SNAKE_CASE", "kebab-case", "SCREAMING-KEBAB-CASE"
+ --> tests/ui/input_rename_rule.rs:2:22
+  |
+2 | #[serde(rename_all = "Title Case")]
+  |                      ^^^^^^^^^^^^

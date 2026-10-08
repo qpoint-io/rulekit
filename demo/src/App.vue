@@ -121,7 +121,7 @@ watch(selectedNode, (node) => {
     draft.value = ''
     return
   }
-  if (node.kind === 'binary') draft.value = node.operator || ''
+  if (node.kind === 'binary') draft.value = node.operator ? `${node.negated ? 'not_' : ''}${node.operator}` : ''
   else if (node.kind === 'path') draft.value = node.path || node.text
   else if (node.kind === 'literal') draft.value = node.raw || node.text
   else draft.value = node.text
@@ -396,7 +396,7 @@ function valueText(value: unknown) {
               <div class="rk-edit-meta">{{ selectedNode?.text || 'click a node to edit or delete safe nodes' }}</div>
               <template v-if="selectedNode && editableKind !== 'none'">
                 <select v-if="editableKind === 'operator'" v-model="draft" class="rk-input">
-                  <option v-for="op in ['and', 'or', '==', '!=', '>', '>=', '<', '<=', 'contains', 'matches', 'in']" :key="op" :value="op">{{ op }}</option>
+                  <option v-for="[op, label] in [['and', 'and'], ['or', 'or'], ['eq', '=='], ['ne', '!='], ['gt', '>'], ['ge', '>='], ['lt', '<'], ['le', '<='], ['contains', 'contains'], ['not_contains', 'not contains'], ['matches', '=~'], ['not_matches', 'not =~'], ['in', 'in'], ['not_in', 'not in']]" :key="op" :value="op">{{ label }}</option>
                 </select>
                 <input v-else v-model="draft" class="rk-input" />
                 <button class="rk-btn" @click="applyRewrite">rewrite</button>

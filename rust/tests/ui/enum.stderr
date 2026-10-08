@@ -1,0 +1,5 @@
+error: `Args` can only be derived for a struct with named fields
+ --> tests/ui/enum.rs:2:6
+  |
+2 | enum Args {
+  |      ^^^^

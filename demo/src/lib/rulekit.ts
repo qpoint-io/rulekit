@@ -12,6 +12,7 @@ export type AstNode = {
   kind: string
   text: string
   operator?: string
+  negated?: boolean
   raw?: string
   path?: string
   span: Span

@@ -1,0 +1,63 @@
+[package]
+name = "rulekit"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+description = "Expression-based rules engine (Rust port of qpoint-io/rulekit)"
+repository = "https://github.com/qpoint-io/rulekit"
+include = ["src/**", "Cargo.toml", "README.md"]
+readme = "README.md"
+# benches/cases.rs is shared code, not a benchmark.
+autobenches = false
+
+[dependencies]
+rulekit-macros = { path = "macros", version = "0.1.0", optional = true }
+base64 = "0.23.1"
+fluent-uri = "0.4.1"
+foldhash = "0.2"
+ipnet = "2.12.2"
+regex = "1"
+regex-syntax = "0.8.11"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["raw_value"] }
+smallvec = { version = "1", features = ["const_generics", "union"] }
+bytes = { version = "1", optional = true }
+http = { version = "1", optional = true }
+serde_bytes = { version = "0.11", optional = true }
+url = { version = "2", optional = true }
+
+[features]
+default = ["derive", "url", "http", "bytes", "serde_bytes"]
+# `#[derive(rulekit::Args)]` and `#[derive(rulekit::Input)]`.
+derive = ["dep:rulekit-macros"]
+# `url::Url` fields: host, path, query, and string comparison of `as_str()`.
+url = ["dep:url"]
+# `http::Uri` fields. The whole-URI text form allocates; field access does not.
+http = ["dep:http"]
+# `bytes::Bytes` and `BytesMut` as byte strings.
+bytes = ["dep:bytes"]
+# `serde_bytes::{ByteBuf, Bytes, ByteArray}` as byte strings.
+serde_bytes = ["dep:serde_bytes"]
+
+[workspace]
+members = ["macros"]
+
+[dev-dependencies]
+criterion = "0.8.2"
+trybuild = "1.0.121"
+
+[[bench]]
+name = "eval"
+harness = false
+
+[[bench]]
+name = "allocs"
+harness = false
+
+[profile.bench]
+lto = "fat"
+codegen-units = 1
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(rulekit_size_probe)"] }

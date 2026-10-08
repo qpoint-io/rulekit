@@ -1,0 +1,5 @@
+error: `Args` structs may not have type or const parameters
+ --> tests/ui/type_param.rs:2:13
+  |
+2 | struct Args<T> {
+  |             ^

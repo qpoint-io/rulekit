@@ -1,0 +1,5 @@
+error: `#[derive(rulekit::Input)]` cannot follow `into`: the wire form is the target type. Derive `rulekit::Input` on that type and evaluate rules on it
+ --> tests/ui/input_serde_into.rs:2:9
+  |
+2 | #[serde(into = "String")]
+  |         ^^^^

@@ -1,0 +1,5 @@
+error: unknown `rulekit` attribute; expected `rename = "..."`
+ --> tests/ui/unknown_attribute.rs:3:15
+  |
+3 |     #[rulekit(name = "x")]
+  |               ^^^^

@@ -1,0 +1,16 @@
+[package]
+name = "rulekit-macros"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+description = "Derive macros for rulekit"
+repository = "https://github.com/qpoint-io/rulekit"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "3", default-features = false, features = ["clone-impls", "derive", "parsing", "printing", "proc-macro", "visit-mut"] }

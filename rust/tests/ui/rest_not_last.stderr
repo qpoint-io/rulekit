@@ -1,0 +1,5 @@
+error: a `Rest` field must be the last field
+ --> tests/ui/rest_not_last.rs:3:11
+  |
+3 |     rest: rulekit::Rest<'a>,
+  |           ^^^^^^^
