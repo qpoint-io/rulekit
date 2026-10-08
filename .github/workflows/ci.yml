@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "v2"]
   pull_request:
 
 jobs:
@@ -14,7 +14,26 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: "1.26.1"
+          go-version-file: go.mod
 
       - name: Test
-        run: go test -v ./...
+        run: make ci-go
+
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pinned: the trybuild compile-fail tests compare compiler messages.
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.1
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      - name: Format, clippy, test
+        run: make ci-rust
