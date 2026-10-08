@@ -1,6 +1,6 @@
 //! Output modes.
 
-use super::{canonical, canonical_in, precedence};
+use super::{canonical, canonical_in};
 use crate::ast::{Ast, NodeData, NodeId, Operator, TokenKind, TokenRef};
 
 /// How to print a rule or AST.
@@ -29,7 +29,7 @@ pub enum PrintMode {
 /// assert_eq!(format(&ast, &PrintMode::Compact), "a == 1 and (b or c)");
 /// assert_eq!(
 ///     format(&ast, &PrintMode::Multiline("  ".into())),
-///     "a == 1 and (\n  b\n  or c\n)"
+///     "a == 1\nand (\n  b\n  or c\n)"
 /// );
 /// # Ok::<(), rulekit::ParseError>(())
 /// ```
@@ -75,14 +75,40 @@ fn format_tokens(ast: &Ast, indent: Option<&str>) -> String {
         groups: Vec::new(),
         space_after_comment: false,
     };
-    for tok in ast.tokens() {
+    let tokens: Vec<_> = ast.tokens().collect();
+    for (i, &tok) in tokens.iter().enumerate() {
         f.write_trivia(tok.leading_trivia());
         if tok.kind() == TokenKind::Eof {
             break;
         }
-        f.write_token(tok);
+        f.write_token(
+            tok,
+            tok.kind() == TokenKind::LParen && group_needs_lines(&tokens[i + 1..]),
+        );
     }
     f.out.trim_end_matches([' ', '\t', '\n']).to_owned()
+}
+
+/// Whether the parenthesized group whose contents start at `inner` is broken
+/// across lines in multiline output: it is when it holds a top-level and/or or
+/// any comment. Other groups, like `not (a == 1)`, stay inline.
+fn group_needs_lines(inner: &[TokenRef<'_>]) -> bool {
+    let mut depth = 0usize;
+    for tok in inner {
+        let trivia = tok.leading_trivia();
+        if trivia.contains("--") || trivia.contains("/*") {
+            return true;
+        }
+        match tok.kind() {
+            TokenKind::LParen => depth += 1,
+            TokenKind::RParen if depth == 0 => return false,
+            TokenKind::RParen => depth -= 1,
+            TokenKind::And | TokenKind::Or if depth == 0 => return true,
+            TokenKind::Eof => return false,
+            _ => {}
+        }
+    }
+    false
 }
 
 struct TokenFormatter<'a> {
@@ -92,15 +118,17 @@ struct TokenFormatter<'a> {
     at_line: bool,
     multiline: bool,
     indent: &'a str,
-    /// For each open parenthesis: whether it groups an expression (true) or
-    /// encloses call arguments (false).
+    /// For each open parenthesis: whether it opens a multi-line expression
+    /// group (true) or stays inline (call arguments, or a group without a
+    /// top-level and/or).
     groups: Vec<bool>,
     /// Separates a token from a preceding inline comment.
     space_after_comment: bool,
 }
 
 impl TokenFormatter<'_> {
-    fn write_token(&mut self, tok: TokenRef<'_>) {
+    /// `multiline_group` is [`group_needs_lines`] for an opening parenthesis.
+    fn write_token(&mut self, tok: TokenRef<'_>, multiline_group: bool) {
         let kind = tok.kind();
         let mut closes_group = false;
         if kind == TokenKind::RParen
@@ -129,7 +157,7 @@ impl TokenFormatter<'_> {
         self.at_line = false;
 
         if kind == TokenKind::LParen {
-            let group = self.prev != Some(TokenKind::Field);
+            let group = self.prev != Some(TokenKind::Field) && multiline_group;
             self.groups.push(group);
             if group {
                 self.depth += 1;
@@ -146,6 +174,10 @@ impl TokenFormatter<'_> {
             let Some(idx) = next_comment(trivia) else {
                 return;
             };
+            // A comment that started its own line in the source keeps its own line.
+            if self.multiline && !self.at_line && trivia[..idx].contains('\n') {
+                self.newline();
+            }
             trivia = &trivia[idx..];
             if trivia.starts_with("--") {
                 let end = trivia.find('\n').unwrap_or(trivia.len());
@@ -259,29 +291,16 @@ fn canonical_token<'a>(tok: TokenRef<'a>) -> &'a str {
     }
 }
 
-/// Go `formatMultiline`.
+/// Go `formatMultiline`: an and/or chain, one operand per line.
 fn multiline(ast: &Ast, id: NodeId, indent: &str, depth: usize) -> String {
     let NodeData::Binary {
         op: op @ (Operator::And | Operator::Or),
-        lhs,
-        rhs,
         ..
     } = *ast.data(id)
     else {
         return canonical(ast, id);
     };
-    if binary_op(ast, lhs) == Some(op) || binary_op(ast, rhs) == Some(op) {
-        return multiline_chain(ast, id, op, indent, depth);
-    }
-
-    let left = multiline_operand(ast, lhs, indent, depth, op, false);
-    let right = multiline_operand(ast, rhs, indent, depth, op, true);
-    let prec = op.precedence();
-    let lower = |child: NodeId| binary_op(ast, child).is_some() && precedence(ast, child) < prec;
-    if lower(lhs) || lower(rhs) {
-        return format!("{left} {} {right}", op.symbol());
-    }
-    format!("{left}\n{}{} {right}", indent.repeat(depth), op.symbol())
+    multiline_chain(ast, id, op, indent, depth)
 }
 
 fn binary_op(ast: &Ast, id: NodeId) -> Option<Operator> {
@@ -325,6 +344,9 @@ fn flatten(ast: &Ast, id: NodeId, op: Operator, out: &mut Vec<NodeId>) {
     }
 }
 
+/// One operand of a `parent` chain. An and/or of the other operator, or a
+/// `not` over one, becomes an indented parenthesized group so each condition
+/// gets its own line; anything else prints inline.
 fn multiline_operand(
     ast: &Ast,
     id: NodeId,
@@ -333,15 +355,20 @@ fn multiline_operand(
     parent: Operator,
     right_child: bool,
 ) -> String {
-    if let Some(op) = binary_op(ast, id) {
-        if precedence(ast, id) < parent.precedence() {
-            return grouped(ast, id, indent, depth);
+    match *ast.data(id) {
+        NodeData::Binary {
+            op: Operator::And | Operator::Or,
+            ..
+        } => grouped(ast, id, indent, depth),
+        NodeData::Unary {
+            op: Operator::Not,
+            operand,
+            ..
+        } if matches!(binary_op(ast, operand), Some(Operator::And | Operator::Or)) => {
+            format!("not {}", grouped(ast, operand, indent, depth))
         }
-        if op == parent {
-            return multiline(ast, id, indent, depth);
-        }
+        _ => canonical_in(ast, id, parent.precedence(), right_child),
     }
-    canonical_in(ast, id, parent.precedence(), right_child)
 }
 
 fn grouped(ast: &Ast, id: NodeId, indent: &str, depth: usize) -> String {

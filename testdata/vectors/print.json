@@ -82,6 +82,26 @@
       "expect": {"print": {"multiline_2sp": "(\n  a == 1\n  or b == 2\n) -- c\nand f(x, 1)\nand x in [1, 2]"}}
     },
     {
+      "name": "format: multiline groups an and inside an or, and an or inside an and",
+      "expr": "(a == 1 or b == 2) and not (c == 3)\nor d == 4 and e == 5\nor f =~ /x/",
+      "expect": {"print": {"multiline_2sp": "(\n  (\n    a == 1\n    or b == 2\n  )\n  and not (c == 3)\n)\nor (\n  d == 4\n  and e == 5\n)\nor f =~ /x/"}}
+    },
+    {
+      "name": "format: multiline breaks a not over a group",
+      "expr": "not (a == 1 or b == 2) and c == 3",
+      "expect": {"print": {"multiline_2sp": "not (\n  a == 1\n  or b == 2\n)\nand c == 3"}}
+    },
+    {
+      "name": "format: multiline keeps standalone comments on their own line",
+      "expr": "(a == 1 and b == 2)\n-- note\nor c == 3 -- trailing\nor d == 4",
+      "expect": {"print": {"multiline_2sp": "(\n  a == 1\n  and b == 2\n)\n-- note\nor c == 3 -- trailing\nor d == 4"}}
+    },
+    {
+      "name": "format: multiline with comments keeps simple groups inline",
+      "expr": "-- c\na == 1 and not (b == \"dev\") and (c or d)",
+      "expect": {"print": {"multiline_2sp": "-- c\na == 1\nand not (b == \"dev\")\nand (\n  c\n  or d\n)"}}
+    },
+    {
       "name": "string: field == [1, \"str\", 3]",
       "expr": "field == [1, \"str\", 3]",
       "expect": {"print": {"string": "field == [1, \"str\", 3]"}}

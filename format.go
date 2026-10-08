@@ -68,8 +68,9 @@ type tokenFormatter struct {
 	atLine    bool
 	multiline bool
 	indent    string
-	// groups records, for each open parenthesis, whether it groups an
-	// expression (true) or encloses call arguments (false).
+	// groups records, for each open parenthesis, whether it opens a
+	// multi-line expression group (true) or stays inline (call arguments, or
+	// a group without a top-level and/or).
 	groups []bool
 	// spaceAfterComment separates a token from a preceding inline comment.
 	spaceAfterComment bool
@@ -85,17 +86,47 @@ func formatTokensPreservingComments(tokens []Token, mode PrintMode) string {
 		f.indent = "  "
 	}
 
-	for _, tok := range tokens {
+	for i, tok := range tokens {
 		f.writeTrivia(tok.LeadingTrivia)
 		if tok.Kind == "EOF" {
 			break
 		}
-		f.writeToken(tok)
+		f.writeToken(tok, tok.Kind == "LPAREN" && groupNeedsLines(tokens, i))
 	}
 	return strings.TrimRight(f.b.String(), " \t\n")
 }
 
-func (f *tokenFormatter) writeToken(tok Token) {
+// groupNeedsLines reports whether the parenthesized group opening at
+// tokens[open] is broken across lines in multiline output: it is when it holds
+// a top-level and/or or any comment. Other groups, like `not (a == 1)`, stay
+// inline.
+func groupNeedsLines(tokens []Token, open int) bool {
+	depth := 0
+	for _, tok := range tokens[open+1:] {
+		if strings.Contains(tok.LeadingTrivia, "--") || strings.Contains(tok.LeadingTrivia, "/*") {
+			return true
+		}
+		switch tok.Kind {
+		case "LPAREN":
+			depth++
+		case "RPAREN":
+			if depth == 0 {
+				return false
+			}
+			depth--
+		case "AND", "OR":
+			if depth == 0 {
+				return true
+			}
+		case "EOF":
+			return false
+		}
+	}
+	return false
+}
+
+// writeToken writes tok; multilineGroup is groupNeedsLines for an LPAREN.
+func (f *tokenFormatter) writeToken(tok Token, multilineGroup bool) {
 	closesGroup := false
 	if tok.Kind == "RPAREN" && len(f.groups) > 0 {
 		closesGroup = f.groups[len(f.groups)-1]
@@ -119,7 +150,7 @@ func (f *tokenFormatter) writeToken(tok Token) {
 	f.atLine = false
 
 	if tok.Kind == "LPAREN" {
-		group := f.prev != "FIELD"
+		group := f.prev != "FIELD" && multilineGroup
 		f.groups = append(f.groups, group)
 		if group {
 			f.depth++
@@ -138,6 +169,10 @@ func (f *tokenFormatter) writeTrivia(trivia string) {
 		idx := nextCommentIndex(line, block)
 		if idx < 0 {
 			return
+		}
+		// A comment that started its own line in the source keeps its own line.
+		if f.multiline && !f.atLine && strings.Contains(trivia[:idx], "\n") {
+			f.newline()
 		}
 		trivia = trivia[idx:]
 		if strings.HasPrefix(trivia, "--") {
@@ -266,28 +301,7 @@ func formatMultiline(node ASTNode, opts printMultiline, depth int) string {
 	if !ok || (binary.op != OperatorAnd && binary.op != OperatorOr) {
 		return printAST(node)
 	}
-	if hasSameOperatorChild(binary) {
-		return formatMultilineChain(binary, opts, depth)
-	}
-
-	left := formatMultilineOperand(binary.left, opts, depth, binary.op, false)
-	right := formatMultilineOperand(binary.right, opts, depth, binary.op, true)
-	operator := astOperatorString(binary.op)
-	indent := strings.Repeat(opts.indent, depth)
-
-	if leftBinary, ok := binary.left.(*astBinary); ok && astPrecedence(leftBinary) < astPrecedence(binary) {
-		return left + " " + operator + " " + right
-	}
-	if rightBinary, ok := binary.right.(*astBinary); ok && astPrecedence(rightBinary) < astPrecedence(binary) {
-		return left + " " + operator + " " + right
-	}
-	return left + "\n" + indent + operator + " " + right
-}
-
-func hasSameOperatorChild(binary *astBinary) bool {
-	left, leftOK := binary.left.(*astBinary)
-	right, rightOK := binary.right.(*astBinary)
-	return leftOK && left.op == binary.op || rightOK && right.op == binary.op
+	return formatMultilineChain(binary, opts, depth)
 }
 
 func formatMultilineChain(binary *astBinary, opts printMultiline, depth int) string {
@@ -314,13 +328,17 @@ func flattenOperator(node ASTNode, op Operator) []ASTNode {
 	return []ASTNode{node}
 }
 
+// formatMultilineOperand prints one operand of a parentOp chain. An and/or
+// of the other operator, or a not over one, becomes an indented
+// parenthesized group so each condition gets its own line; anything else
+// prints inline.
 func formatMultilineOperand(node ASTNode, opts printMultiline, depth int, parentOp Operator, rightChild bool) string {
-	if binary, ok := node.(*astBinary); ok {
-		if astPrecedence(binary) < infixPrecedence(tokenKindFromASTOperator(parentOp)) {
-			return formatGroupedMultiline(binary, opts, depth)
-		}
-		if binary.op == parentOp {
-			return formatMultiline(binary, opts, depth)
+	if binary, ok := node.(*astBinary); ok && (binary.op == OperatorAnd || binary.op == OperatorOr) {
+		return formatGroupedMultiline(binary, opts, depth)
+	}
+	if unary, ok := node.(*astUnary); ok && unary.op == OperatorNot {
+		if inner, ok := unary.right.(*astBinary); ok && (inner.op == OperatorAnd || inner.op == OperatorOr) {
+			return "not " + formatGroupedMultiline(inner, opts, depth)
 		}
 	}
 	return printASTWithParent(node, infixPrecedence(tokenKindFromASTOperator(parentOp)), rightChild)

@@ -1,0 +1,147 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Slate-blue neutrals, a warm yellow brand accent, and orange for whatever
+ * node is selected across the editor, structure, and trace.
+ */
+
+@theme inline {
+  --font-heading: var(--font-sans);
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, monospace;
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --color-pass: var(--pass);
+  --color-fail: var(--fail);
+  --color-missing: var(--missing);
+  --color-selection: var(--selection);
+  --color-tok-id: var(--tok-id);
+  --color-tok-str: var(--tok-str);
+  --color-tok-num: var(--tok-num);
+  --color-tok-kw: var(--tok-kw);
+  --color-tok-pun: var(--tok-pun);
+  --color-tok-comment: var(--tok-comment);
+  --color-tok-op: var(--tok-op);
+  --color-tok-const: var(--tok-const);
+  --color-tok-regex: var(--tok-regex);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  --background: oklch(0.975 0.005 250);
+  --foreground: oklch(0.24 0.03 258);
+  --card: oklch(0.995 0.002 250);
+  --card-foreground: oklch(0.24 0.03 258);
+  --popover: oklch(0.995 0.002 250);
+  --popover-foreground: oklch(0.24 0.03 258);
+  --primary: oklch(0.84 0.15 88);
+  --primary-foreground: oklch(0.24 0.04 70);
+  --secondary: oklch(0.94 0.01 250);
+  --secondary-foreground: oklch(0.28 0.03 258);
+  --muted: oklch(0.945 0.008 250);
+  --muted-foreground: oklch(0.5 0.025 255);
+  --accent: oklch(0.93 0.012 250);
+  --accent-foreground: oklch(0.24 0.03 258);
+  --destructive: oklch(0.55 0.21 18);
+  --border: oklch(0.24 0.03 258 / 11%);
+  --input: oklch(0.24 0.03 258 / 15%);
+  --ring: oklch(0.72 0.15 80);
+  --radius: 0.625rem;
+
+  --pass: oklch(0.55 0.13 158);
+  --fail: oklch(0.56 0.19 22);
+  --missing: oklch(0.56 0.12 245);
+  --selection: oklch(0.7 0.16 48);
+
+  --tok-id: oklch(0.45 0.1 250);
+  --tok-str: oklch(0.5 0.11 150);
+  --tok-num: oklch(0.56 0.15 45);
+  --tok-kw: oklch(0.5 0.15 300);
+  --tok-pun: oklch(0.55 0.02 255);
+  --tok-comment: oklch(0.6 0.02 255);
+  --tok-op: oklch(0.42 0.06 250);
+  --tok-const: oklch(0.52 0.14 330);
+  --tok-regex: oklch(0.5 0.12 190);
+}
+
+.dark {
+  --background: oklch(0.175 0.014 258);
+  --foreground: oklch(0.93 0.008 250);
+  --card: oklch(0.205 0.016 258);
+  --card-foreground: oklch(0.93 0.008 250);
+  --popover: oklch(0.23 0.018 258);
+  --popover-foreground: oklch(0.93 0.008 250);
+  --primary: oklch(0.86 0.15 90);
+  --primary-foreground: oklch(0.22 0.04 70);
+  --secondary: oklch(0.27 0.02 258);
+  --secondary-foreground: oklch(0.93 0.008 250);
+  --muted: oklch(0.25 0.018 258);
+  --muted-foreground: oklch(0.68 0.02 255);
+  --accent: oklch(0.28 0.022 258);
+  --accent-foreground: oklch(0.95 0.008 250);
+  --destructive: oklch(0.7 0.18 20);
+  --border: oklch(0.85 0.03 255 / 10%);
+  --input: oklch(0.85 0.03 255 / 14%);
+  --ring: oklch(0.8 0.14 88);
+
+  --pass: oklch(0.8 0.14 158);
+  --fail: oklch(0.72 0.17 22);
+  --missing: oklch(0.76 0.1 245);
+  --selection: oklch(0.76 0.15 52);
+
+  --tok-id: oklch(0.82 0.07 240);
+  --tok-str: oklch(0.82 0.11 145);
+  --tok-num: oklch(0.8 0.12 55);
+  --tok-kw: oklch(0.8 0.11 300);
+  --tok-pun: oklch(0.62 0.02 255);
+  --tok-comment: oklch(0.58 0.02 255);
+  --tok-op: oklch(0.86 0.04 250);
+  --tok-const: oklch(0.78 0.12 330);
+  --tok-regex: oklch(0.8 0.1 190);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    scrollbar-width: thin;
+    scrollbar-color: var(--input) transparent;
+  }
+  html {
+    @apply font-sans antialiased;
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
