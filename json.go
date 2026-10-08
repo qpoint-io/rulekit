@@ -6,9 +6,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 type JSONOptions struct {
@@ -19,10 +21,18 @@ type JSONOptions struct {
 	TypedDocument bool
 }
 
-// DecodeJSON decodes a JSON object into a Rulekit KV value map.
+// maxJSONDepth is the deepest nesting of objects and arrays DecodeJSON accepts,
+// counting the root object as one level.
+const maxJSONDepth = 100
+
+// DecodeJSON decodes a JSON object into a Rulekit KV value map. The input must
+// be a single JSON value; anything but whitespace after it is an error.
 func DecodeJSON(data []byte, opts JSONOptions) (KV, error) {
 	if opts.AnnotatedKeys && opts.TypedDocument {
 		return nil, fmt.Errorf("json options AnnotatedKeys and TypedDocument are mutually exclusive")
+	}
+	if err := checkJSONText(data); err != nil {
+		return nil, err
 	}
 
 	dec := json.NewDecoder(bytes.NewReader(data))
@@ -31,6 +41,9 @@ func DecodeJSON(data []byte, opts JSONOptions) (KV, error) {
 	var raw any
 	if err := dec.Decode(&raw); err != nil {
 		return nil, err
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return nil, fmt.Errorf("unexpected data after the JSON value")
 	}
 	normalized, err := normalizeJSONValue(raw, opts)
 	if err != nil {
@@ -41,6 +54,60 @@ func DecodeJSON(data []byte, opts JSONOptions) (KV, error) {
 		return nil, fmt.Errorf("json root must be an object")
 	}
 	return KV(kv), nil
+}
+
+// checkJSONText applies the shared input rules the decoder does not: the
+// input must be valid UTF-8, objects and arrays may nest at most maxJSONDepth
+// levels, and a \u escape in D800-DBFF must be followed directly by a \u
+// escape in DC00-DFFF (no lone surrogates). Syntax errors are left to the
+// decoder. The loop skips escapes, so it indexes explicitly.
+func checkJSONText(data []byte) error {
+	if !utf8.Valid(data) {
+		return fmt.Errorf("json input is not valid UTF-8")
+	}
+	depth, inString, highSurrogate := 0, false, false
+	for i := 0; i < len(data); i++ {
+		c := data[i]
+		if !inString {
+			switch c {
+			case '"':
+				inString = true
+			case '{', '[':
+				if depth++; depth > maxJSONDepth {
+					return fmt.Errorf("json nesting exceeds %d levels", maxJSONDepth)
+				}
+			case '}', ']':
+				depth--
+			}
+			continue
+		}
+		surrogate := -1 // -1: not a \u escape; 0: other; 1: high; 2: low
+		if c == '\\' && i+5 < len(data) && data[i+1] == 'u' {
+			if v, err := strconv.ParseUint(string(data[i+2:i+6]), 16, 16); err == nil {
+				switch {
+				case v >= 0xD800 && v < 0xDC00:
+					surrogate = 1
+				case v >= 0xDC00 && v < 0xE000:
+					surrogate = 2
+				default:
+					surrogate = 0
+				}
+			}
+		}
+		if highSurrogate != (surrogate == 2) {
+			return fmt.Errorf("json string has a lone surrogate escape")
+		}
+		highSurrogate = surrogate == 1
+		switch {
+		case surrogate >= 0:
+			i += 5
+		case c == '\\':
+			i++
+		case c == '"':
+			inString = false
+		}
+	}
+	return nil
 }
 
 func normalizeJSONValue(value any, opts JSONOptions) (any, error) {
@@ -139,7 +206,7 @@ func normalizeJSONNumber(n json.Number) (any, error) {
 }
 
 func splitAnnotatedKey(key string) (string, string, bool) {
-	for _, suffix := range []string{".$bytes_base64", ".$bytes_hex", ".$base64", ".$hex", ".$float64", ".$uint64", ".$int64", ".$bool", ".$string", ".$cidr", ".$mac", ".$ip"} {
+	for _, suffix := range []string{".$bytes_base64", ".$bytes_hex", ".$base64", ".$hex", ".$float64", ".$uint64", ".$int64", ".$bool", ".$string", ".$cidr", ".$mac", ".$url", ".$ip"} {
 		if strings.HasSuffix(key, suffix) {
 			return strings.TrimSuffix(key, suffix), strings.TrimPrefix(suffix, "."), true
 		}
@@ -222,7 +289,17 @@ func decodeScalarValue(typ string, value any, encoding string) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		return net.ParseMAC(s)
+		mac, ok := parseMAC(s)
+		if !ok {
+			return nil, fmt.Errorf("invalid mac %q", s)
+		}
+		return mac, nil
+	case "url":
+		s, err := stringScalar(value)
+		if err != nil {
+			return nil, err
+		}
+		return ParseURL(s)
 	case "bytes":
 		return decodeBytes(value, encoding)
 	case "hex":
@@ -270,7 +347,11 @@ func decodeBytes(value any, encoding string) ([]byte, error) {
 	case "hex":
 		return hex.DecodeString(strings.ReplaceAll(s, ":", ""))
 	case "base64":
-		return base64.StdEncoding.DecodeString(s)
+		// Canonical padded base64 only: no line breaks, zero trailing bits.
+		if strings.ContainsAny(s, "\r\n") {
+			return nil, fmt.Errorf("invalid base64: line breaks are not allowed")
+		}
+		return base64.StdEncoding.Strict().DecodeString(s)
 	default:
 		return nil, fmt.Errorf("bytes encoding must be hex or base64")
 	}
@@ -297,7 +378,8 @@ func uint64Scalar(value any) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return strconv.ParseUint(s, 10, 64)
+	// An optional leading '+' is accepted, as for int64.
+	return strconv.ParseUint(strings.TrimPrefix(s, "+"), 10, 64)
 }
 
 func float64Scalar(value any) (float64, error) {
@@ -305,7 +387,16 @@ func float64Scalar(value any) (float64, error) {
 	if err != nil {
 		return 0, err
 	}
+	// Accept decimal numbers only (as in JSON), not hex floats, inf, or nan.
+	if !isFloat(s) && !isDecimalInteger(s) {
+		return 0, fmt.Errorf("invalid float64 %q", s)
+	}
 	return strconv.ParseFloat(s, 64)
+}
+
+func isDecimalInteger(s string) bool {
+	_, digits := splitSign(s)
+	return digits != "" && skipDigits(digits, 0) == len(digits)
 }
 
 func numericString(value any) (string, error) {

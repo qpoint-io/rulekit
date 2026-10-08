@@ -1,0 +1,38 @@
+{
+  "cases": [
+    {"name": "syntax error: ??", "expr": "??", "expect": {"parse_error": {"line": 1, "column": 1}}},
+    {"name": "syntax error: field == %1==", "expr": "field == %1==", "expect": {"parse_error": {"line": 1, "column": 10}}},
+    {"name": "syntax error: == true", "expr": "== true", "expect": {"parse_error": {"line": 1, "column": 1}}},
+    {"name": "syntax error: test == >=", "expr": "test == >=", "expect": {"parse_error": {"line": 1, "column": 9}}},
+    {
+      "name": "syntax error: field == 123 && ip == 1.2.3",
+      "expr": "field == 123 && ip == 1.2.3",
+      "expect": {"parse_error": {"line": 1, "column": 23}}
+    },
+    {
+      "name": "syntax error: field == 123 && ip << 1",
+      "expr": "field == 123 && ip << 1",
+      "expect": {"parse_error": {"line": 1, "column": 21}}
+    },
+    {"name": "int compared to field parses", "expr": "f_string == 123", "expect": {"parse_error": false}},
+    {"name": "ordering against non-number: f >= \"string\"", "expr": "f >= \"string\"", "expect": {"parse_error": {"line": 1, "column": 3}}},
+    {"name": "ordering against non-number: f < 1.2.3.4", "expr": "f < 1.2.3.4", "expect": {"parse_error": {"line": 1, "column": 3}}},
+    {
+      "name": "ordering against non-number: f > 01:02:03:04:05:06",
+      "expr": "f > 01:02:03:04:05:06",
+      "expect": {"parse_error": {"line": 1, "column": 3}}
+    },
+    {"name": "ordering against non-number: f <= true", "expr": "f <= true", "expect": {"parse_error": {"line": 1, "column": 3}}},
+    {"name": "ordering against non-number: f > /pattern/", "expr": "f > /pattern/", "expect": {"parse_error": {"line": 1, "column": 3}}},
+    {"name": "ordering against int parses", "expr": "f >= 1", "expect": {"parse_error": false}},
+    {"name": "ordering against float parses", "expr": "f < 1.5", "expect": {"parse_error": false}},
+    {"name": "array trailing comma", "expr": "field == [1,]", "expect": {"parse_error": {"line": 1, "column": 13}}},
+    {"name": "nested array", "expr": "field == [1, [1, 2], 3]", "expect": {"parse_error": {"line": 1, "column": 14}}},
+    {"name": "not before == is not an operator", "expr": "a not == 1", "expect": {"parse_error": {"line": 1, "column": 3}}},
+    {"name": "not in requires an array or cidr", "expr": "a not in 1", "expect": {"parse_error": {"line": 1, "column": 3}}},
+    {"name": "not matches requires a regex", "expr": "a not matches \"x\"", "expect": {"parse_error": {"line": 1, "column": 15}}},
+    {"name": "! is not a negated operator", "expr": "a ! contains \"x\"", "expect": {"parse_error": {"line": 1, "column": 3}}},
+    {"name": "error column counts bytes after non-ascii text", "expr": "x == \"ñ\" ??", "expect": {"parse_error": {"line": 1, "column": 11}}},
+    {"name": "error position on a later line after non-ascii text", "expr": "a == 'é' and\n  b == 'ü' ?? c", "expect": {"parse_error": {"line": 2, "column": 13}}}
+  ]
+}

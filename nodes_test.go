@@ -54,3 +54,20 @@ func Test_mapPath(t *testing.T) {
 		}{got, ok}, key)
 	}
 }
+
+// Go input can hold typed slices that the JSON vectors cannot express.
+func TestTypedSliceTruthiness(t *testing.T) {
+	rule := MustParse(`tags || "none"`)
+	for _, tc := range []struct {
+		tags any
+		want any
+	}{
+		{[]string{}, "none"},
+		{[]string(nil), "none"},
+		{[]int{}, "none"},
+		{[]string{"a"}, []string{"a"}},
+	} {
+		res := rule.Eval(nil, FromKV(KV{"tags": tc.tags}), Opts{})
+		assert.Equal(t, tc.want, res.Value, "%#v", tc.tags)
+	}
+}

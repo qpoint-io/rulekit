@@ -1,0 +1,171 @@
+{
+  "input_mode": "annotated_keys",
+  "cases": [
+    {
+      "name": "or short-circuits the right side",
+      "expr": "a == 1 or b == 2",
+      "input": {"a": 1},
+      "expect": {
+        "value": true,
+        "trace": {
+          "kind": "binary",
+          "expr": "a == 1 or b == 2",
+          "status": "passed",
+          "children": [
+            {"status": "passed", "active": true, "pruned": false, "value": true},
+            {"expr": "b == 2", "status": "pruned", "active": false, "pruned": true}
+          ]
+        }
+      }
+    },
+    {
+      "name": "missing fields propagate to the root",
+      "expr": "a == 1 or b == 2",
+      "input": {},
+      "expect": {
+        "missing_fields": ["a", "b"],
+        "trace": {
+          "status": "missing",
+          "missing_fields": ["a", "b"],
+          "children": [{"status": "missing"}, {"status": "missing"}]
+        }
+      }
+    },
+    {
+      "name": "diagnostic: incomparable types",
+      "expr": "port == \"443\"",
+      "input": {"port": 443},
+      "expect": {
+        "value": false,
+        "trace": {
+          "status": "failed",
+          "diagnostics": [
+            {"code": "comparison_incomparable", "left_type": "int64", "operator": "eq", "right_type": "string"}
+          ]
+        }
+      }
+    },
+    {
+      "name": "diagnostic: unsupported operator",
+      "expr": "port contains 443",
+      "input": {"port": 443},
+      "expect": {
+        "value": false,
+        "trace": {
+          "status": "failed",
+          "diagnostics": [
+            {
+              "code": "comparison_unsupported_operator",
+              "left_type": "int64",
+              "operator": "contains",
+              "right_type": "int64"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "diagnostic: invalid shape",
+      "expr": "port contains [443]",
+      "input": {"port": 443},
+      "expect": {
+        "value": false,
+        "trace": {
+          "status": "failed",
+          "diagnostics": [
+            {"code": "comparison_invalid_shape", "left_type": "int64", "operator": "contains", "right_type": "array"}
+          ]
+        }
+      }
+    },
+    {
+      "name": "macro call has the expanded macro as its child",
+      "expr": "is_internal() and user != \"root\"",
+      "input": {"ip.$ip": "172.16.0.1", "user": "api"},
+      "macros": {"is_internal": "ip in 172.16.0.0/16 or host matches /svc\\.cluster\\.local$/"},
+      "expect": {
+        "value": true,
+        "trace": {
+          "status": "passed",
+          "children": [
+            {
+              "expr": "is_internal()",
+              "status": "passed",
+              "children": [{"expr": "ip in 172.16.0.0/16 or host =~ /svc\\.cluster\\.local$/", "status": "passed"}]
+            },
+            {}
+          ]
+        }
+      }
+    },
+    {
+      "name": "negated operator traces its operands directly",
+      "expr": "x not in [1, 2]",
+      "input": {"x": 3},
+      "expect": {
+        "value": true,
+        "trace": {"kind": "binary", "status": "passed", "children": [{"expr": "x"}, {"expr": "[1, 2]"}]}
+      }
+    },
+    {
+      "name": "and with one incomplete side keeps both operand traces",
+      "expr": "x == 1 and a == 1",
+      "input": {"a": 1},
+      "expect": {
+        "missing_fields": ["x"],
+        "trace": {"status": "missing", "children": [{"expr": "x == 1", "status": "missing"}, {"expr": "a == 1", "status": "passed"}]}
+      }
+    },
+    {
+      "name": "or with one incomplete side keeps both operand traces",
+      "expr": "x == 1 or a == 2",
+      "input": {"a": 1},
+      "expect": {
+        "missing_fields": ["x"],
+        "trace": {"status": "missing", "children": [{"expr": "x == 1", "status": "missing"}, {"expr": "a == 2", "status": "failed"}]}
+      }
+    },
+    {
+      "name": "array traces its items, pruning those after an incomplete one",
+      "expr": "[x, 1] contains 1",
+      "input": {},
+      "expect": {
+        "missing_fields": ["x"],
+        "trace": {
+          "status": "missing",
+          "children": [
+            {"expr": "[x, 1]", "status": "missing", "children": [{"expr": "x", "status": "missing"}, {"expr": "1", "status": "pruned", "pruned": true}]},
+            {"expr": "1", "status": "pruned", "pruned": true}
+          ]
+        }
+      }
+    },
+    {
+      "name": "complete array traces its items",
+      "expr": "x in [a, 1]",
+      "input": {"a": 1, "x": 1},
+      "expect": {
+        "value": true,
+        "trace": {"status": "passed", "children": [{"expr": "x"}, {"expr": "[a, 1]", "children": [{"expr": "a", "status": "passed"}, {"expr": "1", "status": "passed"}]}]}
+      }
+    },
+    {
+      "name": "call traces its arguments, pruning those after an incomplete one",
+      "expr": "starts_with(y, \"a\")",
+      "input": {},
+      "expect": {
+        "missing_fields": ["y"],
+        "trace": {"kind": "call", "status": "missing", "children": [{"expr": "y", "status": "missing"}, {"expr": "\"a\"", "status": "pruned", "pruned": true}]}
+      }
+    },
+    {
+      "name": "complete call traces its arguments",
+      "expr": "starts_with(s, \"a\")",
+      "input": {"s": "abc"},
+      "expect": {
+        "value": true,
+        "trace": {"kind": "call", "status": "passed", "children": [{"expr": "s", "status": "passed"}, {"expr": "\"a\"", "status": "passed"}]}
+      }
+    }
+  ]
+}

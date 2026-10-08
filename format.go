@@ -43,7 +43,7 @@ func Format(ast *AST, mode PrintMode) string {
 		if tokensHaveComments(ast.tokens) {
 			return formatTokensPreservingComments(ast.tokens, mode)
 		}
-		return formatMultiline(ast.root, formatOptions{indent: mode.indent}, 0)
+		return formatMultiline(ast.root, mode, 0)
 	default:
 		if tokensHaveComments(ast.tokens) {
 			return formatTokensPreservingComments(ast.tokens, printCompact{})
@@ -68,6 +68,11 @@ type tokenFormatter struct {
 	atLine    bool
 	multiline bool
 	indent    string
+	// groups records, for each open parenthesis, whether it groups an
+	// expression (true) or encloses call arguments (false).
+	groups []bool
+	// spaceAfterComment separates a token from a preceding inline comment.
+	spaceAfterComment bool
 }
 
 func formatTokensPreservingComments(tokens []Token, mode PrintMode) string {
@@ -91,35 +96,37 @@ func formatTokensPreservingComments(tokens []Token, mode PrintMode) string {
 }
 
 func (f *tokenFormatter) writeToken(tok Token) {
-	if f.multiline {
-		switch tok.Kind {
-		case "RPAREN":
-			if f.depth > 0 {
-				f.depth--
-			}
-			if !f.atLine {
-				f.newline()
-			}
-		case "AND", "OR":
-			if !f.atLine {
-				f.newline()
-			}
+	closesGroup := false
+	if tok.Kind == "RPAREN" && len(f.groups) > 0 {
+		closesGroup = f.groups[len(f.groups)-1]
+		f.groups = f.groups[:len(f.groups)-1]
+		if closesGroup && f.depth > 0 {
+			f.depth--
 		}
 	}
-
-	if f.needsSpace(tok.Kind) {
-		f.b.WriteByte(' ')
-		f.atLine = false
+	if f.multiline && (closesGroup || tok.Kind == "AND" || tok.Kind == "OR") && !f.atLine {
+		f.newline()
 	}
+
+	if f.spaceAfterComment && !f.atLine && tok.Kind != "RPAREN" {
+		f.b.WriteByte(' ')
+	} else if f.needsSpace(tok.Kind) {
+		f.b.WriteByte(' ')
+	}
+	f.spaceAfterComment = false
 
 	f.b.WriteString(canonicalToken(tok))
 	f.atLine = false
 
-	if f.multiline && tok.Kind == "LPAREN" && f.prev != "FIELD" {
-		f.depth++
-		f.newline()
-	} else if tok.Kind == "LPAREN" && f.prev != "FIELD" {
-		f.depth++
+	if tok.Kind == "LPAREN" {
+		group := f.prev != "FIELD"
+		f.groups = append(f.groups, group)
+		if group {
+			f.depth++
+			if f.multiline {
+				f.newline()
+			}
+		}
 	}
 	f.prev = tok.Kind
 }
@@ -136,11 +143,22 @@ func (f *tokenFormatter) writeTrivia(trivia string) {
 		if strings.HasPrefix(trivia, "--") {
 			end := strings.IndexByte(trivia, '\n')
 			if end < 0 {
-				f.writeComment(strings.TrimSpace(trivia))
+				end = len(trivia)
+			}
+			comment := strings.TrimSpace(trivia[:end])
+			// Compact output is single-line, so line comments become block
+			// comments unless their text would end the block early.
+			if text := strings.TrimSpace(comment[2:]); !f.multiline && !strings.Contains(text, "*/") {
+				if text != "" {
+					f.writeComment("/* " + text + " */")
+				}
+			} else {
+				f.writeComment(comment)
+				f.newline()
+			}
+			if end == len(trivia) {
 				return
 			}
-			f.writeComment(strings.TrimSpace(trivia[:end]))
-			f.newline()
 			trivia = trivia[end+1:]
 			continue
 		}
@@ -151,8 +169,12 @@ func (f *tokenFormatter) writeTrivia(trivia string) {
 			return
 		}
 		comment := strings.TrimSpace(trivia[:end+2])
-		f.writeComment(comment)
 		trivia = trivia[end+2:]
+		if !f.multiline {
+			f.writeComment(strings.Join(strings.Fields(comment), " "))
+			continue
+		}
+		f.writeComment(comment)
 		if strings.Contains(trivia, "\n") || strings.Contains(comment, "\n") {
 			f.newline()
 		}
@@ -168,15 +190,15 @@ func (f *tokenFormatter) writeComment(comment string) {
 	}
 	f.b.WriteString(comment)
 	f.atLine = false
+	f.spaceAfterComment = true
 }
 
 func (f *tokenFormatter) newline() {
 	f.b.WriteByte('\n')
-	f.atLine = true
 	if f.multiline && f.depth > 0 {
 		f.b.WriteString(strings.Repeat(f.indent, f.depth))
-		f.atLine = false
 	}
+	f.atLine = true
 }
 
 func (f *tokenFormatter) needsSpace(kind string) bool {
@@ -190,6 +212,9 @@ func (f *tokenFormatter) needsSpace(kind string) bool {
 		return false
 	}
 	if kind == "LPAREN" && f.prev == "FIELD" {
+		return false
+	}
+	if kind == "LBRACKET" && (f.prev == "FIELD" || f.prev == "RBRACKET") {
 		return false
 	}
 	return true
@@ -236,13 +261,9 @@ func nextCommentIndex(line int, block int) int {
 	return block
 }
 
-type formatOptions struct {
-	indent string
-}
-
-func formatMultiline(node astNode, opts formatOptions, depth int) string {
+func formatMultiline(node ASTNode, opts printMultiline, depth int) string {
 	binary, ok := node.(*astBinary)
-	if !ok || (binary.op != astOpAnd && binary.op != astOpOr) {
+	if !ok || (binary.op != OperatorAnd && binary.op != OperatorOr) {
 		return printAST(node)
 	}
 	if hasSameOperatorChild(binary) {
@@ -269,7 +290,7 @@ func hasSameOperatorChild(binary *astBinary) bool {
 	return leftOK && left.op == binary.op || rightOK && right.op == binary.op
 }
 
-func formatMultilineChain(binary *astBinary, opts formatOptions, depth int) string {
+func formatMultilineChain(binary *astBinary, opts printMultiline, depth int) string {
 	operands := flattenOperator(binary, binary.op)
 	operator := astOperatorString(binary.op)
 	indent := strings.Repeat(opts.indent, depth)
@@ -284,16 +305,16 @@ func formatMultilineChain(binary *astBinary, opts formatOptions, depth int) stri
 	return strings.Join(parts, "\n")
 }
 
-func flattenOperator(node astNode, op astOperator) []astNode {
+func flattenOperator(node ASTNode, op Operator) []ASTNode {
 	if binary, ok := node.(*astBinary); ok && binary.op == op {
 		left := flattenOperator(binary.left, op)
 		right := flattenOperator(binary.right, op)
 		return append(left, right...)
 	}
-	return []astNode{node}
+	return []ASTNode{node}
 }
 
-func formatMultilineOperand(node astNode, opts formatOptions, depth int, parentOp astOperator, rightChild bool) string {
+func formatMultilineOperand(node ASTNode, opts printMultiline, depth int, parentOp Operator, rightChild bool) string {
 	if binary, ok := node.(*astBinary); ok {
 		if astPrecedence(binary) < infixPrecedence(tokenKindFromASTOperator(parentOp)) {
 			return formatGroupedMultiline(binary, opts, depth)
@@ -305,7 +326,7 @@ func formatMultilineOperand(node astNode, opts formatOptions, depth int, parentO
 	return printASTWithParent(node, infixPrecedence(tokenKindFromASTOperator(parentOp)), rightChild)
 }
 
-func formatGroupedMultiline(node astNode, opts formatOptions, depth int) string {
+func formatGroupedMultiline(node ASTNode, opts printMultiline, depth int) string {
 	inner := formatMultiline(node, opts, 0)
 	innerIndent := strings.Repeat(opts.indent, depth+1)
 	closingIndent := strings.Repeat(opts.indent, depth)

@@ -1,0 +1,208 @@
+{
+  "input_mode": "annotated_keys",
+  "cases": [
+    {"name": "raw string preserves escapes", "expr": "s==`\\n\\t\\u0041\\x41\\\\`", "input": {"s": "\\n\\t\\u0041\\x41\\\\"}, "expect": {"value": true}},
+    {"name": "raw string trailing backslash and quotes", "expr": "s == `C:\\'quoted'\\\"file\"\\`", "input": {"s": "C:\\'quoted'\\\"file\"\\"}, "expect": {"value": true}},
+    {"name": "raw string preserves multiline whitespace", "expr": "s == ` é\r\n\t-- /* text */\n `", "input": {"s": " é\r\n\t-- /* text */\n "}, "expect": {"value": true}},
+    {"name": "empty raw string", "expr": "s == ``", "input": {"s": ""}, "expect": {"value": true}},
+    {"name": "raw bracket keys", "expr": "[`root\\key`][`nested\"key`] == `value\\`", "input": {"root\\key": {"nested\"key": "value\\"}}, "expect": {"value": true}},
+    {"name": "raw string in array", "expr": "s in [`a\\b`, `c\\d`]", "input": {"s": "c\\d"}, "expect": {"value": true}},
+    {"name": "raw string print roundtrip", "expr": "s == `a\\b`", "input": {"s": "a\\b"}, "expect": {"value": true, "print": {"string": "s == `a\\b`", "compact": "s == `a\\b`", "source": "s == `a\\b`"}}},
+    {"name": "unterminated raw string", "expr": "s == `abc\\", "expect": {"parse_error": {"line": 1, "column": 6}}},
+    {"name": "backslash cannot escape raw delimiter", "expr": "s == `a\\`b`", "expect": {"parse_error": {"line": 1, "column": 10}}},
+    {
+      "name": "uint64 max parses",
+      "expr": "f_uint==4294967295 && f_uint64==18446744073709551615",
+      "expect": {"parse_error": false}
+    },
+    {"name": "zero parses", "expr": "f_uint==0 && f_uint64==0", "expect": {"parse_error": false}},
+    {
+      "name": "int64 max parses",
+      "expr": "f_int==2147483647 && f_int64==9223372036854775807",
+      "expect": {"parse_error": false}
+    },
+    {
+      "name": "int64 min parses",
+      "expr": "f_int==-2147483648 && f_int64==-9223372036854775808",
+      "expect": {"parse_error": false}
+    },
+    {
+      "name": "ipv4 and ipv6 literals parse",
+      "expr": "f_ipv4 == 192.168.1.1 or f_ipv6==::1 or f_ipv6==2001:db8::1",
+      "expect": {"parse_error": false}
+    },
+    {
+      "name": "float literals parse",
+      "expr": "f_float32 == 123.345 or f_float64 != 74123412341234.123412341243",
+      "expect": {"parse_error": false}
+    },
+    {"name": "string literal: \"text\"", "expr": "s == \"text\"", "input": {"s": "text"}, "expect": {"value": true}},
+    {
+      "name": "string literal: \"te\\\"x't\"",
+      "expr": "s == \"te\\\"x't\"",
+      "input": {"s": "te\"x't"},
+      "expect": {"value": true}
+    },
+    {"name": "string literal: 'test'", "expr": "s == 'test'", "input": {"s": "test"}, "expect": {"value": true}},
+    {
+      "name": "string literal: 'te\"s\\'t'",
+      "expr": "s == 'te\"s\\'t'",
+      "input": {"s": "te\"s't"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "string literal: 'bad qu\\\"ote'",
+      "expr": "s == 'bad qu\\\"ote'",
+      "input": {"s": "bad qu\"ote"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "string literal: \"tab\\there\"",
+      "expr": "s == \"tab\\there\"",
+      "input": {"s": "tab\there"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "string literal: 'tab\\there'",
+      "expr": "s == 'tab\\there'",
+      "input": {"s": "tab\there"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "nine hex pairs are bytes, case-insensitive",
+      "expr": "s == 0a:0B:0c:0D:0e:0F:01:02:03",
+      "input": {"s": "\n\u000b\f\r\u000e\u000f\u0001\u0002\u0003"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "unquoted mac literal equals mac",
+      "expr": "f_mac == 01:23:45:67:89:ab",
+      "input": {"f_mac.$mac": "01:23:45:67:89:ab"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "quoted mac literal equals mac",
+      "expr": "f_mac == \"01:23:45:67:89:ab\"",
+      "input": {"f_mac.$mac": "01:23:45:67:89:ab"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "four hex pairs equal string bytes",
+      "expr": "f_bytes == 50:4f:53:54",
+      "input": {"f_bytes": "POST"},
+      "expect": {"value": true}
+    },
+    {"name": "integer literal: 10", "expr": "x == 10", "input": {"x": 10}, "expect": {"value": true}},
+    {"name": "integer literal: 010", "expr": "x == 010", "input": {"x": 10}, "expect": {"value": true}},
+    {"name": "integer literal: -010", "expr": "x == -010", "input": {"x": -10}, "expect": {"value": true}},
+    {"name": "integer literal: 0x1f", "expr": "x == 0x1f", "input": {"x": 31}, "expect": {"value": true}},
+    {"name": "integer literal: 0o17", "expr": "x == 0o17", "input": {"x": 15}, "expect": {"value": true}},
+    {"name": "integer literal: 0b101", "expr": "x == 0b101", "input": {"x": 5}, "expect": {"value": true}},
+    {"name": "integer literal: 1_000", "expr": "x == 1_000", "input": {"x": 1000}, "expect": {"value": true}},
+    {"name": "integer literal: 0", "expr": "x == 0", "input": {"x": 0}, "expect": {"value": true}},
+    {"name": "integer literal: 00", "expr": "x == 00", "input": {"x": 0}, "expect": {"value": true}},
+    {"name": "integer literal: +010", "expr": "x == +010", "input": {"x": 10}, "expect": {"value": true}},
+    {"name": "integer literal: 0_10", "expr": "x == 0_10", "input": {"x": 10}, "expect": {"value": true}},
+    {"name": "integer literal: 01_000", "expr": "x == 01_000", "input": {"x": 1000}, "expect": {"value": true}},
+    {"name": "integer literal: 0x_1f", "expr": "x == 0x_1f", "input": {"x": 31}, "expect": {"value": true}},
+    {"name": "integer literal: double underscore is a parse error", "expr": "x == 1__0", "expect": {"parse_error": {"line": 1, "column": 6}}},
+    {"name": "integer literal: trailing underscore is a parse error", "expr": "x == 1_", "expect": {"parse_error": {"line": 1, "column": 6}}},
+    {"name": "float literal: exponent without fraction", "expr": "x == 1e3", "input": {"x": 1000}, "expect": {"value": true}},
+    {"name": "float literal: trailing dot", "expr": "x == 5.", "input": {"x": 5}, "expect": {"value": true}},
+    {"name": "float literal: hex float is a parse error", "expr": "x == 0x1.8p1", "expect": {"parse_error": {"line": 1, "column": 6}}},
+    {"name": "float literal: underscore is a parse error", "expr": "x == 1_0.5", "expect": {"parse_error": {"line": 1, "column": 6}}},
+    {
+      "name": "integer literal: 18446744073709551615",
+      "expr": "x == 18446744073709551615",
+      "input": {"x": 18446744073709551615},
+      "expect": {"value": true}
+    },
+    {
+      "name": "uint64 literal greater than int64 max",
+      "expr": "18446744073709551615 > 9223372036854775807",
+      "expect": {"value": true}
+    },
+    {"name": "negative less than uint64 max", "expr": "-1 < 18446744073709551615", "expect": {"value": true}},
+    {"name": "double-quoted string accepts escaped single quote", "expr": "s == \"it\\'s\"", "input": {"s": "it's"}, "expect": {"value": true}},
+    {
+      "name": "single hex pair is a field name: number",
+      "expr": "ab == 1",
+      "input": {"ab": 1},
+      "expect": {"value": true}
+    },
+    {
+      "name": "single hex pair is a field name: string",
+      "expr": "fe == \"x\"",
+      "input": {"fe": "x"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "single hex pair alone is a missing field",
+      "expr": "ad",
+      "input": {},
+      "expect": {"missing_fields": ["ad"]}
+    },
+    {"name": "two hex pairs are bytes", "expr": "x == 50:4f", "input": {"x": "PO"}, "expect": {"value": true}},
+    {"name": "string literal must be valid UTF-8", "expr": "s == \"\\xff\"", "expect": {"parse_error": {"line": 1, "column": 6}}},
+    {"name": "octal escape producing invalid UTF-8 is a parse error", "expr": "s == '\\377'", "expect": {"parse_error": {"line": 1, "column": 6}}},
+    {"name": "unicode escape is valid UTF-8", "expr": "s == \"\\u00e9\"", "input": {"s": "é"}, "expect": {"value": true}},
+    {"name": "lone hex pair with digit is a parse error", "expr": "x == 0a", "expect": {"parse_error": {"line": 1, "column": 6}}},
+    {"name": "x-quoted hex: single byte", "expr": "x == x\"0a\"", "input": {"x": "\n"}, "expect": {"value": true}},
+    {"name": "x-quoted hex: no colons", "expr": "x == x\"504f5354\"", "input": {"x": "POST"}, "expect": {"value": true}},
+    {
+      "name": "x-quoted hex: upper X, single quotes, colons",
+      "expr": "x == X'50:4F:53:54'",
+      "input": {"x": "POST"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "x-quoted hex: eight bytes stay bytes",
+      "expr": "x == x\"504f53540a0b0c0d\"",
+      "input": {"x": "POST\n\u000b\f\r"},
+      "expect": {"value": true}
+    },
+    {"name": "x-quoted hex: empty is a parse error", "expr": "x == x\"\"", "expect": {"parse_error": {"line": 1, "column": 6}}},
+    {"name": "x-quoted hex: odd digits is a parse error", "expr": "x == x\"abc\"", "expect": {"parse_error": {"line": 1, "column": 6}}},
+    {"name": "x-quoted hex: non-hex digit is a parse error", "expr": "x == x\"0g\"", "expect": {"parse_error": {"line": 1, "column": 6}}},
+    {"name": "bytes input equals hex literal", "expr": "x == ab:cd", "input": {"x.$hex": "abcd"}, "expect": {"value": true}},
+    {"name": "bytes input not equal to other hex", "expr": "x != ab:ce", "input": {"x.$hex": "abcd"}, "expect": {"value": true}},
+    {"name": "bytes input equals eight-byte x-quoted hex", "expr": "x == x\"0123456789abcdef\"", "input": {"x.$hex": "0123456789abcdef"}, "expect": {"value": true}},
+    {"name": "bytes input contains hex", "expr": "x contains x\"cd\"", "input": {"x.$hex": "abcd"}, "expect": {"value": true}},
+    {"name": "bytes input equals string with same bytes", "expr": "x == \"PO\"", "input": {"x.$hex": "504f"}, "expect": {"value": true}},
+    {"name": "bytes inputs compare by value", "expr": "x == y", "input": {"x.$hex": "504f", "y.$base64": "UE8="}, "expect": {"value": true}},
+    {"name": "hex literal on the left equals bytes input", "expr": "ab:cd == x", "input": {"x.$hex": "abcd"}, "expect": {"value": true}},
+    {"name": "hex literal on the left equals string", "expr": "x\"504f\" == s", "input": {"s": "PO"}, "expect": {"value": true}},
+    {"name": "hex literal on the left equals mac", "expr": "00:1a:2b:3c:4d:5e == mac", "input": {"mac.$mac": "00:1a:2b:3c:4d:5e"}, "expect": {"value": true}},
+    {"name": "string field equals quoted MAC text", "expr": "s == \"aa:bb:cc:dd:ee:ff\"", "input": {"s": "aa:bb:cc:dd:ee:ff"}, "expect": {"value": true}},
+    {"name": "twelve bare hex digits in quotes stay a string", "expr": "s == \"123456789012\"", "input": {"s": "123456789012"}, "expect": {"value": true}},
+    {"name": "mixed MAC separators stay a string", "expr": "s == \"aa:bb-cc:dd:ee:ff\"", "input": {"s": "aa:bb-cc:dd:ee:ff"}, "expect": {"value": true}},
+    {"name": "five MAC groups stay a string", "expr": "s == \"aa:bb:cc:dd:ee\"", "input": {"s": "aa:bb:cc:dd:ee"}, "expect": {"value": true}},
+    {"name": "string field equals quoted IPv6 text exactly", "expr": "s == \"CAFE::\"", "input": {"s": "CAFE::"}, "expect": {"value": true}},
+    {"name": "string field equals quoted CIDR text exactly", "expr": "s == \"10.0.0.1/8\"", "input": {"s": "10.0.0.1/8"}, "expect": {"value": true}},
+    {"name": "string field equals quoted hyphen MAC text", "expr": "s == \"AA-BB-CC-DD-EE-FF\"", "input": {"s": "AA-BB-CC-DD-EE-FF"}, "expect": {"value": true}},
+    {"name": "string field equals quoted URL text", "expr": "s == \"https://x.com/a\"", "input": {"s": "https://x.com/a"}, "expect": {"value": true}},
+    {"name": "quoted ip-looking value is a string", "expr": "\"10.0.0.1\"", "expect": {"value": "10.0.0.1"}},
+    {"name": "quoted url-looking value is a string", "expr": "\"https://example.com/a?b=c\"", "expect": {"value": "https://example.com/a?b=c"}},
+    {"name": "string field vs bare ip uses the ip text", "expr": "s == 10.0.0.1", "input": {"s": "10.0.0.1"}, "expect": {"value": true}},
+    {"name": "string field vs bare ipv6 uses the canonical ip text", "expr": "s == CAFE::", "input": {"s": "CAFE::"}, "expect": {"value": false}},
+    {"name": "string field is not in a cidr", "expr": "s in 10.0.0.0/8", "input": {"s": "10.0.0.1"}, "expect": {"value": false}},
+    {"name": "ip input equals its text", "expr": "ip == \"192.168.1.1\"", "input": {"ip.$ip": "192.168.1.1"}, "expect": {"value": true}},
+    {"name": "ipv6 input compares by canonical text", "expr": "ip == \"cafe::\"", "input": {"ip.$ip": "CAFE::"}, "expect": {"value": true}},
+    {"name": "ipv6 input does not equal non-canonical text", "expr": "ip == \"CAFE::\"", "input": {"ip.$ip": "CAFE::"}, "expect": {"value": false}},
+    {"name": "ipv4-mapped input prints as ipv4", "expr": "ip == \"1.2.3.4\"", "input": {"ip.$ip": "::ffff:1.2.3.4"}, "expect": {"value": true}},
+    {"name": "ipv4-mapped input does not equal mapped text", "expr": "ip == \"::ffff:1.2.3.4\"", "input": {"ip.$ip": "::ffff:1.2.3.4"}, "expect": {"value": false}},
+    {"name": "cidr input equals its text", "expr": "net == \"10.0.0.0/8\"", "input": {"net.$cidr": "10.0.0.0/8"}, "expect": {"value": true}},
+    {"name": "mac input equals its colon text", "expr": "mac == \"01:23:45:67:89:ab\"", "input": {"mac.$mac": "01:23:45:67:89:ab"}, "expect": {"value": true}},
+    {"name": "mac input does not equal hyphen text", "expr": "mac == \"01-23-45-67-89-ab\"", "input": {"mac.$mac": "01:23:45:67:89:ab"}, "expect": {"value": false}},
+    {"name": "url input equals its text", "expr": "u == \"https://x.com/a\"", "input": {"u.$url": "https://x.com/a"}, "expect": {"value": true}},
+    {"name": "ip input contains text", "expr": "ip contains \"192.168.\"", "input": {"ip.$ip": "192.168.1.1"}, "expect": {"value": true}},
+    {"name": "ip input matches regex on its text", "expr": "ip matches /^192\\./", "input": {"ip.$ip": "192.168.1.1"}, "expect": {"value": true}},
+    {"name": "mac input matches regex on its text", "expr": "mac matches /^01:23/", "input": {"mac.$mac": "01:23:45:67:89:ab"}, "expect": {"value": true}},
+    {"name": "ip input in array of strings", "expr": "ip in [\"10.0.0.1\", \"192.168.1.1\"]", "input": {"ip.$ip": "192.168.1.1"}, "expect": {"value": true}},
+    {"name": "quoted cidr is not a cidr for in", "expr": "ip in \"192.168.1.0/24\"", "expect": {"parse_error": {"line": 1, "column": 4}}},
+    {"name": "quoted ip text equals bare ip", "expr": "\"10.0.0.1\" == 10.0.0.1", "expect": {"value": true}},
+    {"name": "quoted ipv6 text equals bare ipv6 by canonical text", "expr": "\"2001:db8::1\" == 2001:db8:0:0:0:0:0:1", "expect": {"value": true}},
+    {"name": "quoted ip text is not in a cidr", "expr": "\"10.1.2.3\" in 10.0.0.0/8", "expect": {"value": false}},
+    {"name": "array literal value", "expr": "[1, \"str\", 3]", "expect": {"value": [1, "str", 3]}}
+  ]
+}

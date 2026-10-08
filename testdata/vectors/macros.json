@@ -1,0 +1,26 @@
+{
+  "input_mode": "annotated_keys",
+  "cases": [
+    {
+      "name": "macro: ip branch",
+      "expr": "dst_k8s_svc() && user != \"root\"",
+      "input": {"ip.$ip": "172.16.0.1", "user": "nouser"},
+      "macros": {"dst_k8s_svc": "ip in 172.16.0.0/16 or host matches /svc.cluster.local$/"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "macro: no branch matches",
+      "expr": "dst_k8s_svc() && user != \"root\"",
+      "input": {"ip.$ip": "1.1.1.1", "host": "1.1.1.1", "user": "nouser"},
+      "macros": {"dst_k8s_svc": "ip in 172.16.0.0/16 or host matches /svc.cluster.local$/"},
+      "expect": {"value": false}
+    },
+    {
+      "name": "macro: host branch with ip missing",
+      "expr": "dst_k8s_svc() && user != \"root\"",
+      "input": {"host": "test.svc.cluster.local", "user": "nouser"},
+      "macros": {"dst_k8s_svc": "ip in 172.16.0.0/16 or host matches /svc.cluster.local$/"},
+      "expect": {"value": true}
+    }
+  ]
+}

@@ -3,6 +3,8 @@ package rulekit
 import (
 	"context"
 	"net"
+	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
 )
@@ -10,11 +12,19 @@ import (
 type FieldValue string
 
 func (f FieldValue) Eval(ctx context.Context, input Input, opts Opts) Result {
-	segments := [1]pathSegment{{key: string(f)}}
-	val, ok, err := resolveInputPath(ctx, input, segments[:])
+	var (
+		val any
+		ok  bool
+		err error
+	)
+	if kv, isKV := input.(*kvInput); isKV {
+		val, ok, err = kv.getField(ctx, string(f))
+	} else {
+		segments := [1]pathSegment{{key: string(f)}}
+		val, ok, err = resolveInputPath(ctx, input, segments[:])
+	}
 	if err != nil {
-		res := inputError(string(f), err)
-		return res
+		return inputError(string(f), err)
 	}
 	if !ok {
 		return Result{MissingFields: []string{string(f)}}
@@ -56,8 +66,15 @@ func (p *PathValue) Eval(ctx context.Context, input Input, opts Opts) Result {
 }
 
 func (p *PathValue) String() string {
+	return pathString(p.segments, true)
+}
+
+// pathString renders path segments in rule syntax. Keys that are not plain
+// identifiers are always bracketed; keepBrackets also brackets identifier keys
+// that were written with brackets.
+func pathString(segments []pathSegment, keepBrackets bool) string {
 	var raw strings.Builder
-	for i, seg := range p.segments {
+	for i, seg := range segments {
 		if seg.isIndex {
 			raw.WriteString("[")
 			raw.WriteString(strconv.Itoa(seg.index))
@@ -65,9 +82,9 @@ func (p *PathValue) String() string {
 			continue
 		}
 
-		if seg.bracket || !isIdentifierSegment(seg.key) {
+		if (keepBrackets && seg.bracket) || !isIdentifierSegment(seg.key) {
 			raw.WriteString("[")
-			raw.WriteString(strconv.Quote(seg.key))
+			raw.WriteString(quoteKey(seg.key))
 			raw.WriteString("]")
 			continue
 		}
@@ -80,19 +97,38 @@ func (p *PathValue) String() string {
 	return raw.String()
 }
 
-func (p *PathValue) Print(PrintMode) string {
-	return p.String()
+// quoteKey quotes a bracket key: it escapes `"` and `\`, writes \n, \r, and \t
+// as escapes, and writes other control characters (U+0000–U+001F and U+007F)
+// as \u00XX. Every other character, including non-ASCII, is written as is.
+func quoteKey(key string) string {
+	var b strings.Builder
+	b.Grow(len(key) + 2)
+	b.WriteByte('"')
+	for i := 0; i < len(key); i++ {
+		switch c := key[i]; {
+		case c == '"' || c == '\\':
+			b.WriteByte('\\')
+			b.WriteByte(c)
+		case c == '\n':
+			b.WriteString(`\n`)
+		case c == '\r':
+			b.WriteString(`\r`)
+		case c == '\t':
+			b.WriteString(`\t`)
+		case c < 0x20 || c == 0x7f:
+			b.WriteString(`\u00`)
+			b.WriteByte("0123456789abcdef"[c>>4])
+			b.WriteByte("0123456789abcdef"[c&0xf])
+		default:
+			b.WriteByte(c)
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
 }
 
-func asPathValue(r Rule) (*PathValue, bool) {
-	switch v := r.(type) {
-	case FieldValue:
-		return &PathValue{segments: fieldPathSegments(string(v))}, true
-	case *PathValue:
-		return v, true
-	default:
-		return nil, false
-	}
+func (p *PathValue) Print(PrintMode) string {
+	return p.String()
 }
 
 func fieldPathSegments(path string) []pathSegment {
@@ -105,14 +141,7 @@ func fieldPathSegments(path string) []pathSegment {
 }
 
 func parsePathKey(raw string) (string, error) {
-	str := raw
-	if str[0] == '\'' {
-		str = str[1 : len(str)-1]
-		str = strings.ReplaceAll(str, `"`, `\"`)
-		str = strings.ReplaceAll(str, `\'`, `'`)
-		str = `"` + str + `"`
-	}
-	return strconv.Unquote(str)
+	return unquote(raw)
 }
 
 type LiteralValue[T any] struct {
@@ -135,19 +164,26 @@ func (l *LiteralValue[T]) Print(PrintMode) string {
 type ArrayValue struct {
 	raw  string
 	vals []Rule
+	// constant is the evaluated []any of an array whose items are all
+	// literals, built once and returned by every untraced evaluation without
+	// allocating; nil otherwise. It is shared by every evaluation, so results
+	// and function arguments must not be modified. Traced evaluations build a
+	// new array with item traces.
+	constant any
 }
 
 func (a *ArrayValue) Eval(ctx context.Context, input Input, opts Opts) Result {
+	if a.constant != nil && !traceEnabled(opts) {
+		return Result{Value: a.constant}
+	}
 	vals := make([]any, len(a.vals))
-	for i, val := range a.vals {
-		res := val.Eval(ctx, input, opts)
-		if !res.Ok() {
-			return res
-		}
-		vals[i] = res.Value
+	trace, res, ok := evalItems(ctx, input, opts, a.vals, vals)
+	if !ok {
+		return res
 	}
 	return Result{
 		Value: vals,
+		Trace: trace,
 	}
 }
 
@@ -174,6 +210,22 @@ func newArrayValue(vals []Rule) *ArrayValue {
 		raw:  raw.String(),
 		vals: vals,
 	}
+}
+
+// newArrayLiteral is an array expression such as [1, "a", field]. When every
+// item is a literal, its value is built now (see ArrayValue.constant).
+func newArrayLiteral(vals []Rule) *ArrayValue {
+	a := newArrayValue(vals)
+	items := make([]any, len(vals))
+	for i, val := range vals {
+		lit, ok := unwrapTracedRule(val).(*LiteralValue[any])
+		if !ok {
+			return a
+		}
+		items[i] = lit.value
+	}
+	a.constant = items
+	return a
 }
 
 func isZero(val any) bool {
@@ -206,8 +258,18 @@ func isZero(val any) bool {
 		return len(v) == 0
 	case *net.IPNet:
 		return v == nil || v.IP == nil
+	case *url.URL:
+		return v == nil
+	case URL:
+		return false
+	case urlQuery:
+		return v == ""
 	case []any:
 		return len(v) == 0
+	}
+	// Any other slice (e.g. []string from Go input) is truthy when non-empty.
+	if rv := reflect.ValueOf(val); rv.Kind() == reflect.Slice {
+		return rv.Len() == 0
 	}
 	return false
 }
@@ -242,7 +304,12 @@ func indexPath(m KV, segments []pathSegment) (any, bool) {
 
 		currentMap, ok := current.(map[string]any)
 		if !ok {
-			return nil, false
+			field, ok := valueField(current, seg.key)
+			if !ok {
+				return nil, false
+			}
+			current = field
+			continue
 		}
 		val, ok := currentMap[seg.key]
 		if !ok {

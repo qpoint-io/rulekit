@@ -31,18 +31,21 @@ func (n *nodeAnd) Eval(ctx context.Context, input Input, opts Opts) Result {
 		return rright
 	}
 
-	// if only one node is not ok, return it
+	// if only one node is not ok, return it (keeping both operand traces)
 	if rleft.Ok() && !rright.Ok() {
+		rright.Trace = traceIfEnabled(tracing, rleft.Trace, rright.Trace)
 		return rright
 	} else if !rleft.Ok() && rright.Ok() {
+		rleft.Trace = traceIfEnabled(tracing, rleft.Trace, rright.Trace)
 		return rleft
 	}
 
-	// at this point either both nodes are ok or both are not ok.
+	// at this point either both nodes are ok or both are not ok. When both are
+	// ok the left passed and the right was evaluated, so like JS the right
+	// operand's value is the result.
 	var value any
 	if rleft.Ok() && rright.Ok() {
-		// set the result only if both nodes are ok
-		value = rleft.Pass() && rright.Pass()
+		value = rright.Value
 	}
 
 	return Result{
@@ -86,18 +89,21 @@ func (n *nodeOr) Eval(ctx context.Context, input Input, opts Opts) Result {
 		return rright
 	}
 
-	// if only one node is not ok, return it
+	// if only one node is not ok, return it (keeping both operand traces)
 	if rleft.Ok() && !rright.Ok() {
+		rright.Trace = traceIfEnabled(tracing, rleft.Trace, rright.Trace)
 		return rright
 	} else if !rleft.Ok() && rright.Ok() {
+		rleft.Trace = traceIfEnabled(tracing, rleft.Trace, rright.Trace)
 		return rleft
 	}
 
-	// at this point either both nodes are ok or both are not ok.
+	// at this point either both nodes are ok or both are not ok. When both are
+	// ok the left failed and the right was evaluated, so like JS the right
+	// operand's value is the result.
 	var value any
 	if rleft.Ok() && rright.Ok() {
-		// set the result only if both nodes are ok
-		value = rleft.Pass() || rright.Pass()
+		value = rright.Value
 	}
 
 	return Result{
@@ -127,17 +133,25 @@ func (n *nodeNot) Eval(ctx context.Context, input Input, opts Opts) Result {
 	}
 
 	r := n.right.Eval(ctx, input, opts)
+	var trace *Trace
+	if traceEnabled(opts) {
+		// A negated operator (`a not in b`) has no traced node between it and
+		// its operands, so its operand traces become its children directly.
+		if trace = r.Trace; trace == nil || trace.Node != nil {
+			trace = combineTrace(r.Trace)
+		}
+	}
 	if !r.Ok() {
 		return Result{
 			Error:         r.Error,
 			MissingFields: r.MissingFields,
-			Trace:         traceIfEnabled(traceEnabled(opts), r.Trace),
+			Trace:         trace,
 		}
 	}
 
 	return Result{
 		Value: isZero(r.Value),
-		Trace: traceIfEnabled(traceEnabled(opts), r.Trace),
+		Trace: trace,
 	}
 }
 
@@ -211,24 +225,37 @@ func (n *nodeMatch) apply(lv any, rv any) bool {
 	}
 
 	switch val := lv.(type) {
-	case string:
-		return r.MatchString(val)
 	case []string:
 		for _, s := range val {
 			if r.MatchString(s) {
 				return true
 			}
 		}
+	case []any:
+		for _, el := range val {
+			if s, ok := stringable(el); ok && r.MatchString(s) {
+				return true
+			}
+		}
+	default:
+		if s, ok := stringable(lv); ok {
+			return r.MatchString(s)
+		}
 	}
 	return false
 }
 
-func (n *nodeMatch) FieldName() string {
-	return n.lv.String()
+func (n *nodeMatch) String() string {
+	return operandString(n.lv) + " =~ " + operandString(n.rv)
 }
 
-func (n *nodeMatch) String() string {
-	return n.lv.String() + " =~ " + n.rv.String()
+// operandString prints a comparison operand, parenthesizing negations because
+// not binds looser than comparisons.
+func operandString(r Rule) string {
+	if _, ok := unwrapTracedRule(r).(*nodeNot); ok {
+		return "(" + r.String() + ")"
+	}
+	return r.String()
 }
 
 func (n *nodeMatch) Print(PrintMode) string {
@@ -277,7 +304,7 @@ func (n *nodeCompare) Eval(ctx context.Context, input Input, opts Opts) Result {
 }
 
 func (n *nodeCompare) String() string {
-	return n.lv.String() + " " + operatorToString(n.op) + " " + n.rv.String()
+	return operandString(n.lv) + " " + operatorToString(n.op) + " " + operandString(n.rv)
 }
 
 func (n *nodeCompare) Print(PrintMode) string {
@@ -344,7 +371,7 @@ func (n *nodeIn) Eval(ctx context.Context, input Input, opts Opts) Result {
 }
 
 func (n *nodeIn) String() string {
-	return n.lv.String() + " in " + n.rv.String()
+	return operandString(n.lv) + " in " + operandString(n.rv)
 }
 
 func (n *nodeIn) Print(PrintMode) string {

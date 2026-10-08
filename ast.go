@@ -5,205 +5,175 @@ import (
 	"strings"
 )
 
-type astSpan struct {
-	Start int
-	End   int
+func spanFromToken(tok token) Span {
+	return Span{Start: tok.start, End: tok.end}
 }
 
-func spanFromToken(tok token) astSpan {
-	return astSpan{Start: tok.start, End: tok.end}
-}
-
-func joinSpan(left, right astSpan) astSpan {
+func joinSpan(left, right Span) Span {
 	if left.Start == 0 && left.End == 0 {
 		return right
 	}
 	if right.Start == 0 && right.End == 0 {
 		return left
 	}
-	return astSpan{Start: left.Start, End: right.End}
+	return Span{Start: left.Start, End: right.End}
 }
 
-type astOperator int
-
-const (
-	astOpUnknown astOperator = iota
-	astOpNot
-	astOpAnd
-	astOpOr
-	astOpEQ
-	astOpNE
-	astOpGT
-	astOpGE
-	astOpLT
-	astOpLE
-	astOpContains
-	astOpMatches
-	astOpIn
-)
-
-func astOperatorFromToken(kind int) astOperator {
+func astOperatorFromToken(kind int) Operator {
 	switch kind {
 	case op_NOT:
-		return astOpNot
+		return OperatorNot
 	case op_AND:
-		return astOpAnd
+		return OperatorAnd
 	case op_OR:
-		return astOpOr
+		return OperatorOr
 	case op_EQ:
-		return astOpEQ
+		return OperatorEQ
 	case op_NE:
-		return astOpNE
+		return OperatorNE
 	case op_GT:
-		return astOpGT
+		return OperatorGT
 	case op_GE:
-		return astOpGE
+		return OperatorGE
 	case op_LT:
-		return astOpLT
+		return OperatorLT
 	case op_LE:
-		return astOpLE
+		return OperatorLE
 	case op_CONTAINS:
-		return astOpContains
+		return OperatorContains
 	case op_MATCHES:
-		return astOpMatches
+		return OperatorMatches
 	case op_IN:
-		return astOpIn
+		return OperatorIn
 	default:
-		return astOpUnknown
+		return OperatorUnknown
 	}
 }
 
-func tokenKindFromASTOperator(op astOperator) int {
+func tokenKindFromASTOperator(op Operator) int {
 	switch op {
-	case astOpNot:
+	case OperatorNot:
 		return op_NOT
-	case astOpAnd:
+	case OperatorAnd:
 		return op_AND
-	case astOpOr:
+	case OperatorOr:
 		return op_OR
-	case astOpEQ:
+	case OperatorEQ:
 		return op_EQ
-	case astOpNE:
+	case OperatorNE:
 		return op_NE
-	case astOpGT:
+	case OperatorGT:
 		return op_GT
-	case astOpGE:
+	case OperatorGE:
 		return op_GE
-	case astOpLT:
+	case OperatorLT:
 		return op_LT
-	case astOpLE:
+	case OperatorLE:
 		return op_LE
-	case astOpContains:
+	case OperatorContains:
 		return op_CONTAINS
-	case astOpMatches:
+	case OperatorMatches:
 		return op_MATCHES
-	case astOpIn:
+	case OperatorIn:
 		return op_IN
 	default:
 		return 0
 	}
 }
 
-type astNode interface {
-	astSpan() astSpan
-}
-
 type astLiteral struct {
-	span astSpan
+	span Span
 	kind int
 	raw  string
 }
 
-func (n *astLiteral) astSpan() astSpan { return n.span }
-func (n *astLiteral) Kind() ASTKind    { return ASTLiteral }
-func (n *astLiteral) Span() Span       { return publicSpan(n.span) }
-func (n *astLiteral) String() string   { return printAST(n) }
+func (n *astLiteral) Kind() ASTKind  { return ASTLiteral }
+func (n *astLiteral) Span() Span     { return n.span }
+func (n *astLiteral) String() string { return printAST(n) }
 func (n *astLiteral) Children() []ASTNode {
 	return nil
 }
 
 type astPath struct {
-	span     astSpan
+	span     Span
 	segments []pathSegment
 }
 
-func (n *astPath) astSpan() astSpan { return n.span }
-func (n *astPath) Kind() ASTKind    { return ASTPath }
-func (n *astPath) Span() Span       { return publicSpan(n.span) }
-func (n *astPath) String() string   { return printAST(n) }
+func (n *astPath) Kind() ASTKind  { return ASTPath }
+func (n *astPath) Span() Span     { return n.span }
+func (n *astPath) String() string { return printAST(n) }
 func (n *astPath) Children() []ASTNode {
 	return nil
 }
 
 type astArray struct {
-	span astSpan
-	vals []astNode
+	span Span
+	vals []ASTNode
 }
 
-func (n *astArray) astSpan() astSpan { return n.span }
-func (n *astArray) Kind() ASTKind    { return ASTArray }
-func (n *astArray) Span() Span       { return publicSpan(n.span) }
-func (n *astArray) String() string   { return printAST(n) }
+func (n *astArray) Kind() ASTKind  { return ASTArray }
+func (n *astArray) Span() Span     { return n.span }
+func (n *astArray) String() string { return printAST(n) }
 func (n *astArray) Children() []ASTNode {
 	return publicChildSlice(n.vals)
 }
 
 type astCall struct {
-	span astSpan
+	span Span
 	name string
-	args []astNode
+	args []ASTNode
 }
 
-func (n *astCall) astSpan() astSpan { return n.span }
-func (n *astCall) Kind() ASTKind    { return ASTCall }
-func (n *astCall) Span() Span       { return publicSpan(n.span) }
-func (n *astCall) String() string   { return printAST(n) }
+func (n *astCall) Kind() ASTKind  { return ASTCall }
+func (n *astCall) Span() Span     { return n.span }
+func (n *astCall) String() string { return printAST(n) }
 func (n *astCall) Children() []ASTNode {
 	return publicChildSlice(n.args)
 }
 
 type astUnary struct {
-	span  astSpan
-	op    astOperator
+	span  Span
+	op    Operator
 	rawOp string
-	right astNode
+	right ASTNode
 }
 
-func (n *astUnary) astSpan() astSpan { return n.span }
-func (n *astUnary) Kind() ASTKind    { return ASTUnary }
-func (n *astUnary) Span() Span       { return publicSpan(n.span) }
-func (n *astUnary) String() string   { return printAST(n) }
+func (n *astUnary) Kind() ASTKind  { return ASTUnary }
+func (n *astUnary) Span() Span     { return n.span }
+func (n *astUnary) String() string { return printAST(n) }
 func (n *astUnary) Children() []ASTNode {
 	return publicChildren(n.right)
 }
 
 type astBinary struct {
-	span  astSpan
-	left  astNode
-	op    astOperator
+	span  Span
+	left  ASTNode
+	op    Operator
 	rawOp string
-	right astNode
+	right ASTNode
+	// negated marks `not contains`, `not matches`, and `not in`: the base
+	// operator with a negation applied on top.
+	negated bool
 }
 
-func (n *astBinary) astSpan() astSpan { return n.span }
-func (n *astBinary) Kind() ASTKind    { return ASTBinary }
-func (n *astBinary) Span() Span       { return publicSpan(n.span) }
-func (n *astBinary) String() string   { return printAST(n) }
+func (n *astBinary) Kind() ASTKind  { return ASTBinary }
+func (n *astBinary) Span() Span     { return n.span }
+func (n *astBinary) String() string { return printAST(n) }
 func (n *astBinary) Children() []ASTNode {
 	return publicChildren(n.left, n.right)
 }
 
 type astLowerError struct {
-	span astSpan
+	span Span
 	msg  string
 }
 
 func (e *astLowerError) Error() string { return e.msg }
 
-func lowerAST(node astNode) (Rule, error) {
+func lowerAST(node ASTNode) (Rule, error) {
 	switch n := node.(type) {
 	case *astLiteral:
-		r, err := parseValueToken(n.kind, []byte(n.raw))
+		r, err := parseValueToken(n.kind, n.raw)
 		if err != nil {
 			return nil, &astLowerError{span: n.span, msg: err.Error()}
 		}
@@ -223,7 +193,7 @@ func lowerAST(node astNode) (Rule, error) {
 			}
 			vals = append(vals, r)
 		}
-		return withTrace(n, newArrayValue(vals)), nil
+		return withTrace(n, newArrayLiteral(vals)), nil
 	case *astCall:
 		args := make([]Rule, 0, len(n.args))
 		for _, arg := range n.args {
@@ -239,7 +209,7 @@ func lowerAST(node astNode) (Rule, error) {
 		if err != nil {
 			return nil, err
 		}
-		if n.op == astOpNot {
+		if n.op == OperatorNot {
 			return withTrace(n, &nodeNot{right: right}), nil
 		}
 	case *astBinary:
@@ -251,31 +221,40 @@ func lowerAST(node astNode) (Rule, error) {
 		if err != nil {
 			return nil, err
 		}
-		switch n.op {
-		case astOpAnd:
-			return withTrace(n, &nodeAnd{left: left, right: right}), nil
-		case astOpOr:
-			return withTrace(n, &nodeOr{left: left, right: right}), nil
-		case astOpEQ, astOpNE, astOpContains, astOpGT, astOpGE, astOpLT, astOpLE:
-			return withTrace(n, &nodeCompare{lv: left, op: tokenKindFromASTOperator(n.op), rv: right}), nil
-		case astOpMatches:
-			return withTrace(n, &nodeMatch{lv: left, rv: right}), nil
-		case astOpIn:
+		op := n.op
+		var r Rule
+		switch op {
+		case OperatorAnd:
+			r = &nodeAnd{left: left, right: right}
+		case OperatorOr:
+			r = &nodeOr{left: left, right: right}
+		case OperatorEQ, OperatorNE, OperatorContains, OperatorGT, OperatorGE, OperatorLT, OperatorLE:
+			r = &nodeCompare{lv: left, op: tokenKindFromASTOperator(op), rv: right}
+		case OperatorMatches:
+			r = &nodeMatch{lv: left, rv: right}
+		case OperatorIn:
 			if literalIs[*net.IPNet](right) {
-				return withTrace(n, &nodeCompare{lv: left, op: op_EQ, rv: right}), nil
+				r = &nodeCompare{lv: left, op: op_EQ, rv: right}
+			} else {
+				r = &nodeIn{lv: left, rv: right}
 			}
-			return withTrace(n, &nodeIn{lv: left, rv: right}), nil
+		}
+		if r != nil {
+			if n.negated {
+				r = &nodeNot{right: r}
+			}
+			return withTrace(n, r), nil
 		}
 	}
-	return nil, &astLowerError{span: node.astSpan(), msg: "unsupported AST node"}
+	return nil, &astLowerError{span: node.Span(), msg: "unsupported AST node"}
 }
 
-func astLiteralIs(node astNode, kind int) bool {
+func astLiteralIs(node ASTNode, kind int) bool {
 	lit, ok := node.(*astLiteral)
 	return ok && lit.kind == kind
 }
 
-func astValidInequalityOperand(node astNode) bool {
+func astValidInequalityOperand(node ASTNode) bool {
 	switch n := node.(type) {
 	case *astPath, *astCall:
 		return true
@@ -286,11 +265,11 @@ func astValidInequalityOperand(node astNode) bool {
 	}
 }
 
-func printAST(node astNode) string {
+func printAST(node ASTNode) string {
 	return printASTWithParent(node, 0, false)
 }
 
-func printASTWithParent(node astNode, parentPrec int, rightChild bool) string {
+func printASTWithParent(node ASTNode, parentPrec int, rightChild bool) string {
 	prec := astPrecedence(node)
 	var out string
 
@@ -317,8 +296,17 @@ func printASTWithParent(node astNode, parentPrec int, rightChild bool) string {
 			right = "(" + printAST(n.right) + ")"
 		}
 		out = "not " + right
+		// not binds looser than comparisons, so it needs parentheses as a
+		// comparison operand.
+		if parentPrec >= astPrecedence(&astBinary{op: OperatorEQ}) {
+			return "(" + out + ")"
+		}
 	case *astBinary:
-		out = printASTWithParent(n.left, prec, false) + " " + astOperatorString(n.op) + " " + printASTWithParent(n.right, prec, true)
+		operator := astOperatorString(n.op)
+		if n.negated {
+			operator = "not " + operator
+		}
+		out = printASTWithParent(n.left, prec, false) + " " + operator + " " + printASTWithParent(n.right, prec, true)
 	}
 
 	if prec > 0 && (prec < parentPrec || (rightChild && prec == parentPrec)) {
@@ -327,32 +315,32 @@ func printASTWithParent(node astNode, parentPrec int, rightChild bool) string {
 	return out
 }
 
-func astPrecedence(node astNode) int {
+func astPrecedence(node ASTNode) int {
 	switch n := node.(type) {
 	case *astUnary:
 		return 4
 	case *astBinary:
 		switch n.op {
-		case astOpOr:
+		case OperatorOr:
 			return 1
-		case astOpAnd:
+		case OperatorAnd:
 			return 2
-		case astOpEQ, astOpNE, astOpGT, astOpGE, astOpLT, astOpLE, astOpContains, astOpMatches, astOpIn:
+		case OperatorEQ, OperatorNE, OperatorGT, OperatorGE, OperatorLT, OperatorLE, OperatorContains, OperatorMatches, OperatorIn:
 			return 3
 		}
 	}
 	return 5
 }
 
-func astOperatorString(op astOperator) string {
+func astOperatorString(op Operator) string {
 	switch op {
-	case astOpAnd:
+	case OperatorAnd:
 		return "and"
-	case astOpOr:
+	case OperatorOr:
 		return "or"
-	case astOpMatches:
+	case OperatorMatches:
 		return "=~"
-	case astOpIn:
+	case OperatorIn:
 		return "in"
 	default:
 		return operatorToString(tokenKindFromASTOperator(op))
