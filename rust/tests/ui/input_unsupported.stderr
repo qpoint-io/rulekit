@@ -1,0 +1,25 @@
+error[E0277]: the trait bound `Nope: InputValue` is not satisfied
+ --> tests/ui/input_unsupported.rs:5:8
+  |
+5 |     n: Nope,
+  |        ^^^^ unsatisfied trait bound
+  |
+help: the trait `InputValue` is not implemented for `Nope`
+ --> tests/ui/input_unsupported.rs:1:1
+  |
+1 | struct Nope;
+  | ^^^^^^^^^^^
+help: the trait `InputValue` is implemented for `Req`
+ --> tests/ui/input_unsupported.rs:3:10
+  |
+3 | #[derive(rulekit::Input)]
+  |          ^^^^^^^^^^^^^^
+note: required by a bound in `rulekit::__private::field`
+ --> src/func.rs
+  |
+  |     pub fn field<'a, C, T>(
+  |            ----- required by a bound in this function
+...
+  |         T: crate::InputValue<C>,
+  |            ^^^^^^^^^^^^^^^^^^^^ required by this bound in `field`
+  = note: this error originates in the derive macro `rulekit::Input` (in Nightly builds, run with -Z macro-backtrace for more info)

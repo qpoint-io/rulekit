@@ -1,0 +1,5 @@
+error: `#[derive(rulekit::Input)]` cannot follow a custom serializer: rules would not see the serialized form. Give the field a newtype that implements `Serialize` and `rulekit::InputValue` to match, and drop this attribute
+ --> tests/ui/input_serialize_with.rs:7:13
+  |
+7 |     #[serde(serialize_with = "upper")]
+  |             ^^^^^^^^^^^^^^

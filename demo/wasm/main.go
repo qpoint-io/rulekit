@@ -12,48 +12,21 @@ import (
 	rulekit "github.com/qpoint-io/rulekit/v2"
 )
 
-type spanDTO struct {
-	Start       int `json:"start"`
-	End         int `json:"end"`
-	StartLine   int `json:"startLine"`
-	StartColumn int `json:"startColumn"`
-	EndLine     int `json:"endLine"`
-	EndColumn   int `json:"endColumn"`
-}
-
-type astNodeDTO struct {
-	ID       string       `json:"id"`
-	Kind     string       `json:"kind"`
-	Text     string       `json:"text"`
-	Operator string       `json:"operator,omitempty"`
-	Raw      string       `json:"raw,omitempty"`
-	Path     string       `json:"path,omitempty"`
-	Span     spanDTO      `json:"span"`
-	Children []astNodeDTO `json:"children,omitempty"`
-}
-
-type tokenDTO struct {
-	Kind string  `json:"kind"`
-	Role string  `json:"role"`
-	Raw  string  `json:"raw"`
-	Span spanDTO `json:"span"`
-}
-
 type parseResponse struct {
-	OK        bool        `json:"ok"`
-	Source    string      `json:"source,omitempty"`
-	Compact   string      `json:"compact,omitempty"`
-	Multiline string      `json:"multiline,omitempty"`
-	AST       *astNodeDTO `json:"ast,omitempty"`
-	Tokens    []tokenDTO  `json:"tokens,omitempty"`
-	Error     string      `json:"error,omitempty"`
+	OK        bool                `json:"ok"`
+	Source    string              `json:"source,omitempty"`
+	Compact   string              `json:"compact,omitempty"`
+	Multiline string              `json:"multiline,omitempty"`
+	AST       *rulekit.JSONNode   `json:"ast,omitempty"`
+	Tokens    []rulekit.JSONToken `json:"tokens,omitempty"`
+	Error     string              `json:"error,omitempty"`
 }
 
 type sourceResponse struct {
-	OK     bool        `json:"ok"`
-	Source string      `json:"source,omitempty"`
-	AST    *astNodeDTO `json:"ast,omitempty"`
-	Error  string      `json:"error,omitempty"`
+	OK     bool              `json:"ok"`
+	Source string            `json:"source,omitempty"`
+	AST    *rulekit.JSONNode `json:"ast,omitempty"`
+	Error  string            `json:"error,omitempty"`
 }
 
 type nodeRef struct {
@@ -70,13 +43,13 @@ type editRequest struct {
 }
 
 type evalResponse struct {
-	OK            bool        `json:"ok"`
-	Value         any         `json:"value,omitempty"`
-	Status        string      `json:"status,omitempty"`
-	Error         string      `json:"error,omitempty"`
-	MissingFields []string    `json:"missingFields,omitempty"`
-	Trace         *traceDTO   `json:"trace,omitempty"`
-	AST           *astNodeDTO `json:"ast,omitempty"`
+	OK            bool              `json:"ok"`
+	Value         any               `json:"value,omitempty"`
+	Status        string            `json:"status,omitempty"`
+	Error         string            `json:"error,omitempty"`
+	MissingFields []string          `json:"missingFields,omitempty"`
+	Trace         *traceDTO         `json:"trace,omitempty"`
+	AST           *rulekit.JSONNode `json:"ast,omitempty"`
 }
 
 type traceDTO struct {
@@ -89,7 +62,7 @@ type traceDTO struct {
 	Status        string               `json:"status,omitempty"`
 	Active        bool                 `json:"active,omitempty"`
 	Pruned        bool                 `json:"pruned,omitempty"`
-	Span          *spanDTO             `json:"span,omitempty"`
+	Span          *rulekit.JSONSpan    `json:"span,omitempty"`
 	Children      []*traceDTO          `json:"children,omitempty"`
 }
 
@@ -143,14 +116,14 @@ func parseRule(source string) parseResponse {
 	if err != nil {
 		return parseResponse{OK: false, Source: source, Error: err.Error()}
 	}
-	root := ast.Root()
+	doc := ast.JSON()
 	return parseResponse{
 		OK:        true,
 		Source:    source,
 		Compact:   rulekit.Format(ast, rulekit.Compact()),
 		Multiline: rulekit.Format(ast, rulekit.Multiline("  ")),
-		AST:       buildASTDTO(source, root, "root"),
-		Tokens:    buildTokens(source, ast.Tokens()),
+		AST:       doc.Root,
+		Tokens:    doc.Tokens,
 	}
 }
 
@@ -263,22 +236,20 @@ func evalRule(source string, inputJSON string) evalResponse {
 	}
 	rule, err := rulekit.Compile(ast)
 	if err != nil {
-		return evalResponse{OK: false, Error: err.Error(), AST: buildASTDTO(source, ast.Root(), "root")}
+		return evalResponse{OK: false, Error: err.Error(), AST: ast.JSON().Root}
 	}
-	var input map[string]any
-	decoder := json.NewDecoder(strings.NewReader(inputJSON))
-	decoder.UseNumber()
-	if err := decoder.Decode(&input); err != nil {
-		return evalResponse{OK: false, Error: "input json: " + err.Error(), AST: buildASTDTO(source, ast.Root(), "root")}
+	input, err := rulekit.DecodeJSON([]byte(inputJSON), rulekit.JSONOptions{})
+	if err != nil {
+		return evalResponse{OK: false, Error: "input json: " + err.Error(), AST: ast.JSON().Root}
 	}
-	res := rule.Eval(context.Background(), jsonInput(input), rulekit.Opts{Trace: true})
+	res := rule.Eval(context.Background(), rulekit.FromKV(input), rulekit.Opts{Trace: true})
 	out := evalResponse{
 		OK:            res.Error == nil,
 		Value:         res.Value,
 		Status:        resultStatus(res),
 		MissingFields: res.MissingFields,
-		Trace:         buildTraceDTO(source, res.Trace),
-		AST:           buildASTDTO(source, ast.Root(), "root"),
+		Trace:         buildTraceDTO(ast, res.Trace),
+		AST:           ast.JSON().Root,
 	}
 	if res.Error != nil {
 		out.Error = res.Error.Error()
@@ -311,45 +282,7 @@ func printMode(mode string) rulekit.PrintMode {
 	return rulekit.Compact()
 }
 
-func buildASTDTO(source string, node rulekit.ASTNode, id string) *astNodeDTO {
-	if node == nil {
-		return nil
-	}
-	span := node.Span()
-	out := &astNodeDTO{ID: id, Kind: kindString(node.Kind()), Text: node.String(), Span: spanFromSource(source, span)}
-	if op := operatorString(rulekit.NodeOperator(node)); op != "" {
-		out.Operator = op
-		out.Raw = rulekit.NodeRawOperator(node)
-	}
-	if raw, ok := rulekit.NodeLiteral(node); ok {
-		out.Raw = raw
-	}
-	if segments, ok := rulekit.NodePath(node); ok {
-		out.Path = pathString(segments)
-	}
-	if name, ok := rulekit.NodeCallName(node); ok {
-		out.Raw = name
-	}
-	children := node.Children()
-	for i, child := range children {
-		childID := fmt.Sprintf("%s.%d", id, i)
-		out.Children = append(out.Children, *buildASTDTO(source, child, childID))
-	}
-	return out
-}
-
-func buildTokens(source string, tokens []rulekit.Token) []tokenDTO {
-	out := make([]tokenDTO, 0, len(tokens))
-	for _, tok := range tokens {
-		if tok.Kind == "EOF" {
-			continue
-		}
-		out = append(out, tokenDTO{Kind: tok.Kind, Role: tokenRole(tok.Kind), Raw: tok.Raw, Span: spanFromSource(source, tok.Span)})
-	}
-	return out
-}
-
-func buildTraceDTO(source string, trace *rulekit.Trace) *traceDTO {
+func buildTraceDTO(ast *rulekit.AST, trace *rulekit.Trace) *traceDTO {
 	if trace == nil {
 		return nil
 	}
@@ -366,12 +299,12 @@ func buildTraceDTO(source string, trace *rulekit.Trace) *traceDTO {
 		out.Error = trace.Error.Error()
 	}
 	if trace.Node != nil {
-		out.Kind = kindString(trace.Node.Kind())
-		span := spanFromSource(source, trace.Node.Span())
+		out.Kind = trace.Node.Kind().String()
+		span := ast.JSONSpan(trace.Node.Span())
 		out.Span = &span
 	}
 	for _, child := range trace.Children {
-		out.Children = append(out.Children, buildTraceDTO(source, child))
+		out.Children = append(out.Children, buildTraceDTO(ast, child))
 	}
 	return out
 }
@@ -407,7 +340,7 @@ func rewriteOperator(source string, node rulekit.ASTNode, next string) (string, 
 	}
 	raw := rulekit.NodeRawOperator(node)
 	if raw == "" {
-		raw = operatorString(rulekit.NodeOperator(node))
+		raw = rulekit.NodeOperator(node).String()
 	}
 	left := children[0].Span()
 	right := children[1].Span()
@@ -422,7 +355,17 @@ func rewriteOperator(source string, node rulekit.ASTNode, next string) (string, 
 	}
 	start := betweenStart + rel
 	end := start + len(raw)
+	if spelling, ok := operatorSpelling[next]; ok {
+		next = spelling
+	}
 	return source[:start] + next + source[end:], nil
+}
+
+// operatorSpelling maps the operator names used by the demo's editor (the AST
+// JSON names, plus not_<op> for a negated operator) to rule text.
+var operatorSpelling = map[string]string{
+	"eq": "==", "ne": "!=", "gt": ">", "ge": ">=", "lt": "<", "le": "<=", "matches": "=~",
+	"not_contains": "not contains", "not_matches": "not =~", "not_in": "not in",
 }
 
 func sourceForNode(source string, node rulekit.ASTNode) string {
@@ -431,152 +374,4 @@ func sourceForNode(source string, node rulekit.ASTNode) string {
 		return node.String()
 	}
 	return source[span.Start:span.End]
-}
-
-func spanFromSource(source string, span rulekit.Span) spanDTO {
-	startLine, startColumn := lineColumn(source, span.Start)
-	endLine, endColumn := lineColumn(source, span.End)
-	return spanDTO{Start: span.Start, End: span.End, StartLine: startLine, StartColumn: startColumn, EndLine: endLine, EndColumn: endColumn}
-}
-
-func lineColumn(source string, offset int) (int, int) {
-	line, col := 1, 1
-	if offset < 0 {
-		offset = 0
-	}
-	if offset > len(source) {
-		offset = len(source)
-	}
-	for i := 0; i < offset; i++ {
-		if source[i] == '\n' {
-			line++
-			col = 1
-		} else {
-			col++
-		}
-	}
-	return line, col
-}
-
-func kindString(kind rulekit.ASTKind) string {
-	switch kind {
-	case rulekit.ASTLiteral:
-		return "literal"
-	case rulekit.ASTPath:
-		return "path"
-	case rulekit.ASTArray:
-		return "array"
-	case rulekit.ASTCall:
-		return "call"
-	case rulekit.ASTUnary:
-		return "unary"
-	case rulekit.ASTBinary:
-		return "binary"
-	default:
-		return "unknown"
-	}
-}
-
-func operatorString(op rulekit.Operator) string {
-	switch op {
-	case rulekit.OperatorNot:
-		return "not"
-	case rulekit.OperatorAnd:
-		return "and"
-	case rulekit.OperatorOr:
-		return "or"
-	case rulekit.OperatorEQ:
-		return "=="
-	case rulekit.OperatorNE:
-		return "!="
-	case rulekit.OperatorGT:
-		return ">"
-	case rulekit.OperatorGE:
-		return ">="
-	case rulekit.OperatorLT:
-		return "<"
-	case rulekit.OperatorLE:
-		return "<="
-	case rulekit.OperatorContains:
-		return "contains"
-	case rulekit.OperatorMatches:
-		return "matches"
-	case rulekit.OperatorIn:
-		return "in"
-	default:
-		return ""
-	}
-}
-
-func pathString(segments []rulekit.PathSegment) string {
-	var b strings.Builder
-	for i, segment := range segments {
-		if segment.IsIndex {
-			b.WriteString(fmt.Sprintf("[%d]", segment.Index))
-			continue
-		}
-		if i > 0 && !segment.Bracket {
-			b.WriteString(".")
-		}
-		if segment.Bracket {
-			b.WriteString(fmt.Sprintf("[%q]", segment.Key))
-		} else {
-			b.WriteString(segment.Key)
-		}
-	}
-	return b.String()
-}
-
-func tokenRole(kind string) string {
-	switch kind {
-	case "FIELD":
-		return "id"
-	case "STRING", "REGEX", "IP", "IP_CIDR", "HEX_STRING", "BOOL":
-		return "str"
-	case "INT", "FLOAT":
-		return "num"
-	case "AND", "OR", "NOT", "EQ", "NE", "GT", "GE", "LT", "LE", "CONTAINS", "MATCHES", "IN":
-		return "kw"
-	default:
-		return "pun"
-	}
-}
-
-type jsonInput map[string]any
-
-func (j jsonInput) Get(ctx context.Context, path []rulekit.PathSegment) (any, bool, error) {
-	var current any = map[string]any(j)
-	for _, segment := range path {
-		if segment.IsIndex {
-			arr, ok := current.([]any)
-			if !ok || segment.Index < 0 || segment.Index >= len(arr) {
-				return nil, false, nil
-			}
-			current = normalizeJSONValue(arr[segment.Index])
-			continue
-		}
-		obj, ok := current.(map[string]any)
-		if !ok {
-			return nil, false, nil
-		}
-		value, ok := obj[segment.Key]
-		if !ok {
-			return nil, false, nil
-		}
-		current = normalizeJSONValue(value)
-	}
-	return current, true, nil
-}
-
-func normalizeJSONValue(value any) any {
-	switch v := value.(type) {
-	case json.Number:
-		if i, err := v.Int64(); err == nil {
-			return i
-		}
-		if f, err := v.Float64(); err == nil {
-			return f
-		}
-	}
-	return value
 }
