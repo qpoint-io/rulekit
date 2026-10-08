@@ -1,0 +1,68 @@
+{
+  "input_mode": "annotated_keys",
+  "cases": [
+    {
+      "name": "bracket key with dot",
+      "expr": "data[\"field.name\"] == true",
+      "input": {"data": {"field.name": true}},
+      "expect": {"value": true}
+    },
+    {"name": "single-quoted bracket key with escaped double quote", "expr": "x['it\\\"s'] == 1", "input": {"x": {"it\"s": 1}}, "expect": {"value": true}},
+    {"name": "double-quoted bracket key with escaped single quote", "expr": "x[\"it\\'s\"] == 1", "input": {"x": {"it's": 1}}, "expect": {"value": true}},
+    {"name": "bracket key must be valid UTF-8", "expr": "x[\"\\xff\"] == 1", "expect": {"parse_error": {"line": 1, "column": 3}}},
+    {"name": "non-ascii field name is a parse error", "expr": "ñame == 1", "expect": {"parse_error": {"line": 1, "column": 1}}},
+    {"name": "non-ascii field segment is a parse error", "expr": "a.ñ == 1", "expect": {"parse_error": {"line": 1, "column": 3}}},
+    {"name": "non-ascii key works in brackets", "expr": "x[\"ñame\"] == 1", "input": {"x": {"ñame": 1}}, "expect": {"value": true}},
+    {"name": "non-breaking space between tokens is whitespace", "expr": "a\u00a0== 1", "input": {"a": 1}, "expect": {"value": true}},
+    {
+      "name": "dotted path does not match dotted key",
+      "expr": "data.field.name == true",
+      "input": {"data": {"field.name": true}},
+      "expect": {"missing_fields": ["data.field.name"]}
+    },
+    {
+      "name": "root bracket key",
+      "expr": "[\"destination.ip\"] == 1.1.1.1",
+      "input": {"destination.ip.$ip": "1.1.1.1"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "array index then key",
+      "expr": "items[0].name == \"first\"",
+      "input": {"items": [{"name": "first"}, {"name": "second"}]},
+      "expect": {"value": true}
+    },
+    {
+      "name": "array index",
+      "expr": "items[1] == \"second\"",
+      "input": {"items": ["first", "second"]},
+      "expect": {"value": true}
+    },
+    {"name": "empty index is a parse error", "expr": "items[] == \"x\"", "expect": {"parse_error": {"line": 1, "column": 7}}},
+    {"name": "field index is a parse error", "expr": "items[field] == \"x\"", "expect": {"parse_error": {"line": 1, "column": 7}}},
+    {"name": "negative index is a parse error", "expr": "items[-1] == \"x\"", "expect": {"parse_error": {"line": 1, "column": 7}}},
+    {"name": "valid field name: field", "expr": "field == true", "expect": {"parse_error": false}},
+    {"name": "valid field name: field1", "expr": "field1 == true", "expect": {"parse_error": false}},
+    {"name": "valid field name: field-", "expr": "field- == true", "expect": {"parse_error": false}},
+    {"name": "valid field name: field_", "expr": "field_ == true", "expect": {"parse_error": false}},
+    {"name": "valid field name: field_1", "expr": "field_1 == true", "expect": {"parse_error": false}},
+    {"name": "valid field name: field-1", "expr": "field-1 == true", "expect": {"parse_error": false}},
+    {"name": "valid field name: field.1", "expr": "field.1 == true", "expect": {"parse_error": false}},
+    {"name": "valid field name: field-1.field2", "expr": "field-1.field2 == true", "expect": {"parse_error": false}},
+    {"name": "valid field name: field-1.field2-3", "expr": "field-1.field2-3 == true", "expect": {"parse_error": false}},
+    {
+      "name": "valid field name: request.header.user-agent",
+      "expr": "request.header.user-agent == true",
+      "expect": {"parse_error": false}
+    },
+    {"name": "invalid field name: -field", "expr": "-field == true", "expect": {"parse_error": {"line": 1, "column": 1}}},
+    {"name": "invalid field name: field%.field", "expr": "field%.field == true", "expect": {"parse_error": {"line": 1, "column": 1}}},
+    {"name": "invalid field name: 01fie^ld", "expr": "01fie^ld == true", "expect": {"parse_error": {"line": 1, "column": 1}}},
+    {"name": "invalid field name: 01fie||d", "expr": "01fie||d == true", "expect": {"parse_error": {"line": 1, "column": 1}}},
+    {
+      "name": "numeric path segments parse",
+      "expr": "f_bool.1 == true or f_bool.2 != false",
+      "expect": {"parse_error": false}
+    }
+  ]
+}

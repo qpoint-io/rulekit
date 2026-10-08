@@ -1,61 +1,10 @@
 package rulekit
 
 import (
-	"net"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
-
-func TestPrintASTCompact(t *testing.T) {
-	tests := map[string]string{
-		`field == "value" and other != 1`:               `field == "value" and other != 1`,
-		`domain matches /example\.com$/ OR tags == "x"`: `domain =~ /example\.com$/ or tags == "x"`,
-		`a or (b and c)`:                                `a or b and c`,
-		`(a or b) and c`:                                `(a or b) and c`,
-		`request.headers["user-agent"] == "curl"`:       `request.headers["user-agent"] == "curl"`,
-		`items[0].name in ["first", "second"]`:          `items[0].name in ["first", "second"]`,
-		`starts_with(path, "/api")`:                     `starts_with(path, "/api")`,
-	}
-
-	for input, want := range tests {
-		t.Run(input, func(t *testing.T) {
-			ast, err := parseAST(input)
-			require.NoError(t, err)
-			require.Equal(t, want, printAST(ast))
-		})
-	}
-}
-
-func TestPrintASTSemanticRoundTrip(t *testing.T) {
-	expressions := []string{
-		`field == "value" and other != 1`,
-		`domain matches /example\.com$/ OR tags == "x"`,
-		`(a or b) and c`,
-		`not (a == 1 or b == 2)`,
-		`request.headers["user-agent"] == "curl"`,
-		`items[0].name in ["first", "second"]`,
-		`ip in 192.168.0.0/16`,
-		`starts_with(path, "/api")`,
-	}
-
-	for _, input := range expressions {
-		t.Run(input, func(t *testing.T) {
-			ast, err := parseAST(input)
-			require.NoError(t, err)
-
-			printed := printAST(ast)
-			roundTripped, err := parseAST(printed)
-			require.NoError(t, err)
-
-			originalRule, err := lowerAST(ast)
-			require.NoError(t, err)
-			printedRule, err := lowerAST(roundTripped)
-			require.NoError(t, err)
-			require.Equal(t, originalRule.String(), printedRule.String())
-		})
-	}
-}
 
 func TestPublicASTAPI(t *testing.T) {
 	ast, err := ParseAST(`request.headers["user-agent"] == "curl"`)
@@ -80,43 +29,6 @@ func TestPublicASTAPI(t *testing.T) {
 	rule, err := Compile(ast)
 	require.NoError(t, err)
 	require.Equal(t, `request.headers["user-agent"] == "curl"`, rule.String())
-}
-
-func TestFormat(t *testing.T) {
-	ast, err := ParseAST(`(a == 1 or b == 2) and c == 3 and request.headers["user-agent"] == "curl"`)
-	require.NoError(t, err)
-
-	compact := Format(ast, Compact())
-	require.Equal(t, `(a == 1 or b == 2) and c == 3 and request.headers["user-agent"] == "curl"`, compact)
-	require.Equal(t, `(a == 1 or b == 2) and c == 3 and request.headers["user-agent"] == "curl"`, MustParse(ast.Source()).Print(Compact()))
-	require.Equal(t, ast.Source(), MustParse(ast.Source()).Print(Source()))
-
-	multiline := Format(ast, Multiline("    "))
-	require.Equal(t, `(
-    a == 1
-    or b == 2
-)
-and c == 3
-and request.headers["user-agent"] == "curl"`, multiline)
-
-	roundTrip, err := ParseAST(multiline)
-	require.NoError(t, err)
-	require.Equal(t, compact, roundTrip.String())
-}
-
-func TestFormatPreservesComments(t *testing.T) {
-	ast, err := ParseAST("-- top\na==1 -- explain\n and b matches /x/")
-	require.NoError(t, err)
-
-	compact := Format(ast, Compact())
-	require.Equal(t, "-- top\na == 1 -- explain\nand b =~ /x/", compact)
-
-	multiline := Format(ast, Multiline("  "))
-	require.Equal(t, "-- top\na == 1 -- explain\nand b =~ /x/", multiline)
-
-	roundTrip, err := ParseAST(compact)
-	require.NoError(t, err)
-	require.Equal(t, `a == 1 and b =~ /x/`, roundTrip.String())
 }
 
 func TestASTTokensIncludeTrivia(t *testing.T) {
@@ -152,134 +64,53 @@ func TestRewritePreservesUnchangedSource(t *testing.T) {
 	require.Equal(t, `field == 3 and other == 2`, roundTrip.String())
 }
 
-func TestEvalTraceShortCircuit(t *testing.T) {
-	rule := MustParse(`a == 1 or b == 2`)
-	input := FromKV(KV{"a": int64(1)})
+func TestASTReturnsDefensiveCopies(t *testing.T) {
+	for _, expr := range []string{`not field`, `field == 1`, `[field, 1]`, `starts_with(field, "a")`} {
+		t.Run(expr, func(t *testing.T) {
+			ast, err := ParseAST(expr)
+			require.NoError(t, err)
+			children := ast.Root().Children()
+			original := children[0]
+			children[0] = nil
+			require.Same(t, original, ast.Root().Children()[0])
 
-	withoutTrace := rule.Eval(nil, input, Opts{})
-	require.Nil(t, withoutTrace.Trace)
-
-	result := rule.Eval(nil, input, Opts{Trace: true})
-	require.NoError(t, result.Error)
-	require.True(t, result.Pass())
-	require.NotNil(t, result.Trace)
-	require.Equal(t, ASTBinary, result.Trace.Node.Kind())
-	require.Equal(t, `a == 1 or b == 2`, result.Trace.Expr)
-	require.Len(t, result.Trace.Children, 2)
-	require.Equal(t, TracePassed, result.Trace.Status)
-	require.Equal(t, TracePassed, result.Trace.Children[0].Status)
-	require.Equal(t, TracePruned, result.Trace.Children[1].Status)
-	require.True(t, result.Trace.Children[0].Active)
-	require.False(t, result.Trace.Children[0].Pruned)
-	require.Equal(t, true, result.Trace.Children[0].Value)
-	require.False(t, result.Trace.Children[1].Active)
-	require.True(t, result.Trace.Children[1].Pruned)
-	require.Equal(t, `b == 2`, result.Trace.Children[1].Expr)
-}
-
-func TestEvalTraceMissingFields(t *testing.T) {
-	rule := MustParse(`a == 1 or b == 2`)
-
-	result := rule.Eval(nil, FromKV(KV{}), Opts{Trace: true})
-	require.NoError(t, result.Error)
-	require.True(t, result.Unknown())
-	require.ElementsMatch(t, []string{"a", "b"}, result.MissingFields)
-	require.NotNil(t, result.Trace)
-	require.Equal(t, TraceMissing, result.Trace.Status)
-	require.ElementsMatch(t, []string{"a", "b"}, result.Trace.MissingFields)
-	require.Len(t, result.Trace.Children, 2)
-	require.Equal(t, TraceMissing, result.Trace.Children[0].Status)
-	require.Equal(t, TraceMissing, result.Trace.Children[1].Status)
-}
-
-func TestEvalTraceComparisonDiagnostics(t *testing.T) {
-	tcs := []struct {
-		name       string
-		rule       string
-		input      KV
-		code       DiagnosticCode
-		leftType   string
-		operator   string
-		rightType  string
-		wantStatus TraceStatus
-	}{
-		{
-			name:       "incomparable types",
-			rule:       `port == "443"`,
-			input:      KV{"port": int64(443)},
-			code:       DiagnosticComparisonIncomparable,
-			leftType:   "int64",
-			operator:   "==",
-			rightType:  "string",
-			wantStatus: TraceFailed,
-		},
-		{
-			name:       "unsupported operator",
-			rule:       `port contains 443`,
-			input:      KV{"port": int64(443)},
-			code:       DiagnosticComparisonUnsupportedOperator,
-			leftType:   "int64",
-			operator:   "contains",
-			rightType:  "int64",
-			wantStatus: TraceFailed,
-		},
-		{
-			name:       "invalid shape",
-			rule:       `port contains [443]`,
-			input:      KV{"port": int64(443)},
-			code:       DiagnosticComparisonInvalidShape,
-			leftType:   "int64",
-			operator:   "contains",
-			rightType:  "[]interface {}",
-			wantStatus: TraceFailed,
-		},
-	}
-
-	for _, tc := range tcs {
-		t.Run(tc.name, func(t *testing.T) {
-			rule := MustParse(tc.rule)
-
-			withoutTrace := rule.Eval(nil, FromKV(tc.input), Opts{})
-			require.NoError(t, withoutTrace.Error)
-			require.True(t, withoutTrace.Fail())
-			require.Nil(t, withoutTrace.Trace)
-
-			result := rule.Eval(nil, FromKV(tc.input), Opts{Trace: true})
-			require.NoError(t, result.Error)
-			require.True(t, result.Fail())
-			require.NotNil(t, result.Trace)
-			require.Equal(t, tc.wantStatus, result.Trace.Status)
-			require.Len(t, result.Trace.Diagnostics, 1)
-
-			diagnostic := result.Trace.Diagnostics[0]
-			require.Equal(t, tc.code, diagnostic.Code)
-			require.Equal(t, tc.leftType, diagnostic.LeftType)
-			require.Equal(t, tc.operator, diagnostic.Operator)
-			require.Equal(t, tc.rightType, diagnostic.RightType)
-			require.NotEmpty(t, diagnostic.Message)
+			tokens := ast.Tokens()
+			originalToken := tokens[0]
+			tokens[0] = Token{}
+			require.Equal(t, originalToken, ast.Tokens()[0])
 		})
 	}
+
+	ast, err := ParseAST(`request.headers["user-agent"]`)
+	require.NoError(t, err)
+	segments, ok := NodePath(ast.Root())
+	require.True(t, ok)
+	segments[0].Key = "changed"
+	again, ok := NodePath(ast.Root())
+	require.True(t, ok)
+	require.Equal(t, "request", again[0].Key)
 }
 
-func TestEvalTraceMacroExpansion(t *testing.T) {
-	rule := MustParse(`is_internal() and user != "root"`)
-	macros := MacroSet{}
-	require.NoError(t, macros.Register("is_internal", `ip in 172.16.0.0/16 or host matches /svc\.cluster\.local$/`))
-
-	result := rule.Eval(nil, FromKV(KV{
-		"ip":   net.ParseIP("172.16.0.1"),
-		"user": "api",
-	}), Opts{Trace: true, Macros: macros})
-	require.NoError(t, result.Error)
-	require.True(t, result.Pass())
-	require.NotNil(t, result.Trace)
-	require.Equal(t, TracePassed, result.Trace.Status)
-	require.Len(t, result.Trace.Children, 2)
-
-	macroCall := result.Trace.Children[0]
-	require.Equal(t, `is_internal()`, macroCall.Expr)
-	require.Equal(t, TracePassed, macroCall.Status)
-	require.Len(t, macroCall.Children, 1)
-	require.Equal(t, `ip in 172.16.0.0/16 or host =~ /svc\.cluster\.local$/`, macroCall.Children[0].Expr)
-	require.Equal(t, TracePassed, macroCall.Children[0].Status)
+func TestASTOperatorValidationPositions(t *testing.T) {
+	for _, tc := range []struct {
+		expr    string
+		line    int
+		column  int
+		message string
+	}{
+		{`field > "text"`, 1, 7, "invalid operation"},
+		{`field not in 1`, 1, 7, "in requires an array or CIDR value"},
+		{`field not matches "text"`, 1, 19, "matches requires a regex value"},
+		{"field == 1 and\nother not in 2", 2, 7, "in requires an array or CIDR value"},
+		{`field ==`, 1, 9, "empty expression"},
+	} {
+		t.Run(tc.expr, func(t *testing.T) {
+			_, err := ParseAST(tc.expr)
+			var parseErr *ParseError
+			require.ErrorAs(t, err, &parseErr)
+			require.Equal(t, tc.line, parseErr.Line)
+			require.Equal(t, tc.column, parseErr.Column)
+			require.Equal(t, tc.message, parseErr.Message)
+		})
+	}
 }

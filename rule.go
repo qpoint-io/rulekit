@@ -1,95 +1,10 @@
+// Package rulekit parses and evaluates rule expressions such as
+//
+//	domain matches /example\.com$/ and port == 8080
+//
+// against input values. See the README for the language reference:
+// https://github.com/qpoint-io/rulekit#readme
 package rulekit
-
-//go:generate bash gen.sh
-
-/*
-
-	This package implements an expression-based rules engine.
-
-	An expression is evaluated against a KV map of values returning a true/false result.
-		For example, with the expression:
-			domain matches /example\.com$/
-
-		And the following KV maps:
-			map[string]any{"domain": "example.com"} -> true
-			map[string]any{"domain": "qpoint.io"}   -> false
-
-		In this example,
-			domain				is a FIELD,
-			matches				is the OPERATOR,
-			/example\.com$/		is the VALUE.
-
-	A FIELD or VALUE may appear on either side of an operator.
-		For example, all of the following expressions are valid:
-			- port == 8080
-			- 8080 == port
-			- src.port == dst.port
-			- 500 > 2
-
-	A FIELD or VALUE on its own without an operator will check if the field contains a non-zero value.
-		For example: `bool_field && string_field`
-
-	Supported operators:
-		== (eq), != (ne), > (gt), >= (ge), < (lt), <= (le), contains, matches, in
-		or (||), and (&&), not (!)
-		() parentheses for grouping
-
-	Supported types:
-
-		bool: VALUE, FIELD
-			e.g. true
-
-			valid values: true, false
-
-		number: VALUE, FIELD
-			e.g. 8080, 1.35
-
-			numbers are parsed as either int64 or uint64 if out of range for int64
-			floats are parsed as float64
-
-			Go type: int64, uint64, float64
-
-		string: VALUE, FIELD
-			e.g. "domain.com"
-
-			a double-quoted string. quotes may be escaped with a backslash, e.g. "a string \"with\" quotes"
-			any quoted value is parsed as a string
-
-		IP address: VALUE, FIELD
-			e.g. 192.168.1.1
-			e.g. 2001:db8:3333:4444:cccc:dddd:eeee:ffff
-			e.g. 2001:db8:3333:4444:5555:6666:1.2.3.4
-
-			An IPv4, IPv6 or an IPv6 dual address.
-
-			Go type: net.IP
-
-		CIDR: VALUE
-			e.g. 192.168.1.0/24
-			e.g. 2001:db8:3333:4444:cccc:dddd:eeee:ffff/64
-
-			An IPv4 or IPv6 CIDR block.
-
-			Go type: *net.IPNet
-
-		Hexadecimal string: VALUE, FIELD
-			e.g. 12:34:56:78:ab (MAC address)
-			e.g. 504f5354 (hex string "POST")
-
-			a hexadecimal string, optionally separated by colons.
-
-			Go type:
-				- FIELD: []byte
-				- VALUE: rule.HexString (hexstring.go)
-
-		Regex: VALUE
-			e.g. /example\.com$/
-
-			a Go-style regular expression. Must be surrounded by forward slashes. May not be quoted with double quotes (otherwise it will be parsed as a string).
-
-			Go type: *regexp.Regexp
-
-*/
 
 import (
 	"context"
@@ -117,9 +32,11 @@ func MustParse(str string) Rule {
 type KV = map[string]any
 
 type Opts struct {
-	Trace     bool
-	Macros    MacroSet
-	Functions map[string]*Function
+	Trace  bool
+	Macros MacroSet
+	// Functions are custom functions, keyed by their names. Build the set
+	// with NewFunctionSet.
+	Functions FunctionSet
 }
 
 func (o Opts) Validate() error {
@@ -129,6 +46,12 @@ func (o Opts) Validate() error {
 		}
 		if fn == nil {
 			return fmt.Errorf("function %q: must not be nil", name)
+		}
+		if fn.call == nil {
+			return fmt.Errorf("function %q: must be defined with rulekit.Func", name)
+		}
+		if fn.Name != name {
+			return fmt.Errorf("function %q: registered under another name than its own, %q", name, fn.Name)
 		}
 	}
 	for name, macro := range o.Macros {
@@ -212,6 +135,8 @@ func (r *rule) String() string {
 	return s
 }
 
+// Result is the outcome of evaluating a rule. Value may share memory with
+// the rule or its input and must not be modified.
 type Result struct {
 	Value         any
 	Error         error
@@ -244,10 +169,6 @@ func (r Result) Fail() bool {
 	return r.Complete() && isZero(r.Value)
 }
 
-func (r Result) incomplete() bool {
-	return r.Error != nil || len(r.MissingFields) > 0
-}
-
 type ParseError struct {
 	Line       int
 	Column     int
@@ -273,39 +194,7 @@ func (e *ParseError) Error() string {
 	}
 
 	if e.Message != "" {
-		replacer := strings.NewReplacer(
-			"token_ERROR", `symbol`,
-			"token_LPAREN", `"("`,
-			"token_RPAREN", `")"`,
-			"op_NOT", `"!"`,
-			"op_AND", `"&&"`,
-			"op_OR", `"||"`,
-			"op_EQ", `"=="`,
-			"op_NE", `"!="`,
-			"op_GT", `">"`,
-			"op_GE", `">="`,
-			"op_LT", `"<"`,
-			"op_LE", `"<="`,
-			"op_CONTAINS", `"contains"`,
-			"op_MATCHES", `"=~"`,
-			"token_INT", `"integer"`,
-			"token_FLOAT", `"float"`,
-			"token_BOOL", `"boolean"`,
-			"token_IP_CIDR", `"cidr"`,
-			"token_IP", `"ip"`,
-			"token_REGEX", `"regex"`,
-			"token_FIELD", `"field name"`,
-			"token_STRING", `"string"`,
-			"token_HEX_STRING", `"hex"`,
-			"token_ARRAY", `"array"`,
-			"token_LBRACKET", `"["`,
-			"token_RBRACKET", `"]"`,
-			"token_DOT", `"."`,
-			"token_LPAREN", `"("`,
-			"token_RPAREN", `")"`,
-			"token_FUNCTION", `"function or field identifier"`,
-		)
-		result += "\n" + replacer.Replace(e.Message)
+		result += "\n" + e.Message
 	}
 
 	if e.Suggestion != "" {

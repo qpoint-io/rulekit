@@ -1,11 +1,10 @@
 module github.com/qpoint-io/rulekit/v2
 
-go 1.26.2
+go 1.27.1
 
 require (
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/stretchr/testify v1.10.0
-	golang.org/x/exp v0.0.0-20260824195058-e88cd73687aa
 )
 
 require (

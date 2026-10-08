@@ -3,6 +3,8 @@ package rulekit
 import (
 	"fmt"
 	"net"
+	"net/url"
+	"regexp"
 )
 
 type compareDiagnostic uint8
@@ -19,10 +21,6 @@ type compareOutcome struct {
 	diagnostic compareDiagnostic
 }
 
-func compare(left any, op int, right any) (ret bool) {
-	return compareDetailed(left, op, right).pass
-}
-
 func compareDetailed(left any, op int, right any) compareOutcome {
 	// any ? []any
 	//      -> run the comparison for each element in the right array.
@@ -36,12 +34,24 @@ func compareDetailed(left any, op int, right any) compareOutcome {
 			return compareDetailed(left, op, rv)
 		})
 	}
+	if rightStrs, ok := right.([]string); ok {
+		if op == op_CONTAINS {
+			return invalidShape()
+		}
+		return compareSliceDetailed(rightStrs, op, func(rv string, op int) compareOutcome {
+			return compareDetailed(left, op, rv)
+		})
+	}
 
 	// the left value type determines the comparison logic
 	switch lv := left.(type) {
 	case string:
 		// string ? any
 		return compareString(lv, op, right)
+
+	case urlQuery:
+		// query ? any
+		return compareString(string(lv), op, right)
 
 	case []string:
 		// []string ? any
@@ -112,6 +122,22 @@ func compareDetailed(left any, op int, right any) compareOutcome {
 		// mac ? any
 		return compareMac(lv, op, right)
 
+	case *url.URL:
+		// url ? any
+		return compareURL(urlText(lv), op, right)
+
+	case URL:
+		// url ? any
+		return compareURL(lv.text, op, right)
+
+	case []byte:
+		// bytes ? any
+		return compareBytes(lv, op, right)
+
+	case HexString:
+		// hex ? any
+		return compareBytes(lv.Bytes, op, right)
+
 	case []any:
 		// []any ? any
 		return compareSliceDetailed(lv, op, func(lv any, op int) compareOutcome {
@@ -169,6 +195,7 @@ func newComparisonDiagnostic(code compareDiagnostic, left any, op int, right any
 	leftType := diagnosticType(left)
 	rightType := diagnosticType(right)
 	operator := operatorToString(op)
+	name := astOperatorFromToken(op).String()
 
 	switch code {
 	case compareDiagnosticIncomparable:
@@ -176,7 +203,7 @@ func newComparisonDiagnostic(code compareDiagnostic, left any, op int, right any
 			Code:      DiagnosticComparisonIncomparable,
 			Message:   fmt.Sprintf("cannot compare %s %s %s", leftType, operator, rightType),
 			LeftType:  leftType,
-			Operator:  operator,
+			Operator:  name,
 			RightType: rightType,
 		}
 	case compareDiagnosticInvalidShape:
@@ -184,7 +211,7 @@ func newComparisonDiagnostic(code compareDiagnostic, left any, op int, right any
 			Code:      DiagnosticComparisonInvalidShape,
 			Message:   fmt.Sprintf("invalid comparison shape for %s %s %s", leftType, operator, rightType),
 			LeftType:  leftType,
-			Operator:  operator,
+			Operator:  name,
 			RightType: rightType,
 		}
 	case compareDiagnosticUnsupportedOperator:
@@ -192,7 +219,7 @@ func newComparisonDiagnostic(code compareDiagnostic, left any, op int, right any
 			Code:      DiagnosticComparisonUnsupportedOperator,
 			Message:   fmt.Sprintf("operator %s is not supported for %s and %s", operator, leftType, rightType),
 			LeftType:  leftType,
-			Operator:  operator,
+			Operator:  name,
 			RightType: rightType,
 		}
 	default:
@@ -200,16 +227,42 @@ func newComparisonDiagnostic(code compareDiagnostic, left any, op int, right any
 	}
 }
 
+// diagnosticType names a value's type using the same vocabulary as typed
+// JSON input ($type), so diagnostics read the same in every implementation.
 func diagnosticType(value any) string {
-	if value == nil {
-		return "<nil>"
+	switch value.(type) {
+	case nil:
+		return "null"
+	case bool:
+		return "bool"
+	case int, int64:
+		return "int64"
+	case uint, uint64:
+		return "uint64"
+	case float32, float64:
+		return "float64"
+	case string:
+		return "string"
+	case HexString, []byte:
+		return "bytes"
+	case net.IP:
+		return "ip"
+	case *net.IPNet:
+		return "cidr"
+	case net.HardwareAddr:
+		return "mac"
+	case *url.URL, URL:
+		return "url"
+	case *regexp.Regexp:
+		return "regex"
+	case []any, []string, []int, []int64, []uint, []uint64, []float32, []float64, []net.IP:
+		return "array"
+	case urlQuery:
+		return "string"
+	case map[string]any:
+		return "object"
 	}
-	return fmt.Sprintf("%T", value)
-}
-func compareSlice[T any](slice []T, op int, fn func(el T, op int) bool) bool {
-	return compareSliceDetailed(slice, op, func(el T, op int) compareOutcome {
-		return comparePass(fn(el, op))
-	}).pass
+	return "unknown"
 }
 
 func compareSliceDetailed[T any](slice []T, op int, fn func(el T, op int) compareOutcome) compareOutcome {

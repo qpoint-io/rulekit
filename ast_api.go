@@ -12,7 +12,7 @@ type Span struct {
 // that edit expressions should parse, inspect, and compile replacement trees.
 type AST struct {
 	source string
-	root   astNode
+	root   ASTNode
 	tokens []Token
 }
 
@@ -94,7 +94,7 @@ func (a *AST) Root() ASTNode {
 	if a == nil {
 		return nil
 	}
-	return astToPublic(a.root)
+	return a.root
 }
 
 // Source returns the expression text used to build the AST.
@@ -127,9 +127,9 @@ func (a *AST) String() string {
 func NodeOperator(node ASTNode) Operator {
 	switch n := node.(type) {
 	case *astUnary:
-		return publicOperator(n.op)
+		return n.op
 	case *astBinary:
-		return publicOperator(n.op)
+		return n.op
 	default:
 		return OperatorUnknown
 	}
@@ -145,6 +145,13 @@ func NodeRawOperator(node ASTNode) string {
 	default:
 		return ""
 	}
+}
+
+// NodeNegated reports whether a binary node is negated, as in `not contains`,
+// `not matches`, or `not in`. NodeOperator returns the operator being negated.
+func NodeNegated(node ASTNode) bool {
+	n, ok := node.(*astBinary)
+	return ok && n.negated
 }
 
 // NodeLiteral returns the raw literal token for literal nodes.
@@ -184,41 +191,6 @@ type PathSegment struct {
 	Index   int
 	IsIndex bool
 	Bracket bool
-}
-
-func publicOperator(op astOperator) Operator {
-	switch op {
-	case astOpNot:
-		return OperatorNot
-	case astOpAnd:
-		return OperatorAnd
-	case astOpOr:
-		return OperatorOr
-	case astOpEQ:
-		return OperatorEQ
-	case astOpNE:
-		return OperatorNE
-	case astOpGT:
-		return OperatorGT
-	case astOpGE:
-		return OperatorGE
-	case astOpLT:
-		return OperatorLT
-	case astOpLE:
-		return OperatorLE
-	case astOpContains:
-		return OperatorContains
-	case astOpMatches:
-		return OperatorMatches
-	case astOpIn:
-		return OperatorIn
-	default:
-		return OperatorUnknown
-	}
-}
-
-func publicSpan(span astSpan) Span {
-	return Span{Start: span.Start, End: span.End}
 }
 
 func publicTokens(tokens []token) []Token {
@@ -265,30 +237,53 @@ func tokenKindString(kind int) string {
 		return "MATCHES"
 	case op_IN:
 		return "IN"
+	case token_FIELD:
+		return "FIELD"
+	case token_STRING:
+		return "STRING"
+	case token_INT:
+		return "INT"
+	case token_FLOAT:
+		return "FLOAT"
+	case token_BOOL:
+		return "BOOL"
+	case token_IP:
+		return "IP"
+	case token_IP_CIDR:
+		return "IP_CIDR"
+	case token_HEX_STRING:
+		return "HEX_STRING"
+	case token_REGEX:
+		return "REGEX"
+	case token_LPAREN:
+		return "LPAREN"
+	case token_RPAREN:
+		return "RPAREN"
+	case token_LBRACKET:
+		return "LBRACKET"
+	case token_RBRACKET:
+		return "RBRACKET"
+	case token_DOT:
+		return "DOT"
+	case token_COMMA:
+		return "COMMA"
 	default:
-		return valueTokenString(kind)
+		return "UNKNOWN"
 	}
 }
 
-func publicChildren(children ...astNode) []ASTNode {
+func publicChildren(children ...ASTNode) []ASTNode {
 	out := make([]ASTNode, 0, len(children))
 	for _, child := range children {
 		if child != nil {
-			out = append(out, astToPublic(child))
+			out = append(out, child)
 		}
 	}
 	return out
 }
 
-func publicChildSlice(children []astNode) []ASTNode {
-	out := make([]ASTNode, 0, len(children))
-	for _, child := range children {
-		out = append(out, astToPublic(child))
-	}
+func publicChildSlice(children []ASTNode) []ASTNode {
+	out := make([]ASTNode, len(children))
+	copy(out, children)
 	return out
-}
-
-func astToPublic(node astNode) ASTNode {
-	public, _ := node.(ASTNode)
-	return public
 }

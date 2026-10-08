@@ -43,14 +43,6 @@ const (
 	op_IN
 )
 
-func init() {
-	SetErrorVerbose(true)
-}
-
-// SetErrorVerbose is retained for API compatibility. The hand-written parser
-// always returns verbose ParseError values.
-func SetErrorVerbose(bool) {}
-
 func operatorToString(op int) string {
 	switch op {
 	case op_EQ:
@@ -76,72 +68,166 @@ func operatorToString(op int) string {
 	}
 }
 
-func parseString[T interface{ string | []byte }](data T) (any, error) {
-	str := string(data)
-	if str[0] == '\'' {
-		str = str[1 : len(str)-1]
-		str = strings.ReplaceAll(str, `"`, `\"`)
-		str = strings.ReplaceAll(str, `\'`, `'`)
-		str = `"` + str + `"`
+// unquote decodes a quoted literal. Backticks preserve their contents exactly;
+// single and double quotes accept backslash escapes, including \' and \".
+// The result must be valid UTF-8; use x"..." for arbitrary bytes.
+func unquote(raw string) (string, error) {
+	inner := raw[1 : len(raw)-1]
+	if raw[0] == '`' {
+		if !utf8.ValidString(inner) {
+			return "", fmt.Errorf("string is not valid UTF-8; use x\"...\" for bytes")
+		}
+		return inner, nil
 	}
-	var err error
-	str, err = strconv.Unquote(str)
-	if err != nil {
-		return nil, err
-	}
-
-	if ip := net.ParseIP(str); ip != nil {
-		return ip, nil
-	} else if _, ipnet, err := net.ParseCIDR(str); err == nil {
-		return ipnet, nil
-	} else if strings.Count(str, ":") == 5 || strings.Count(str, ":") == 7 {
-		if mac, err := net.ParseMAC(str); err == nil {
-			return mac, nil
+	var b strings.Builder
+	b.Grow(len(inner) + 2)
+	b.WriteByte('"')
+	for i := 0; i < len(inner); i++ {
+		c := inner[i]
+		switch {
+		case c == '\\' && i+1 < len(inner):
+			i++
+			if inner[i] != '\'' {
+				b.WriteByte('\\')
+			}
+			b.WriteByte(inner[i])
+		case c == '"':
+			b.WriteString(`\"`)
+		default:
+			b.WriteByte(c)
 		}
 	}
-	return str, nil
+	b.WriteByte('"')
+	s, err := strconv.Unquote(b.String())
+	if err != nil {
+		return "", err
+	}
+	if !utf8.ValidString(s) {
+		return "", fmt.Errorf("string is not valid UTF-8; use x\"...\" for bytes")
+	}
+	return s, nil
 }
 
-func parseInt[T interface{ string | []byte }](data T) (any, error) {
-	raw := string(data)
-	if n, err := strconv.ParseInt(raw, 0, 64); err == nil {
-		return n, nil
-	}
-	if n, err := strconv.ParseUint(raw, 0, 64); err == nil {
+func parseInt(raw string) (any, error) {
+	if n, ok := parseIntLiteral(raw); ok {
 		return n, nil
 	}
 	return nil, fmt.Errorf("parsing integer: invalid value %q", raw)
 }
 
-func parseFloat[T interface{ string | []byte }](data T) (float64, error) {
-	return strconv.ParseFloat(string(data), 64)
+// parseIntLiteral parses an integer literal: an optional sign, then either
+// decimal digits (leading zeros are decimal, so 010 is ten) or a 0x, 0o, or 0b
+// prefix followed by digits in that base. Digits may be separated by single
+// underscores, and one may follow a base prefix. Values above the int64 range
+// are returned as uint64.
+func parseIntLiteral(s string) (any, bool) {
+	sign, digits := splitSign(s)
+	base := 10
+	if len(digits) > 2 && digits[0] == '0' {
+		switch digits[1] {
+		case 'x', 'X':
+			base = 16
+		case 'o', 'O':
+			base = 8
+		case 'b', 'B':
+			base = 2
+		}
+		if base != 10 {
+			digits = strings.TrimPrefix(digits[2:], "_")
+		}
+	}
+	if digits == "" || digits[0] == '_' || digits[len(digits)-1] == '_' || strings.Contains(digits, "__") {
+		return nil, false
+	}
+	digits = strings.ReplaceAll(digits, "_", "")
+	if n, err := strconv.ParseInt(sign+digits, base, 64); err == nil {
+		return n, true
+	}
+	if sign != "-" {
+		if n, err := strconv.ParseUint(digits, base, 64); err == nil {
+			return n, true
+		}
+	}
+	return nil, false
 }
 
-func parseBool[T interface{ string | []byte }](data T) (bool, error) {
+// isFloat reports whether s is a decimal float: an optional sign, digits,
+// then a fraction (5., 1.5), an exponent (1e3), or both (1.5e-3).
+func isFloat(s string) bool {
+	_, s = splitSign(s)
+	i := skipDigits(s, 0)
+	if i == 0 {
+		return false
+	}
+	fraction, exponent := false, false
+	if i < len(s) && s[i] == '.' {
+		fraction = true
+		i = skipDigits(s, i+1)
+	}
+	if i < len(s) && (s[i] == 'e' || s[i] == 'E') {
+		i++
+		if i < len(s) && (s[i] == '+' || s[i] == '-') {
+			i++
+		}
+		start := i
+		i = skipDigits(s, i)
+		if i == start {
+			return false
+		}
+		exponent = true
+	}
+	return i == len(s) && (fraction || exponent)
+}
+
+func splitSign(s string) (sign, rest string) {
+	if s != "" && (s[0] == '+' || s[0] == '-') {
+		return s[:1], s[1:]
+	}
+	return "", s
+}
+
+func skipDigits(s string, i int) int {
+	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+		i++
+	}
+	return i
+}
+
+func parseBool(raw string) (bool, error) {
 	var val bool
-	_, err := fmt.Sscanf(string(data), "%t", &val)
+	_, err := fmt.Sscanf(raw, "%t", &val)
 	return val, err
 }
 
-func parseRegex[T interface{ string | []byte }](data T) (*regexp.Regexp, error) {
-	raw := string(data)
-	pattern := raw[1 : len(raw)-1]
+func parseRegex(raw string) (*regexp.Regexp, error) {
+	end := strings.LastIndexByte(raw, raw[0])
+	pattern := raw[1:end]
+	if flags := raw[end+1:]; flags != "" {
+		for _, flag := range "ims" {
+			if strings.Count(flags, string(flag)) > 1 {
+				return nil, fmt.Errorf("duplicate regex flag %q", flag)
+			}
+		}
+		pattern = "(?" + flags + ")" + pattern
+	}
+	if err := checkRegexDialect(pattern); err != nil {
+		return nil, err
+	}
 	return regexp.Compile(pattern)
 }
 
-func parseValueToken(typ int, rawBytes []byte) (Rule, error) {
-	raw := string(rawBytes)
+func parseValueToken(typ int, raw string) (Rule, error) {
 	var (
 		value any
 		err   error
 	)
 	switch typ {
 	case token_STRING:
-		value, err = parseString(raw)
+		value, err = unquote(raw)
 	case token_INT:
 		value, err = parseInt(raw)
 	case token_FLOAT:
-		value, err = parseFloat(raw)
+		value, err = strconv.ParseFloat(raw, 64)
 	case token_BOOL:
 		value, err = parseBool(raw)
 	case token_IP:
@@ -290,7 +376,7 @@ func (l *lexer) next() token {
 		if l.match("||") {
 			return token{kind: op_OR, raw: "||", start: start, end: l.pos, leadingTrivia: leading}
 		}
-		return l.scanDelimited('|', token_REGEX, leading)
+		return l.scanRegex('|', leading)
 	case '=':
 		if l.match("==") {
 			return token{kind: op_EQ, raw: "==", start: start, end: l.pos, leadingTrivia: leading}
@@ -310,15 +396,24 @@ func (l *lexer) next() token {
 		}
 		l.pos++
 		return token{kind: op_GT, raw: ">", start: start, end: l.pos, leadingTrivia: leading}
-	case '/', '\'', '"':
+	case 'x', 'X':
+		if l.pos+1 < len(l.input) && (l.input[l.pos+1] == '"' || l.input[l.pos+1] == '\'') {
+			l.pos++
+			tok := l.scanDelimited(l.input[l.pos], token_HEX_STRING, leading)
+			tok.start = start
+			if tok.kind == token_HEX_STRING {
+				tok.raw = l.input[start:l.pos]
+			}
+			return tok
+		}
+	case '/', '\'', '"', '`':
 		if ch == '/' && l.hasPrefix("/*") {
 			break
 		}
-		kind := token_REGEX
-		if ch == '\'' || ch == '"' {
-			kind = token_STRING
+		if ch == '\'' || ch == '"' || ch == '`' {
+			return l.scanDelimited(ch, token_STRING, leading)
 		}
-		return l.scanDelimited(ch, kind, leading)
+		return l.scanRegex(ch, leading)
 	}
 
 	if ch == '+' || ch == '-' || ch == ':' || isAtomStart(rune(ch)) || unicode.IsDigit(rune(ch)) {
@@ -368,7 +463,7 @@ func (l *lexer) scanDelimited(delim byte, kind int, leading string) token {
 			escaped = false
 			continue
 		}
-		if ch == '\\' {
+		if ch == '\\' && delim != '`' {
 			escaped = true
 			continue
 		}
@@ -379,11 +474,34 @@ func (l *lexer) scanDelimited(delim byte, kind int, leading string) token {
 	return token{kind: token_ERROR, raw: "unterminated literal", start: start, end: l.pos, leadingTrivia: leading}
 }
 
+// scanRegex scans a delimited regex and an optional run of i, m, and s flags
+// directly after the closing delimiter. A run containing any other letter is
+// left for the next token, so /x/and still lexes as a regex followed by "and".
+func (l *lexer) scanRegex(delim byte, leading string) token {
+	tok := l.scanDelimited(delim, token_REGEX, leading)
+	if tok.kind != token_REGEX {
+		return tok
+	}
+	end := l.pos
+	for end < len(l.input) && ('a' <= l.input[end] && l.input[end] <= 'z' || 'A' <= l.input[end] && l.input[end] <= 'Z') {
+		end++
+	}
+	flags := l.input[l.pos:end]
+	if flags != "" && strings.Trim(flags, "ims") == "" {
+		l.pos = end
+		tok.raw = l.input[tok.start:end]
+		tok.end = end
+	}
+	return tok
+}
+
 func (l *lexer) scanAtom(leading string) token {
 	start := l.pos
 	for l.pos < len(l.input) {
 		ch := l.input[l.pos]
-		if unicode.IsSpace(rune(ch)) || strings.ContainsRune("()[],<>=!&|\"'", rune(ch)) {
+		// Atoms are ASCII; a non-ASCII byte ends the atom so the next token can
+		// treat it as whitespace (e.g. a no-break space) or report it.
+		if ch >= utf8.RuneSelf || unicode.IsSpace(rune(ch)) || strings.ContainsRune("()[],<>=!&|\"'", rune(ch)) {
 			break
 		}
 		l.pos++
@@ -452,22 +570,19 @@ func (l *lexer) hasPrefix(s string) bool {
 	return strings.HasPrefix(l.input[l.pos:], s)
 }
 
+// Field names use the v1 character set: an ASCII letter or underscore, then
+// ASCII letters, digits, '_', '.', or '-'. Other keys need bracket syntax.
 func isAtomStart(r rune) bool {
-	return unicode.IsLetter(r) || r == '_'
+	return 'a' <= r && r <= 'z' || 'A' <= r && r <= 'Z' || r == '_'
 }
 
 func isField(s string) bool {
-	if s == "" {
+	if s == "" || !isAtomStart(rune(s[0])) {
 		return false
 	}
-	for i, r := range s {
-		if i == 0 {
-			if !isAtomStart(r) {
-				return false
-			}
-			continue
-		}
-		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && r != '.' && r != '-' {
+	for i := 1; i < len(s); i++ {
+		c := rune(s[i])
+		if !isAtomStart(c) && !('0' <= c && c <= '9') && c != '.' && c != '-' {
 			return false
 		}
 	}
@@ -475,27 +590,12 @@ func isField(s string) bool {
 }
 
 func isInteger(s string) bool {
-	if s == "" || s == "+" || s == "-" {
-		return false
-	}
-	_, err := strconv.ParseInt(s, 0, 64)
-	if err == nil {
-		return true
-	}
-	_, err = strconv.ParseUint(s, 0, 64)
-	return err == nil
-}
-
-func isFloat(s string) bool {
-	if !strings.Contains(s, ".") {
-		return false
-	}
-	_, err := strconv.ParseFloat(s, 64)
-	return err == nil
+	_, ok := parseIntLiteral(s)
+	return ok
 }
 
 func isHexString(s string) bool {
-	if len(s) < 2 {
+	if !strings.Contains(s, ":") {
 		return false
 	}
 	parts := strings.Split(s, ":")
@@ -518,12 +618,7 @@ type parser struct {
 	pos    int
 }
 
-func parseAST(input string) (astNode, error) {
-	expr, _, err := parseASTWithTokens(input)
-	return expr, err
-}
-
-func parseASTWithTokens(input string) (astNode, []token, error) {
+func parseASTWithTokens(input string) (ASTNode, []token, error) {
 	tokens, err := lex(input)
 	if err != nil {
 		return nil, tokens, newParseError(input, tokens[len(tokens)-1], err.Error())
@@ -539,7 +634,7 @@ func parseASTWithTokens(input string) (astNode, []token, error) {
 	return expr, tokens, nil
 }
 
-func (p *parser) parseExpr(minPrec int) (astNode, error) {
+func (p *parser) parseExpr(minPrec int) (ASTNode, error) {
 	left, err := p.parsePrimary()
 	if err != nil {
 		return nil, err
@@ -551,59 +646,57 @@ func (p *parser) parseExpr(minPrec int) (astNode, error) {
 
 	for {
 		tok := p.peek()
-		prec := infixPrecedence(tok.kind)
+		kind, negated := tok.kind, false
+		// `not` directly before contains, matches, or in negates that operator.
+		if tok.kind == op_NOT && tok.raw != "!" {
+			switch next := p.peekAt(1); next.kind {
+			case op_CONTAINS, op_MATCHES, op_IN:
+				kind, negated = next.kind, true
+			}
+		}
+		prec := infixPrecedence(kind)
 		if prec < minPrec {
 			break
 		}
 		p.next()
+		rawOp := tok.raw
+		if negated {
+			opTok := p.next()
+			rawOp = p.input[tok.start:opTok.end]
+		}
+		op := astOperatorFromToken(kind)
 
-		switch tok.kind {
-		case op_AND, op_OR:
-			right, err := p.parseExpr(prec + 1)
-			if err != nil {
-				return nil, err
-			}
-			left = &astBinary{span: joinSpan(left.astSpan(), right.astSpan()), left: left, op: astOperatorFromToken(tok.kind), rawOp: tok.raw, right: right}
-		case op_EQ, op_NE, op_CONTAINS, op_GT, op_GE, op_LT, op_LE:
-			right, err := p.parseExpr(prec + 1)
-			if err != nil {
-				return nil, err
-			}
-			if isInequality(tok.kind) && (!astValidInequalityOperand(left) || !astValidInequalityOperand(right)) {
-				return nil, p.errorf(tok, "invalid operation")
-			}
-			left = &astBinary{span: joinSpan(left.astSpan(), right.astSpan()), left: left, op: astOperatorFromToken(tok.kind), rawOp: tok.raw, right: right}
-		case op_MATCHES:
+		var right ASTNode
+		if kind == op_MATCHES {
 			rhs := p.peek()
 			if rhs.kind != token_REGEX {
 				return nil, p.errorf(rhs, "matches requires a regex value")
 			}
-			right, err := p.parsePrimary()
+			right, err = p.parsePrimary()
 			if err != nil {
 				return nil, err
 			}
 			right, err = p.parsePostfix(right)
-			if err != nil {
-				return nil, err
-			}
-			left = &astBinary{span: joinSpan(left.astSpan(), right.astSpan()), left: left, op: astOpMatches, rawOp: tok.raw, right: right}
-		case op_IN:
-			right, err := p.parseExpr(prec + 1)
-			if err != nil {
-				return nil, err
-			}
-			if !astLiteralIs(right, token_IP_CIDR) {
-				if _, ok := right.(*astArray); !ok {
-					return nil, p.errorf(tok, "in requires an array or CIDR value")
-				}
-			}
-			left = &astBinary{span: joinSpan(left.astSpan(), right.astSpan()), left: left, op: astOpIn, rawOp: tok.raw, right: right}
+		} else {
+			right, err = p.parseExpr(prec + 1)
 		}
+		if err != nil {
+			return nil, err
+		}
+		if isInequality(kind) && (!astValidInequalityOperand(left) || !astValidInequalityOperand(right)) {
+			return nil, p.errorf(tok, "invalid operation")
+		}
+		if kind == op_IN && !astLiteralIs(right, token_IP_CIDR) {
+			if _, ok := right.(*astArray); !ok {
+				return nil, p.errorf(tok, "in requires an array or CIDR value")
+			}
+		}
+		left = &astBinary{span: joinSpan(left.Span(), right.Span()), left: left, op: op, rawOp: rawOp, right: right, negated: negated}
 	}
 	return left, nil
 }
 
-func (p *parser) parsePrimary() (astNode, error) {
+func (p *parser) parsePrimary() (ASTNode, error) {
 	tok := p.next()
 	switch tok.kind {
 	case token_FIELD:
@@ -628,11 +721,13 @@ func (p *parser) parsePrimary() (astNode, error) {
 		}
 		return p.parseArray(tok)
 	case op_NOT:
-		right, err := p.parseExpr(4)
+		// not binds looser than comparisons and tighter than and/or, so
+		// `not a == 1` is `not (a == 1)`.
+		right, err := p.parseExpr(infixPrecedence(op_EQ))
 		if err != nil {
 			return nil, err
 		}
-		return &astUnary{span: joinSpan(spanFromToken(tok), right.astSpan()), op: astOpNot, rawOp: tok.raw, right: right}, nil
+		return &astUnary{span: joinSpan(spanFromToken(tok), right.Span()), op: OperatorNot, rawOp: tok.raw, right: right}, nil
 	case token_EOF:
 		return nil, p.errorf(tok, "empty expression")
 	default:
@@ -640,7 +735,7 @@ func (p *parser) parsePrimary() (astNode, error) {
 	}
 }
 
-func (p *parser) parsePostfix(left astNode) (astNode, error) {
+func (p *parser) parsePostfix(left ASTNode) (ASTNode, error) {
 	for {
 		switch p.peek().kind {
 		case token_LBRACKET:
@@ -649,7 +744,7 @@ func (p *parser) parsePostfix(left astNode) (astNode, error) {
 			if err != nil {
 				return nil, err
 			}
-			path, ok := asASTPath(left)
+			path, ok := left.(*astPath)
 			if !ok {
 				return nil, p.errorf(start, "bracket indexing requires a field path")
 			}
@@ -662,7 +757,7 @@ func (p *parser) parsePostfix(left astNode) (astNode, error) {
 			if err != nil {
 				return nil, err
 			}
-			path, ok := asASTPath(left)
+			path, ok := left.(*astPath)
 			if !ok {
 				return nil, p.errorf(dot, "dot traversal requires a field path")
 			}
@@ -690,12 +785,12 @@ func (p *parser) isRootBracketPath() bool {
 	}
 }
 
-func (p *parser) parseRootBracketPath(start token) (astNode, error) {
+func (p *parser) parseRootBracketPath(start token) (ASTNode, error) {
 	seg, err := p.parseBracketSegment(start)
 	if err != nil {
 		return nil, err
 	}
-	return &astPath{span: astSpan{Start: start.start, End: p.tokens[p.pos-1].end}, segments: []pathSegment{seg}}, nil
+	return &astPath{span: Span{Start: start.start, End: p.tokens[p.pos-1].end}, segments: []pathSegment{seg}}, nil
 }
 
 func (p *parser) parseBracketSegment(start token) (pathSegment, error) {
@@ -730,11 +825,11 @@ func (p *parser) parseBracketSegment(start token) (pathSegment, error) {
 	return seg, nil
 }
 
-func (p *parser) parseArray(start token) (astNode, error) {
+func (p *parser) parseArray(start token) (ASTNode, error) {
 	if p.peek().kind == token_RBRACKET {
 		return nil, p.errorf(p.peek(), "array requires at least one value")
 	}
-	var vals []astNode
+	var vals []ASTNode
 	for {
 		val, err := p.parseArrayValue()
 		if err != nil {
@@ -753,10 +848,10 @@ func (p *parser) parseArray(start token) (astNode, error) {
 		return nil, err
 	}
 	_ = start
-	return &astArray{span: astSpan{Start: start.start, End: p.tokens[p.pos-1].end}, vals: vals}, nil
+	return &astArray{span: Span{Start: start.start, End: p.tokens[p.pos-1].end}, vals: vals}, nil
 }
 
-func (p *parser) parseArrayValue() (astNode, error) {
+func (p *parser) parseArrayValue() (ASTNode, error) {
 	tok := p.peek()
 	switch tok.kind {
 	case token_LBRACKET:
@@ -772,9 +867,9 @@ func (p *parser) parseArrayValue() (astNode, error) {
 	}
 }
 
-func (p *parser) parseFunction(name token) (astNode, error) {
+func (p *parser) parseFunction(name token) (ASTNode, error) {
 	p.next()
-	var args []astNode
+	var args []ASTNode
 	if p.peek().kind != token_RPAREN {
 		for {
 			arg, err := p.parseExpr(0)
@@ -792,16 +887,12 @@ func (p *parser) parseFunction(name token) (astNode, error) {
 	if err != nil {
 		return nil, err
 	}
-	if stdlibFn, ok := StdlibFuncs[name.raw]; ok && len(stdlibFn.Args) != len(args) {
-		err := fmt.Errorf("function %q expects %d arguments, got %d", name.raw, len(stdlibFn.Args), len(args))
-		return nil, p.errorf(token{start: end.end, end: end.end}, "%s", err.Error())
+	if stdlibFn, ok := StdlibFuncs[name.raw]; ok {
+		if err := stdlibFn.checkArity(len(args)); err != nil {
+			return nil, p.errorf(token{start: end.end, end: end.end}, "%s", err.Error())
+		}
 	}
-	return &astCall{span: astSpan{Start: name.start, End: end.end}, name: name.raw, args: args}, nil
-}
-
-func asASTPath(node astNode) (*astPath, bool) {
-	path, ok := node.(*astPath)
-	return path, ok
+	return &astCall{span: Span{Start: name.start, End: end.end}, name: name.raw, args: args}, nil
 }
 
 func (p *parser) expect(kind int) (token, error) {
@@ -814,6 +905,14 @@ func (p *parser) expect(kind int) (token, error) {
 
 func (p *parser) peek() token {
 	return p.tokens[p.pos]
+}
+
+// peekAt returns the token n positions ahead, or the final EOF token.
+func (p *parser) peekAt(n int) token {
+	if p.pos+n < len(p.tokens) {
+		return p.tokens[p.pos+n]
+	}
+	return p.tokens[len(p.tokens)-1]
 }
 
 func (p *parser) next() token {

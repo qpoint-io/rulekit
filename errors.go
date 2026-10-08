@@ -1,7 +1,6 @@
 package rulekit
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/hashicorp/go-multierror"
@@ -44,9 +43,10 @@ func coalesceMissingFields(left, right []string) []string {
 	return unionUnique(left, right)
 }
 
-var ErrInvalidOperation = errors.New("invalid operation")
-
+// ErrInvalidFunctionArg is the error for a function argument of the wrong
+// type. Expected and Got are type names, as in [Param.Type].
 type ErrInvalidFunctionArg struct {
+	// Name is the parameter name.
 	Name     string
 	Expected string
 	Got      string

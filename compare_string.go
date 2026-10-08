@@ -2,6 +2,7 @@ package rulekit
 
 import (
 	"net"
+	"net/url"
 	"regexp"
 	"strings"
 )
@@ -11,18 +12,33 @@ func compareString(left string, op int, right any) compareOutcome {
 	case string:
 		// string ? string
 		return compareStringString(left, op, right)
+	case urlQuery:
+		// string ? query
+		return compareStringString(left, op, string(right))
 	case *regexp.Regexp:
 		// string ? regexp
 		return compareStringRegex(left, op, right)
 	case net.IP:
 		// string ? ip
-		return compareStringString(left, op, right.String())
+		return compareStringString(left, op, ipText(right))
 	case *net.IPNet:
 		// string ? ipnet
-		return compareStringString(left, op, right.String())
+		return compareStringString(left, op, cidrText(right))
+	case *url.URL:
+		// string ? url
+		return compareStringString(left, op, urlText(right))
+	case URL:
+		// string ? url
+		return compareStringString(left, op, right.text)
 	case HexString:
 		// string ? hex
 		return compareBytesBytes([]byte(left), op, right.Bytes)
+	case []byte:
+		// string ? bytes
+		return compareBytesBytes([]byte(left), op, right)
+	case net.HardwareAddr:
+		// string ? mac
+		return compareStringString(left, op, macText(right))
 	}
 	return incomparable()
 }
@@ -59,17 +75,8 @@ func compareStringSlice(left []string, op int, right any) compareOutcome {
 		op = op_EQ
 	}
 
-	switch right := right.(type) {
-	case string:
-		// []string{...} ? string
-		return compareSliceDetailed(left, op, func(fv string, op int) compareOutcome {
-			return compareString(fv, op, right)
-		})
-	case *regexp.Regexp:
-		// []string{...} ? regexp
-		return compareSliceDetailed(left, op, func(fv string, op int) compareOutcome {
-			return compareStringRegex(fv, op, right)
-		})
-	}
-	return incomparable()
+	// []string{...} ? any: compare each element as a string
+	return compareSliceDetailed(left, op, func(fv string, op int) compareOutcome {
+		return compareString(fv, op, right)
+	})
 }

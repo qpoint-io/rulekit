@@ -1,0 +1,158 @@
+{
+  "input_mode": "annotated_keys",
+  "cases": [
+    {"name": "unknown function parses", "expr": "some_none_stdlib_fn()", "expect": {"parse_error": false}},
+    {"name": "unknown function is an eval error", "expr": "unknown_fn()", "expect": {"error": true}},
+    {"name": "unknown function with args is an eval error", "expr": "unknown_fn(some_args)", "expect": {"error": true}},
+    {
+      "name": "starts_with: match",
+      "expr": "starts_with(url, \"https://\")",
+      "input": {"url": "https://example.com"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "starts_with: no match",
+      "expr": "starts_with(url, \"https://\")",
+      "input": {"url": "http://example.com"},
+      "expect": {"value": false}
+    },
+    {
+      "name": "starts_with: not a url",
+      "expr": "starts_with(url, \"https://\")",
+      "input": {"url": "invalid-url"},
+      "expect": {"value": false}
+    },
+    {
+      "name": "starts_with: ip stringified",
+      "expr": "starts_with(ip, \"10.0\")",
+      "input": {"ip.$ip": "10.0.0.1"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "starts_with: int value is an error",
+      "expr": "starts_with(code, \"5\")",
+      "input": {"code": 500},
+      "expect": {"error": true}
+    },
+    {
+      "name": "starts_with: int prefix is an error",
+      "expr": "starts_with(code, 5)",
+      "input": {"code": "500"},
+      "expect": {"error": true}
+    },
+    {
+      "name": "starts_with: bool value is an error",
+      "expr": "starts_with(starts_with(\"https://example.com\", \"https://\"), \"true\")",
+      "expect": {"error": true}
+    },
+    {
+      "name": "starts_with: url input uses its text",
+      "expr": "starts_with(u, \"https://x.com/\")",
+      "input": {"u.$url": "https://x.com/a"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "starts_with: no args is a parse error",
+      "expr": "starts_with()",
+      "expect": {"parse_error": {"line": 1, "column": 14}}
+    },
+    {
+      "name": "starts_with: one arg is a parse error",
+      "expr": "starts_with(arg1)",
+      "expect": {"parse_error": {"line": 1, "column": 18}}
+    },
+    {
+      "name": "starts_with list: first prefix matches",
+      "expr": "starts_with(type, [\"process.\", \"agent.\", \"installation.\"])",
+      "input": {"type": "process.start"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "starts_with list: later prefix matches",
+      "expr": "starts_with(type, [\"process.\", \"agent.\", \"installation.\"])",
+      "input": {"type": "installation.complete"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "starts_with list: no prefix matches",
+      "expr": "starts_with(type, [\"process.\", \"agent.\", \"installation.\"])",
+      "input": {"type": "file.open"},
+      "expect": {"value": false}
+    },
+    {
+      "name": "starts_with list: an empty list literal is a parse error",
+      "expr": "starts_with(type, [])",
+      "expect": {"parse_error": {"line": 1, "column": 20}}
+    },
+    {
+      "name": "starts_with list: int item is an error",
+      "expr": "starts_with(type, [\"agent.\", 5])",
+      "input": {"type": "process.start"},
+      "expect": {"error": true}
+    },
+    {
+      "name": "starts_with list: items after the first match are not checked",
+      "expr": "starts_with(type, [\"process.\", 5])",
+      "input": {"type": "process.start"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "starts_with list: nested list item from input is an error",
+      "expr": "starts_with(type, prefixes)",
+      "input": {"type": "process.start", "prefixes": [["process."]]},
+      "expect": {"error": true}
+    },
+    {
+      "name": "starts_with list: list from input",
+      "expr": "starts_with(type, prefixes)",
+      "input": {"type": "agent.ready", "prefixes": ["process.", "agent."]},
+      "expect": {"value": true}
+    },
+    {
+      "name": "starts_with list: empty list from input does not match",
+      "expr": "starts_with(type, prefixes)",
+      "input": {"type": "agent.ready", "prefixes": []},
+      "expect": {"value": false}
+    },
+    {
+      "name": "starts_with list: int item from input is an error",
+      "expr": "starts_with(type, prefixes)",
+      "input": {"type": "agent.ready", "prefixes": [1, "agent."]},
+      "expect": {"error": true}
+    },
+    {
+      "name": "starts_with list: url value uses its text",
+      "expr": "starts_with(u, [\"http://\", \"https://x.com/\"])",
+      "input": {"u.$url": "https://x.com/a"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "starts_with list: ip items use their text",
+      "expr": "starts_with(addr, [192.168.1.1, 10.0.0.1])",
+      "input": {"addr": "10.0.0.1:443"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "starts_with list: ip items from input use their text",
+      "expr": "starts_with(addr, prefixes)",
+      "input_mode": "typed_document",
+      "input": {
+        "addr": {"$type": "string", "value": "10.0.0.1:443"},
+        "prefixes": {"$type": "array", "value": [{"$type": "ip", "value": "192.168.1.1"}, {"$type": "ip", "value": "10.0.0.1"}]}
+      },
+      "expect": {"value": true}
+    },
+    {
+      "name": "starts_with list: missing value is unknown",
+      "expr": "starts_with(type, [\"process.\", \"agent.\"])",
+      "input": {},
+      "expect": {"value": null, "missing_fields": ["type"]}
+    },
+    {
+      "name": "starts_with list: int value is an error",
+      "expr": "starts_with(code, [\"5\"])",
+      "input": {"code": 500},
+      "expect": {"error": true}
+    }
+  ]
+}
