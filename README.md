@@ -36,10 +36,12 @@ Rulekit supports a flexible syntax where fields and values may appear on either 
 
 A field on its own (without an operator) will check if the field contains a non-zero value. For example: `hash && version > 1` will check if the hash field is non-zero and the version is greater than 1.
 
+Zero values are `nil`, `false`, `0`, `""`, and empty arrays, bytes, IPs, and MACs. `and` and `or` return the value that decided the result: `"a" && "b"` is `"b"`, `"" || "b"` is `"b"`.
+
 ## Usage Example
 
 ```go
-import "github.com/qpoint-io/rulekit"
+import "github.com/qpoint-io/rulekit/v2"
 
 // ...
 
@@ -71,7 +73,7 @@ if result.Error != nil {
 
 When a rule is evaluated, it returns a `Result` struct containing:
 
-- `Value`: The evaluated value, usually a boolean
+- `Value`: The evaluated value, usually a boolean. It may share memory with the rule or its input, so treat it as read-only
 - `Error`: Any operational evaluation error
 - `MissingFields`: Fields required to complete evaluation but absent from the input
 - `Trace`: Optional evaluation explanation when `Opts.Trace` is enabled
@@ -89,7 +91,7 @@ The Result also provides additional helper methods:
 | ---------- | ------ | -------------------------------------------------------------------- |
 | `or`       | `\|\|` | Logical OR                                                           |
 | `and`      | `&&`   | Logical AND                                                          |
-| `not`      | `!`    | Logical NOT                                                          |
+| `not`      | `!`    | Logical NOT. Binds looser than comparisons, so `not a == 1` means `not (a == 1)` |
 | `()`       |        | Parentheses for grouping                                             |
 | `==`       | `eq`   | Equal to                                                             |
 | `!=`       | `ne`   | Not equal to                                                         |
@@ -97,9 +99,10 @@ The Result also provides additional helper methods:
 | `>=`       | `ge`   | Greater than or equal to                                             |
 | `<`        | `lt`   | Less than                                                            |
 | `<=`       | `le`   | Less than or equal to                                                |
-| `contains` |        | Check if a value contains another value                              |
-| `in`       |        | Check if a value is contained within an array or an IP within a CIDR. If the left side is an array, the check passes when ANY of its elements matches (same as `==` and `contains`) |
-| `matches`  |        | Match against a regular expression                                   |
+| `contains` |        | A string contains a substring, an array contains an element, or a CIDR contains an IP |
+| `in`       |        | A value is an element of an array, or an IP is within a CIDR. If the left side is an array, the check passes when ANY of its elements matches (same as `==` and `contains`) |
+| `matches`  | `=~`   | Match against a regular expression                                   |
+| `not contains`, `not in`, `not matches` | `not =~` | The negation of `contains`, `in`, or `matches`. `a not in [1, 2]` means `not (a in [1, 2])` |
 
 ## Supported Types
 
@@ -107,19 +110,55 @@ The Result also provides additional helper methods:
 
 | Type                   | Used As      | Example                                                        | Description                                                                                                                                                                             |
 | ---------------------- | ------------ | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **bool**               | VALUE, FIELD | `true`                                                         | Valid values: `true`, `false`                                                                                                                                                           |
-| **number**             | VALUE, FIELD | `8080`                                                         | Integer or float. Parsed as either int64 or uint64 if out of range for int64, or float64 if float.                                                                                      |
-| **string**             | VALUE, FIELD | `"domain.com"`                                                 | A double-quoted string. Quotes may be escaped with a backslash: `"a string \"with\" quotes"`. Any quoted value is parsed as a string.                                                   |
+| **bool**               | VALUE, FIELD | `true`                                                         | Valid values: `true`, `false` (any letter case)                                                                                                                                         |
+| **number**             | VALUE, FIELD | `8080`, `0x1f`, `1_000`, `1.5`                                 | Integer or float. Integers may be decimal (leading zeros are still decimal: `010` is ten) or use a `0x`, `0o`, or `0b` prefix, with optional `_` separators. Parsed as int64, or uint64 if out of range for int64, or float64 if float. |
+| **string**             | VALUE, FIELD | `"domain.com"`, `'domain.com'`                                 | A double- or single-quoted string. Both accept backslash escapes: `"a \"quoted\" word"`, `'it\'s'`. Must be valid UTF-8; use `x"..."` for arbitrary bytes. A quoted value is always a string, even if it looks like an IP address or URL. Comparing a string with an IP address, CIDR, MAC address, or URL compares against that value's text form (e.g. `"cafe::"` for the IPv6 address `CAFE::`). |
 | **IP address**         | VALUE, FIELD | `192.168.1.1`, `2001:db8:3333:4444:cccc:dddd:eeee:ffff`        | An IPv4, IPv6, or an IPv6 dual address. Maps to Go type: `net.IP`                                                                                                                       |
 | **CIDR**               | VALUE        | `192.168.1.0/24`, `2001:db8:3333:4444:cccc:dddd:eeee:ffff/64`  | An IPv4 or IPv6 CIDR block. Maps to Go type: `*net.IPNet`                                                                                                                               |
-| **Hexadecimal string** | VALUE, FIELD | `12:34:56:78:ab` (MAC address), `504f5354` (hex string "POST") | A hexadecimal string, optionally separated by colons.                                                                                                                                   |
-| **Regex**              | VALUE        | `/example\.com$/`                                              | A Go-style regular expression. Must be surrounded by forward slashes. May not be quoted with double quotes (otherwise it will be parsed as a string). Maps to Go type: `*regexp.Regexp` |
+| **MAC address**        | FIELD        | `01:23:45:67:89:ab`                                            | A MAC address from the input. Compares as bytes with hexadecimal values such as `01:23:45:67:89:ab`, and with strings by its lowercase colon text. Maps to Go type: `net.HardwareAddr` |
+| **Hexadecimal string** | VALUE, FIELD | `50:4f:53:54`, `x"504f5354"`, `x"0a"`                          | Bytes, written either as two or more colon-separated hex pairs or as hex digits in `x"..."` (`X` and single quotes also work). Equals a string with the same bytes (`x"504f5354" == "POST"`) or a MAC address with the same value. Eight colon-separated pairs read as an IPv6 address; use `x"..."` for 8-byte values. |
+| **URL**                | FIELD        |                                                                | A URL from the input: an RFC 3986 URL in ASCII (see Text Forms). Compares with strings by its text. Maps to Go type: `rulekit.URL` (build one with `rulekit.ParseURL`). A `*url.URL` also works, compared by its `String()` form with a lowercase host                                                                                                    |
+| **Regex**              | VALUE        | `/example\.com$/`, `/curl/i`, `\|a/b\|`                        | A regular expression in [RE2 syntax](https://github.com/google/re2/wiki/Syntax), surrounded by forward slashes or by `\|` (handy when the pattern contains `/`). May not be quoted with double quotes (otherwise it will be parsed as a string). Lowercase flags may follow the closing delimiter: `i` (ignore case), `m` (`^` and `$` match at line breaks), `s` (`.` matches newlines). `\d`, `\w`, and `\b` match ASCII only, and `\s` matches space, `\t`, `\n`, `\f`, and `\r`. Repetition counts go up to 1000. Not supported: `\Q...\E`, `\<` and `\>`, numeric escapes such as `\0` (use `\x{...}`), `{,n}` (use `{0,n}`), a `{` that does not start a repetition (use `\{`), `\p{^...}` (use `\P{...}`), nested classes, and `&&`, `--`, or `~~` inside a class. Unicode classes accept general categories (`\pL`, `\p{Lu}`, `\p{Letter}`), scripts (`\p{Greek}`), `Any`, `ASCII`, and `Assigned`. Also not supported: duplicate or digit-first capture group names, duplicate flags, `(?)`, a repetition right after a flag group such as `a(?i)*`, counts with leading zeros such as `{01}`, a class starting with `]-`, surrogate code points such as `\x{D800}`, and more than 50 nested groups. |
+
+### Raw strings
+
+Backticks delimit raw strings: backslashes, single quotes, and double quotes
+are literal characters, with no escape processing.
+
+~~~text
+path == `C:\Users\kamal\`
+message == `say "hello"`
+headers[`x\custom`] == `some\value`
+~~~
+
+Raw strings work wherever ordinary strings do, including arrays and bracket
+keys. They must be valid UTF-8 and may span multiple lines; all content,
+including whitespace and CRLF line endings, is preserved exactly. The next
+backtick closes the string, even after a backslash, so raw strings cannot
+contain backticks. Use an ordinary quoted string for that content.
+
+Raw syntax only removes Rulekit's escape processing. A host-language string
+or JSON document containing the rule still needs its own escaping.
+
+### Text Forms
+
+When an IP address, CIDR, MAC address, or URL is compared with a string (with `==`, `!=`, `contains`, `matches`, or `in` a list of strings), it is compared by this text form:
+
+| Type | Text form | Example |
+| ---- | --------- | ------- |
+| IPv4 address | Dotted decimal | `10.0.0.1` |
+| IPv6 address | Lowercase, with the longest run of zero groups shortened to `::`. IPv4-mapped addresses (`::ffff:1.2.3.4`) print as IPv4 | `2001:db8::1`, `1.2.3.4` |
+| CIDR | Network address, `/`, prefix length | `10.0.0.0/8` |
+| MAC address | Lowercase hex pairs separated by `:` | `aa:bb:cc:dd:ee:ff` |
+| URL | As written, with the scheme and host in lowercase; nothing is added, removed, or re-encoded | `https://example.com:443/a%20b?q=1` |
+
+To compare by value instead, use an unquoted literal: `ip == 2001:DB8::1` matches however the address is written.
 
 ### Constructs
 
 | Type         | Used As | Example                        | Description                                                                                   |
 | ------------ | ------- | ------------------------------ | --------------------------------------------------------------------------------------------- |
-| **Array**    | VALUE   | `[1, "string", true]`          | An array of mixed value types. Can be used with most operators including `in` and `contains`. |
+| **Array**    | VALUE   | `[1, "string", true]`          | An array of mixed value types. Use it on the right of `in`, `==` (any element is equal), or `!=` (no element is equal), or on the left of `contains`. |
 | **Function** | VALUE   | `starts_with(url, "https://")` | A function call with optional arguments. Can be built-in or custom.                           |
 | **Macro**    | VALUE   | `isValidRequest()`             | A zero-argument function that encapsulates a predefined rule.                                 |
 
@@ -131,7 +170,7 @@ Dot syntax traverses nested maps and objects:
 destination.ip == 192.168.1.1
 ```
 
-Use bracket syntax for exact map keys that contain dots, spaces, slashes, reserved words, or other punctuation:
+Field names are ASCII: a letter or `_`, then letters, digits, `_`, `.`, or `-`. Use bracket syntax for exact map keys that contain other characters, such as spaces, slashes, non-ASCII letters, reserved words, or other punctuation:
 
 ```perl
 labels["app.kubernetes.io/name"] == "api"
@@ -142,6 +181,35 @@ items[0].name == "first"
 
 Plain dotted fields do not fall back to flat keys. If the input contains a top-level key named `destination.ip`, use `["destination.ip"]`.
 
+### Value Fields
+
+IP addresses, CIDRs, MAC addresses, and URLs expose read-only fields using the same path syntax:
+
+```perl
+request.url.scheme == "https" and request.url.host == "api.example.com"
+request.url.query["tag"] == "beta"
+source.ip.version == "v6"
+destination.net.prefix >= 24
+device.mac.oui == 00:1a:2b
+```
+
+| Type | Field | Value |
+| ---- | ----- | ----- |
+| URL | `scheme` | Lowercase scheme, e.g. `"https"` |
+| URL | `host` | Lowercase host name without the port |
+| URL | `port` | Port number, if the URL has one |
+| URL | `path` | Path as written, with percent escapes kept, e.g. `"/api/v1"` or `"/a%20b"` (`""` if empty) |
+| URL | `query["name"]` or `query.name` | Query parameter value, decoded like an HTML form: pairs are separated by `&`, `+` is a space, and `%XX` escapes are decoded. A parameter given more than once is a list. `query` on its own is the raw query text |
+| URL | `fragment` | Text after `#`, with `%XX` escapes decoded |
+| URL | `user` | User name, with `%XX` escapes decoded |
+| IP address | `version` | `"v4"` or `"v6"` |
+| CIDR | `network` | Network address, e.g. `10.0.0.0` |
+| CIDR | `prefix` | Prefix length, e.g. `16` |
+| CIDR | `version` | `"v4"` or `"v6"` |
+| MAC address | `oui` | First three bytes, e.g. `00:1a:2b` |
+
+A field that the value doesn't have, such as `port` on `https://example.com`, is missing, so the rule result is unknown rather than false. Fields only apply to typed values: a map with a `host` key is read as a map, and a string is never treated as a URL.
+
 ### JSON Input Helpers
 
 `DecodeJSON` converts JSON documents into `rulekit.KV`. Plain JSON decodes dynamically by default. Annotated key suffixes are opt-in and are intended for values that JSON cannot represent natively:
@@ -150,7 +218,7 @@ Plain dotted fields do not fall back to flat keys. If the input contains a top-l
 kv, err := rulekit.DecodeJSON(data, rulekit.JSONOptions{AnnotatedKeys: true})
 ```
 
-Supported suffixes include `.$ip`, `.$cidr`, `.$mac`, `.$hex`, `.$base64`, `.$bytes_hex`, `.$bytes_base64`, `.$string`, `.$bool`, `.$int64`, `.$uint64`, and `.$float64`.
+Supported suffixes include `.$ip`, `.$cidr`, `.$mac`, `.$url`, `.$hex`, `.$base64`, `.$bytes_hex`, `.$bytes_base64`, `.$string`, `.$bool`, `.$int64`, `.$uint64`, and `.$float64`.
 
 Fully typed documents are a separate mode. In this mode, every field value must be a typed object and annotated keys are rejected:
 
@@ -181,6 +249,51 @@ rule, err := rulekit.Compile(ast)
 The public AST view is read-only. Build edited expressions by parsing replacement source and compiling the resulting AST.
 
 `AST.Tokens()` returns the token stream with byte spans plus leading and trailing whitespace/comment trivia for source-aware tools.
+
+`json.Marshal(ast)` encodes the AST as JSON with the source, the node tree, and the tokens (excluding EOF). `ast.JSON()` returns the same document as Go values.
+
+```go
+ast, err := rulekit.ParseAST(`age >= 18`)
+if err != nil { /* ... */ }
+data, err := json.Marshal(ast)
+```
+
+```json
+{
+  "source": "age >= 18",
+  "root": {
+    "id": "root",
+    "kind": "binary",
+    "text": "age >= 18",
+    "operator": "ge",
+    "raw": ">=",
+    "span": {"start": 0, "end": 9, "startLine": 1, "startColumn": 1, "endLine": 1, "endColumn": 10},
+    "children": [
+      {
+        "id": "root.0",
+        "kind": "path",
+        "text": "age",
+        "path": "age",
+        "span": {"start": 0, "end": 3, "startLine": 1, "startColumn": 1, "endLine": 1, "endColumn": 4}
+      },
+      {
+        "id": "root.1",
+        "kind": "literal",
+        "text": "18",
+        "raw": "18",
+        "span": {"start": 7, "end": 9, "startLine": 1, "startColumn": 8, "endLine": 1, "endColumn": 10}
+      }
+    ]
+  },
+  "tokens": [
+    {"kind": "FIELD", "role": "id", "raw": "age", "span": {"start": 0, "end": 3, "startLine": 1, "startColumn": 1, "endLine": 1, "endColumn": 4}},
+    {"kind": "GE", "role": "kw", "raw": ">=", "span": {"start": 4, "end": 6, "startLine": 1, "startColumn": 5, "endLine": 1, "endColumn": 7}},
+    {"kind": "INT", "role": "num", "raw": "18", "span": {"start": 7, "end": 9, "startLine": 1, "startColumn": 8, "endLine": 1, "endColumn": 10}}
+  ]
+}
+```
+
+Node IDs are tree positions: `root`, then `<parent id>.<child index>`. `text` is the node's compact expression. Unary and binary nodes carry the normalized `operator` and its source spelling in `raw`; `not contains`, `not matches`, and `not in` carry the operator being negated plus `"negated": true`. Literals carry their source token in `raw`, calls their function name, and paths their rendered `path`. Spans are byte offsets with 1-based lines and byte columns. Token `role` is `id`, `str`, `num`, `kw`, or `pun`.
 
 Use `Print` and `Format` for explicit output modes:
 
@@ -255,52 +368,61 @@ Rulekit comes with a built-in standard library of functions:
 
 | Function                     | Description                                                                                                                 | Example                        |
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
-| `starts_with(value, prefix)` | Checks if a value starts with the given prefix. Works with strings, numbers, and other types by converting them to strings. | `starts_with(url, "https://")` |
+| `starts_with(value, prefix)` | Checks if a value starts with the given prefix, or with any prefix in a list of prefixes. The value and each prefix must be strings or values with a text form (IP address, CIDR, MAC address, URL); other types are an error. A list is checked in order and stops at the first match, so items after a match are not checked; an empty list (such as an empty array from the input) does not match. | `starts_with(url, "https://")`<br>`starts_with(type, ["process.", "agent."])` |
 
 ### Custom Functions
 
-Custom functions may be used to extend Rulekit with additional functionality. Note that functions only have access to their arguments and do not have access to the context KV map. Rulekit will validate the function's arguments per the provided spec before executing the handler.
+Define a custom function with `rulekit.Func`: an argument struct whose fields are the parameters, in call order, and a handler that receives the evaluation context and the arguments.
+
+Handler arguments may share memory with the rule or its input, so treat them as read-only; copy a slice with `slices.Clone` before changing it.
 
 ```go
-// define a custom function
-customFuncs := map[string]*rulekit.Function{
-    "randomInt": {
-        Args: []rulekit.FunctionArg{
-            {Name: "min"},
-            {Name: "max"},
-        },
-        Eval: func(args map[string]any) rulekit.Result {
-            // use the rulekit.IndexFuncArg helper to retrieve args and validate types.
-            // rulekit.IndexFuncArg[any] will skip type validation.
-            min, err := rulekit.IndexFuncArg[int64](args, "min")
-            if err != nil {
-                return rulekit.Result{Error: err}
-            }
-
-            max, err := rulekit.IndexFuncArg[int64](args, "max")
-            if err != nil {
-                return rulekit.Result{Error: err}
-            }
-
-			num := rand.IntN(max-min) + min
-			return rulekit.Result{
-                Value: num,
-            }
-        },
-    },
+type clampArgs struct {
+    N   int64
+    Max int64 `rulekit:"limit"` // parameter name; default is the field name in snake_case ("max")
 }
 
-// call the function in a rule
-rule, err := rulekit.Parse(`randomInt(10, 20) == 15`)
+// Package-level, so a bad definition panics at startup.
+var clamp = rulekit.Func(rulekit.FuncSchema{Name: "clamp", Doc: "Clamp n to limit."},
+    func(ctx context.Context, a clampArgs) (int64, error) {
+        return min(a.N, a.Max), nil
+    })
+
+var functions = rulekit.NewFunctionSet(clamp)
+
+rule, err := rulekit.Parse(`clamp(request.size, 1024) == 1024`)
 if err != nil { /* ... */ }
 
-result := rule.Eval(context.Background(), nil, rulekit.Opts{Functions: customFuncs})
-if result.Error != nil { /* ... */ }
-
-if result.Pass() {
-    // the random number is 15!
-}
+result := rule.Eval(ctx, input, rulekit.Opts{Functions: functions})
 ```
+
+Parameter (field) and result types, and the rule values they accept:
+
+| Go type            | Rule value                                    |
+| ------------------ | --------------------------------------------- |
+| `bool`             | bool                                          |
+| `int64`            | int64                                         |
+| `uint64`           | uint64                                        |
+| `float64`          | float64                                       |
+| `string`           | string                                        |
+| `[]byte`           | bytes                                         |
+| `net.IP`           | ip                                            |
+| `*net.IPNet`       | cidr                                          |
+| `net.HardwareAddr` | mac                                           |
+| `rulekit.URL`      | url                                           |
+| `*regexp.Regexp`   | regex                                         |
+| `[]any`            | array                                         |
+| `map[string]any`   | object                                        |
+| `any`              | any value, unconverted                        |
+
+Conversions are exact: an `int64` parameter does not accept a `uint64` or `float64` argument. A named type over `bool`, `int64`, `uint64`, `float64`, `string`, `[]byte`, `[]any`, or `map[string]any` (such as `type Port uint64`) works like its underlying type, both as a parameter and as a result. The last field may have type `rulekit.Rest` to accept any number of further arguments, unconverted.
+
+- An argument of the wrong type, or the wrong number of arguments, makes the result an error (`*rulekit.ErrInvalidFunctionArg` for a type), without calling the handler.
+- If an argument is missing from the input, the result is unknown and the handler is not called.
+- A handler error makes the result an error wrapping it. Return `rulekit.ErrMissing("field", ...)` instead to make the result unknown with those missing fields.
+- `rulekit.Func` panics on an argument struct or result type it does not support, like `regexp.MustCompile`.
+
+Functions receive only their arguments and the context passed to `Eval`, not the rule input: pass input values as arguments. Macros see the input but take no arguments.
 
 ## License
 
