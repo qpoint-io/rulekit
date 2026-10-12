@@ -90,8 +90,8 @@ fn lower_host(host: &str) -> Option<Val<'_>> {
 }
 
 #[cfg(feature = "url")]
-impl<C: ?Sized> InputValue<C> for url::Url {
-    fn get<'a>(&'a self, _: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+impl InputValue for url::Url {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         Ok(url_at(self, path))
     }
 }
@@ -120,8 +120,8 @@ fn url_at<'a>(url: &'a url::Url, path: &[Segment]) -> Option<Val<'a>> {
 }
 
 #[cfg(feature = "http")]
-impl<C: ?Sized> InputValue<C> for http::Uri {
-    fn get<'a>(&'a self, _: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+impl InputValue for http::Uri {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         if path.is_empty() {
             return Ok(Some(Val::Ref(ValueRef::UrlText(uri_text(self)))));
         }

@@ -65,8 +65,8 @@ pub fn bytes(buf: &[u8]) -> Bytes<'_> {
     Bytes(buf)
 }
 
-impl<C: ?Sized> InputValue<C> for Bytes<'_> {
-    fn get<'a>(&'a self, _: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+impl InputValue for Bytes<'_> {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         if path.is_empty() {
             Ok(Some(Val::Ref(ValueRef::Bytes(self.0))))
         } else {
@@ -101,15 +101,15 @@ impl ByteStr for bytes::BytesMut {
 }
 
 #[cfg(feature = "bytes")]
-impl<C: ?Sized> InputValue<C> for bytes::Bytes {
-    fn get<'a>(&'a self, _: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+impl InputValue for bytes::Bytes {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         bytes_value(self, path)
     }
 }
 
 #[cfg(feature = "bytes")]
-impl<C: ?Sized> InputValue<C> for bytes::BytesMut {
-    fn get<'a>(&'a self, _: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+impl InputValue for bytes::BytesMut {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         bytes_value(self, path)
     }
 }
@@ -136,15 +136,15 @@ impl<const N: usize> ByteStr for serde_bytes::ByteArray<N> {
 }
 
 #[cfg(feature = "serde_bytes")]
-impl<C: ?Sized> InputValue<C> for serde_bytes::ByteBuf {
-    fn get<'a>(&'a self, _: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+impl InputValue for serde_bytes::ByteBuf {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         bytes_value(self, path)
     }
 }
 
 #[cfg(feature = "serde_bytes")]
-impl<C: ?Sized> InputValue<C> for serde_bytes::Bytes {
-    fn get<'a>(&'a self, _: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+impl InputValue for serde_bytes::Bytes {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         bytes_value(self, path)
     }
 }
@@ -152,15 +152,15 @@ impl<C: ?Sized> InputValue<C> for serde_bytes::Bytes {
 // `Bytes` is unsized, so the `&T` blanket (which requires `Sized`) does not
 // cover a borrowed view. This is the type users store in a struct.
 #[cfg(feature = "serde_bytes")]
-impl<C: ?Sized> InputValue<C> for &serde_bytes::Bytes {
-    fn get<'a>(&'a self, _: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+impl InputValue for &serde_bytes::Bytes {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         bytes_value(*self, path)
     }
 }
 
 #[cfg(feature = "serde_bytes")]
-impl<C: ?Sized, const N: usize> InputValue<C> for serde_bytes::ByteArray<N> {
-    fn get<'a>(&'a self, _: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+impl<const N: usize> InputValue for serde_bytes::ByteArray<N> {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         bytes_value(self, path)
     }
 }

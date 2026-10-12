@@ -17,14 +17,7 @@ use crate::case::RenameRule;
 
 pub fn expand(input: &DeriveInput) -> Result<TokenStream2, Error> {
     let attrs = ContainerAttrs::parse(&input.attrs)?;
-    let ctx = attrs
-        .context
-        .clone()
-        .unwrap_or_else(|| syn::parse_quote!(()));
-    let mut cx = Cx {
-        ctx,
-        types: Vec::new(),
-    };
+    let mut cx = Cx { types: Vec::new() };
 
     let body = match &input.data {
         Data::Struct(data) => {
@@ -66,7 +59,6 @@ pub fn expand(input: &DeriveInput) -> Result<TokenStream2, Error> {
     };
 
     let ident = &input.ident;
-    let ctx = &cx.ctx;
     let (impl_generics, ty_generics, _) = input.generics.split_for_impl();
     let type_params: Vec<String> = input
         .generics
@@ -84,7 +76,7 @@ pub fn expand(input: &DeriveInput) -> Result<TokenStream2, Error> {
             if *bytes {
                 quote_spanned!(ty.span() => #ty: ::rulekit::ByteStr)
             } else {
-                quote_spanned!(ty.span() => #ty: ::rulekit::InputValue<#ctx>)
+                quote_spanned!(ty.span() => #ty: ::rulekit::InputValue)
             }
         })
         .collect();
@@ -94,14 +86,13 @@ pub fn expand(input: &DeriveInput) -> Result<TokenStream2, Error> {
     });
 
     Ok(quote! {
-        impl #impl_generics ::rulekit::Input<#ctx> for #ident #ty_generics
+        impl #impl_generics ::rulekit::Input for #ident #ty_generics
         where
             #orig_where
             #(#bounds,)*
         {
             fn get<'__rulekit>(
                 &'__rulekit self,
-                ctx: &'__rulekit #ctx,
                 path: &[::rulekit::ast::Segment],
             ) -> ::core::result::Result<
                 ::core::option::Option<::rulekit::value::Val<'__rulekit>>,
@@ -111,20 +102,19 @@ pub fn expand(input: &DeriveInput) -> Result<TokenStream2, Error> {
             }
         }
 
-        impl #impl_generics ::rulekit::InputValue<#ctx> for #ident #ty_generics
+        impl #impl_generics ::rulekit::InputValue for #ident #ty_generics
         where
             #orig_where
             #(#bounds,)*
         {
             fn get<'__rulekit>(
                 &'__rulekit self,
-                ctx: &'__rulekit #ctx,
                 path: &[::rulekit::ast::Segment],
             ) -> ::core::result::Result<
                 ::core::option::Option<::rulekit::value::Val<'__rulekit>>,
                 ::rulekit::BoxError,
             > {
-                ::rulekit::Input::get(self, ctx, path)
+                ::rulekit::Input::get(self, path)
             }
         }
     })
@@ -315,9 +305,8 @@ struct Tag {
     name: String,
 }
 
-/// Codegen state: the context type and every field type read, for bounds.
+/// Codegen state: every field type read, for bounds.
 struct Cx {
-    ctx: Type,
     types: Vec<(Type, bool)>,
 }
 
@@ -477,15 +466,15 @@ impl Cx {
         access: &dyn Fn(&FieldDef) -> TokenStream2,
         path: &TokenStream2,
     ) -> TokenStream2 {
-        let (ctx, ty, value) = (&self.ctx, &f.ty, access(f));
+        let (ty, value) = (&f.ty, access(f));
         self.types.push((ty.clone(), f.bytes));
         if f.bytes {
             quote_spanned! {ty.span()=>
-                ::rulekit::__private::bytes_field::<#ctx, #ty>(#value, ctx, #path)
+                ::rulekit::__private::bytes_field::<#ty>(#value, #path)
             }
         } else {
             quote_spanned! {ty.span()=>
-                ::rulekit::__private::field::<#ctx, #ty>(#value, ctx, #path)
+                ::rulekit::__private::field::<#ty>(#value, #path)
             }
         }
     }
@@ -717,7 +706,6 @@ struct ContainerAttrs {
     content: Option<String>,
     untagged: bool,
     transparent: bool,
-    context: Option<Type>,
 }
 
 impl ContainerAttrs {
@@ -765,12 +753,7 @@ impl ContainerAttrs {
                 continue;
             }
             attr.parse_nested_meta(|meta| {
-                if meta.path.is_ident("context") {
-                    out.context = Some(meta.value()?.parse()?);
-                    Ok(())
-                } else {
-                    Err(meta.error("unknown `rulekit` attribute; expected `context = ...`"))
-                }
+                Err(meta.error("unknown `rulekit` attribute; `rename` and `bytes` go on fields"))
             })?;
         }
         Ok(out)

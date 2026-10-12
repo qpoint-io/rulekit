@@ -8,6 +8,7 @@ use rulekit::Opts;
 mod cases;
 
 fn bench_eval(c: &mut Criterion) {
+    let opts = Opts::default();
     let mut group = c.benchmark_group("BenchmarkEval");
     for case in cases::eval_cases() {
         group.bench_function(case.name, |b| b.iter(|| black_box(case.eval())));
@@ -18,17 +19,17 @@ fn bench_eval(c: &mut Criterion) {
     for (name, rule, warm) in cases::lazy_cases() {
         let input = cases::lazy_input();
         if warm {
-            rule.eval(&(), &input, Opts::default());
+            rule.eval(&input, &opts);
         }
         group.bench_function(name, |b| {
-            b.iter(|| black_box(rule.eval(&(), &input, Opts::default()).pass()))
+            b.iter(|| black_box(rule.eval(&input, &opts).pass()))
         });
     }
     let rule = rulekit::parse(r#"expensive == "value""#).unwrap();
     group.bench_function("resolved_per_eval", |b| {
         b.iter(|| {
             let input = cases::lazy_input();
-            black_box(rule.eval(&(), &input, Opts::default()).pass())
+            black_box(rule.eval(&input, &opts).pass())
         })
     });
     group.finish();
@@ -48,9 +49,9 @@ fn bench_eval(c: &mut Criterion) {
     let mut group = c.benchmark_group("BenchmarkEvalTypedEvent");
     for (name, expr) in cases::TYPED_EVENT_CASES {
         let rule = rulekit::parse(expr).unwrap();
-        assert!(rule.eval(&(), &event, Opts::default()).pass());
+        assert!(rule.eval(&event, &opts).pass());
         group.bench_function(name, |b| {
-            b.iter(|| black_box(rule.eval(&(), black_box(&event), Opts::default()).pass()))
+            b.iter(|| black_box(rule.eval(black_box(&event), &opts).pass()))
         });
     }
     group.finish();

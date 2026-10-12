@@ -479,7 +479,7 @@ fn same(typed: &Found, wire: &Found) -> bool {
 }
 
 fn lookup(input: &dyn Input, path: &[Segment]) -> Found {
-    match input.get(&(), path).expect("lookup") {
+    match input.get(path).expect("lookup") {
         None => Found::Missing,
         Some(val) => found(Val::as_ref(&val)),
     }
@@ -905,7 +905,8 @@ fn other_representations_match_their_json() {
 
 fn eval(rule: &str, input: &impl Input) -> Option<bool> {
     let rule = rulekit::parse(rule).expect("parse");
-    let result = rule.eval(&(), input, Opts::default());
+    let opts = Opts::default();
+    let result = rule.eval(input, &opts);
     if result.pass() {
         Some(true)
     } else if result.fail() {
@@ -976,7 +977,8 @@ fn skipped_and_absent_fields_are_missing() {
     assert_eq!((fields.internal.as_str(), fields.cache), ("secret", 9));
     for field in ["payload.internal", "payload.cache"] {
         let rule = rulekit::parse(&format!("{field} == 1")).unwrap();
-        let result = rule.eval(&(), message, Opts::default());
+        let opts = Opts::default();
+        let result = rule.eval(message, &opts);
         assert_eq!(result.missing_fields().collect::<Vec<_>>(), [field]);
     }
 
@@ -990,7 +992,8 @@ fn skipped_and_absent_fields_are_missing() {
     // `skip_serializing_if` held: missing, not null.
     let no_prompt = &records[12];
     let rule = rulekit::parse(r#"payload.prompt == "x""#).unwrap();
-    let result = rule.eval(&(), no_prompt, Opts::default());
+    let opts = Opts::default();
+    let result = rule.eval(no_prompt, &opts);
     assert_eq!(
         result.missing_fields().collect::<Vec<_>>(),
         ["payload.prompt"]
@@ -1015,7 +1018,8 @@ fn path_through_null_is_missing() {
     assert!(eval("user != 1", &row).is_some());
     for input in [&row as &dyn Input, &json] {
         let rule = rulekit::parse("user.id == 1").unwrap();
-        let result = rule.eval(&(), input, Opts::default());
+        let opts = Opts::default();
+        let result = rule.eval(input, &opts);
         assert_eq!(result.missing_fields().collect::<Vec<_>>(), ["user.id"]);
     }
 }

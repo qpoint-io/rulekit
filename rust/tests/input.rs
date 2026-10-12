@@ -13,7 +13,7 @@ fn s(v: &str) -> Value {
     Value::String(v.to_owned())
 }
 
-fn kv<C: ?Sized>(entries: Vec<(&str, KvEntry<C>)>) -> Kv<C> {
+fn kv(entries: Vec<(&str, KvEntry)>) -> Kv {
     entries
         .into_iter()
         .map(|(k, v)| (k.to_owned(), v))
@@ -26,13 +26,14 @@ fn lazy_value_resolves_once() {
     let counter = calls.clone();
     let input = KvInput::new(kv(vec![(
         "expensive",
-        KvEntry::Lazy(Lazy::new(move |_: &()| {
+        KvEntry::Lazy(Lazy::new(move || {
             counter.fetch_add(1, Ordering::SeqCst);
             Ok(s("value"))
         })),
     )]));
     let rule = rulekit::parse(r#"expensive == "value" and expensive == "value""#).unwrap();
-    let result = rule.eval(&(), &input, Opts::default());
+    let opts = Opts::default();
+    let result = rule.eval(&input, &opts);
     assert!(result.error().is_none());
     assert!(result.pass());
     assert_eq!(calls.load(Ordering::SeqCst), 1);
@@ -40,40 +41,22 @@ fn lazy_value_resolves_once() {
 
 #[test]
 fn lazy_memo_keeps_bracket_keys_distinct() {
-    let lazy = |v: &'static str| KvEntry::Lazy(Lazy::new(move |_: &()| Ok(s(v))));
+    let lazy = |v: &'static str| KvEntry::Lazy(Lazy::new(move || Ok(s(v))));
     let input = KvInput::new(kv(vec![
         ("a.b", lazy("flat")),
         ("a", KvEntry::Object(kv(vec![("b", lazy("nested"))]))),
     ]));
     let rule =
         rulekit::parse(r#"["a.b"] == "flat" and a.b == "nested" and a["b"] == "nested""#).unwrap();
-    let result = rule.eval(&(), &input, Opts::default());
+    let opts = Opts::default();
+    let result = rule.eval(&input, &opts);
     assert!(result.error().is_none());
-    assert!(result.pass());
-}
-
-struct Ctx {
-    user: String,
-}
-
-#[test]
-fn lazy_value_reads_the_context() {
-    let input = KvInput::new(kv(vec![(
-        "user",
-        KvEntry::Lazy(Lazy::new(|ctx: &Ctx| Ok(s(&ctx.user)))),
-    )]));
-    let rule = rulekit::parse(r#"user == "root""#).unwrap();
-    let env = rulekit::Env::new();
-    let ctx = Ctx {
-        user: "root".into(),
-    };
-    let result = rule.eval(&ctx, &input, Opts::new(&env));
     assert!(result.pass());
 }
 
 #[test]
 fn nested_input_takes_over_the_subtree() {
-    let request = FnInput(|_: &(), path: &[Segment]| {
+    let request = FnInput(|path: &[Segment]| {
         assert_eq!(
             path,
             [
@@ -91,7 +74,8 @@ fn nested_input_takes_over_the_subtree() {
     });
     let input = KvInput::new(kv(vec![("request", KvEntry::Input(Arc::new(request)))]));
     let rule = rulekit::parse(r#"request.headers["user-agent"] == "curl""#).unwrap();
-    let result = rule.eval(&(), &input, Opts::default());
+    let opts = Opts::default();
+    let result = rule.eval(&input, &opts);
     assert!(result.error().is_none());
     assert!(result.pass());
 }
@@ -104,21 +88,21 @@ fn concurrent_eval_resolves_each_lazy_once() {
         Arc::new(AtomicUsize::new(0)),
         Arc::new(AtomicUsize::new(0)),
     );
-    let counted = |calls: &Arc<AtomicUsize>, f: fn(&Ctx) -> Value| {
+    let counted = |calls: &Arc<AtomicUsize>, value: &'static str| {
         let calls = calls.clone();
-        KvEntry::Lazy(Lazy::new(move |ctx: &Ctx| {
+        KvEntry::Lazy(Lazy::new(move || {
             calls.fetch_add(1, Ordering::SeqCst);
             thread::sleep(Duration::from_millis(1));
-            Ok(f(ctx))
+            Ok(s(value))
         }))
     };
     let input = KvInput::new(kv(vec![
         ("static", KvEntry::Value(s("value"))),
-        ("plain", counted(&plain, |_| s("plain"))),
-        ("user", counted(&user, |ctx| s(&ctx.user))),
+        ("plain", counted(&plain, "plain")),
+        ("user", counted(&user, "root")),
         (
             "request",
-            KvEntry::Object(kv(vec![("id", counted(&nested, |_| s("req-1")))])),
+            KvEntry::Object(kv(vec![("id", counted(&nested, "req-1"))])),
         ),
     ]));
     let rules: Vec<_> = [
@@ -131,18 +115,15 @@ fn concurrent_eval_resolves_each_lazy_once() {
     .iter()
     .map(|expr| rulekit::parse(expr).unwrap())
     .collect();
-    let ctx = Ctx {
-        user: "root".into(),
-    };
-    let env = rulekit::Env::new();
+    let opts = Opts::default();
 
     thread::scope(|scope| {
         for g in 0..16 {
-            let (rules, input, ctx, env) = (&rules, &input, &ctx, &env);
+            let (rules, input, opts) = (&rules, &input, &opts);
             scope.spawn(move || {
                 for i in 0..50 {
                     let rule = &rules[(g + i) % rules.len()];
-                    let result = rule.eval(ctx, input, Opts::new(env));
+                    let result = rule.eval(input, opts);
                     assert!(result.error().is_none() && result.pass(), "{rule}");
                 }
             });
@@ -160,7 +141,7 @@ fn lazy_errors_are_not_memoized() {
     let counter = calls.clone();
     let input = KvInput::new(kv(vec![(
         "flaky",
-        KvEntry::Lazy(Lazy::new(move |_: &()| {
+        KvEntry::Lazy(Lazy::new(move || {
             if counter.fetch_add(1, Ordering::SeqCst) == 0 {
                 return Err("boom".into());
             }
@@ -168,8 +149,9 @@ fn lazy_errors_are_not_memoized() {
         })),
     )]));
     let rule = rulekit::parse(r#"flaky == "ok""#).unwrap();
-    assert!(rule.eval(&(), &input, Opts::default()).error().is_some());
-    let result = rule.eval(&(), &input, Opts::default());
+    let opts = Opts::default();
+    assert!(rule.eval(&input, &opts).error().is_some());
+    let result = rule.eval(&input, &opts);
     assert!(result.error().is_none());
     assert!(result.pass());
     assert_eq!(calls.load(Ordering::SeqCst), 2);
@@ -181,15 +163,16 @@ fn cloned_lazy_is_unresolved() {
     let counter = calls.clone();
     let tree = kv(vec![(
         "x",
-        KvEntry::Lazy(Lazy::new(move |_: &()| {
+        KvEntry::Lazy(Lazy::new(move || {
             counter.fetch_add(1, Ordering::SeqCst);
             Ok(Value::Int(1))
         })),
     )]);
     let rule = rulekit::parse("x == 1").unwrap();
+    let opts = Opts::default();
     let first = KvInput::new(tree.clone());
-    assert!(rule.eval(&(), &first, Opts::default()).pass());
+    assert!(rule.eval(&first, &opts).pass());
     let second = KvInput::new(tree);
-    assert!(rule.eval(&(), &second, Opts::default()).pass());
+    assert!(rule.eval(&second, &opts).pass());
     assert_eq!(calls.load(Ordering::SeqCst), 2);
 }

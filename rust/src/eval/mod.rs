@@ -12,11 +12,11 @@ pub(crate) mod trace;
 use smallvec::SmallVec;
 
 use crate::ast::{Ast, AstKind, LiteralKind, NodeData, NodeId, Operator, Segment};
-use crate::env::Env;
 use crate::error::{Error, ParseError};
 use crate::func::CallFailure;
 use crate::input::Input;
 use crate::literal::parse_literal;
+use crate::opts::Opts;
 use crate::print::{canonical_all, path_string};
 use crate::value::{ArrayRef, Val, Value, ValueRef};
 use compare::{CmpOp, compare, compare_slice};
@@ -214,7 +214,8 @@ pub(crate) struct Problem {
 /// use rulekit::{NoInput, Opts};
 ///
 /// let rule = rulekit::parse("port == 443 and tls")?;
-/// let result = rule.eval(&(), &NoInput, Opts::default());
+/// let opts = Opts::default();
+/// let result = rule.eval(&NoInput, &opts);
 /// assert!(result.unknown());
 /// assert_eq!(result.missing_fields().collect::<Vec<_>>(), ["port", "tls"]);
 /// # Ok::<(), rulekit::ParseError>(())
@@ -228,7 +229,7 @@ impl<'a> EvalResult<'a> {
         self.0.value.as_ref()
     }
 
-    /// The result value, owned or borrowed from the rule, input, or context.
+    /// The result value, owned or borrowed from the rule, input, or options.
     pub fn into_value(self) -> Val<'a> {
         self.0.value
     }
@@ -400,15 +401,15 @@ impl<'a, S: Slot<'a>> Res<'a, S> {
 }
 
 /// Evaluate a rule's root node, with or without a trace.
-pub(crate) fn run<'a, C: ?Sized, I: Input<C> + ?Sized>(
+pub(crate) fn run<'a, I: Input + ?Sized>(
     root: &'a Node,
-    scope: &Scope<'a, C, I>,
+    scope: &Scope<'a, I>,
     trace: bool,
 ) -> EvalResult<'a> {
     if trace {
-        EvalResult(root.eval::<Option<Frag<'a>>, C, I>(scope))
+        EvalResult(root.eval::<Option<Frag<'a>>, I>(scope))
     } else {
-        root.eval::<(), C, I>(scope).untraced()
+        root.eval::<(), I>(scope).untraced()
     }
 }
 
@@ -448,21 +449,20 @@ fn coalesce(left: Option<Box<Problem>>, right: Option<Box<Problem>>) -> Option<B
 }
 
 /// Everything a node needs while evaluating.
-pub(crate) struct Scope<'a, C: ?Sized, I: ?Sized> {
+pub(crate) struct Scope<'a, I: ?Sized> {
     pub input: &'a I,
-    pub ctx: &'a C,
-    pub env: &'a Env<C>,
+    pub opts: &'a Opts,
 }
 
 type Buf<'a, const N: usize> = SmallVec<[Val<'a>; N]>;
 
 impl Node {
     /// Evaluate the node; when tracing, describe it (Go `tracedRule`).
-    pub(crate) fn eval<'a, S: Slot<'a>, C: ?Sized, I: Input<C> + ?Sized>(
+    pub(crate) fn eval<'a, S: Slot<'a>, I: Input + ?Sized>(
         &'a self,
-        s: &Scope<'a, C, I>,
+        s: &Scope<'a, I>,
     ) -> Res<'a, S> {
-        let mut r = self.eval_kind::<S, C, I>(s);
+        let mut r = self.eval_kind::<S, I>(s);
         if S::ENABLED
             && let Some(meta) = &self.meta
         {
@@ -477,13 +477,10 @@ impl Node {
         self.meta.as_ref().map(trace::pruned)
     }
 
-    fn eval_kind<'a, S: Slot<'a>, C: ?Sized, I: Input<C> + ?Sized>(
-        &'a self,
-        s: &Scope<'a, C, I>,
-    ) -> Res<'a, S> {
+    fn eval_kind<'a, S: Slot<'a>, I: Input + ?Sized>(&'a self, s: &Scope<'a, I>) -> Res<'a, S> {
         match &self.kind {
             Kind::And(l, r) => {
-                let mut left = l.eval::<S, C, I>(s);
+                let mut left = l.eval::<S, I>(s);
                 if left.fail() {
                     if S::ENABLED {
                         let frag = combine([left.trace.take_frag(), r.pruned()]);
@@ -491,7 +488,7 @@ impl Node {
                     }
                     return left;
                 }
-                let mut right = r.eval::<S, C, I>(s);
+                let mut right = r.eval::<S, I>(s);
                 if right.fail() {
                     if S::ENABLED {
                         let frag = combine([left.trace.take_frag(), right.trace.take_frag()]);
@@ -502,7 +499,7 @@ impl Node {
                 merge::<S>(left, right)
             }
             Kind::Or(l, r) => {
-                let mut left = l.eval::<S, C, I>(s);
+                let mut left = l.eval::<S, I>(s);
                 if left.pass() {
                     if S::ENABLED {
                         let frag = combine([left.trace.take_frag(), r.pruned()]);
@@ -510,7 +507,7 @@ impl Node {
                     }
                     return left;
                 }
-                let mut right = r.eval::<S, C, I>(s);
+                let mut right = r.eval::<S, I>(s);
                 if right.pass() {
                     if S::ENABLED {
                         let frag = combine([left.trace.take_frag(), right.trace.take_frag()]);
@@ -521,7 +518,7 @@ impl Node {
                 merge::<S>(left, right)
             }
             Kind::Not(inner) => {
-                let mut r = inner.eval::<S, C, I>(s);
+                let mut r = inner.eval::<S, I>(s);
                 // A negated operator has no traced node between it and its
                 // operands, so its operand traces become its children.
                 let trace = if S::ENABLED {
@@ -537,7 +534,7 @@ impl Node {
                 }
                 Res::bool(r.value.as_ref().is_zero()).with_trace(trace)
             }
-            Kind::Compare { op, lhs, rhs } => self.binary::<S, C, I>(lhs, rhs, s, |lv, rv| {
+            Kind::Compare { op, lhs, rhs } => self.binary::<S, I>(lhs, rhs, s, |lv, rv| {
                 let outcome = compare(lv, *op, rv);
                 (
                     outcome.pass,
@@ -549,9 +546,9 @@ impl Node {
                 )
             }),
             Kind::Match { lhs, rhs } => {
-                self.binary::<S, C, I>(lhs, rhs, s, |lv, rv| (matches(lv, rv), None))
+                self.binary::<S, I>(lhs, rhs, s, |lv, rv| (matches(lv, rv), None))
             }
-            Kind::In { lhs, rhs } => self.binary::<S, C, I>(lhs, rhs, s, |lv, rv| {
+            Kind::In { lhs, rhs } => self.binary::<S, I>(lhs, rhs, s, |lv, rv| {
                 // The parser guarantees a list on the right.
                 let ValueRef::Array(_) = rv else {
                     return (false, None);
@@ -574,11 +571,11 @@ impl Node {
             Kind::Literal(v) => Res::of(Val::Ref(v.as_ref())),
             Kind::ConstArray(values, items) => {
                 if S::ENABLED {
-                    return eval_array::<S, C, I>(items, s);
+                    return eval_array::<S, I>(items, s);
                 }
                 Res::of(Val::Ref(ValueRef::Array(ArrayRef::Values(values))))
             }
-            Kind::Path { segments, text } => match s.input.get(s.ctx, segments) {
+            Kind::Path { segments, text } => match s.input.get(segments) {
                 Ok(Some(v)) => Res::of(v),
                 Ok(None) => {
                     let mut missing = Missing::new();
@@ -593,23 +590,23 @@ impl Node {
                     source,
                 }),
             },
-            Kind::Array(items) => eval_array::<S, C, I>(items, s),
-            Kind::Call { target, args } => call::<S, C, I>(target, args, s),
+            Kind::Array(items) => eval_array::<S, I>(items, s),
+            Kind::Call { target, args } => call::<S, I>(target, args, s),
         }
     }
 
     /// Go `nodeCompare`/`nodeMatch`/`nodeIn`: evaluate both operands (a
     /// non-ok left operand prunes the right), then apply `f`, which returns
     /// the result and, when tracing, a diagnostic.
-    fn binary<'a, S: Slot<'a>, C: ?Sized, I: Input<C> + ?Sized>(
+    fn binary<'a, S: Slot<'a>, I: Input + ?Sized>(
         &'a self,
         lhs: &'a Node,
         rhs: &'a Node,
-        s: &Scope<'a, C, I>,
+        s: &Scope<'a, I>,
         f: impl FnOnce(ValueRef<'_>, ValueRef<'_>) -> (bool, Option<Diagnostic>),
     ) -> Res<'a, S> {
         let (mut lbuf, mut rbuf) = (Buf::<8>::new(), Buf::<8>::new());
-        let (mut left, left_in_buf) = lhs.operand::<S, C, I, 8>(s, &mut lbuf);
+        let (mut left, left_in_buf) = lhs.operand::<S, I, 8>(s, &mut lbuf);
         if !left.ok() {
             let trace = if S::ENABLED {
                 combine([left.trace.take_frag(), rhs.pruned()])
@@ -618,7 +615,7 @@ impl Node {
             };
             return left.incomplete(trace);
         }
-        let (mut right, right_in_buf) = rhs.operand::<S, C, I, 8>(s, &mut rbuf);
+        let (mut right, right_in_buf) = rhs.operand::<S, I, 8>(s, &mut rbuf);
         let trace = if S::ENABLED {
             combine([left.trace.take_frag(), right.trace.take_frag()])
         } else {
@@ -648,16 +645,16 @@ impl Node {
     /// Evaluate a comparison operand. Untraced, a non-constant array literal
     /// is evaluated into `buf` (the bool is true) so comparing against it does
     /// not allocate; traced, it is evaluated as a node like in Go.
-    fn operand<'a, S: Slot<'a>, C: ?Sized, I: Input<C> + ?Sized, const N: usize>(
+    fn operand<'a, S: Slot<'a>, I: Input + ?Sized, const N: usize>(
         &'a self,
-        s: &Scope<'a, C, I>,
+        s: &Scope<'a, I>,
         buf: &mut Buf<'a, N>,
     ) -> (Res<'a, S>, bool) {
         if !S::ENABLED
             && let Kind::Array(items) = &self.kind
         {
             for item in items.iter() {
-                let r = item.eval::<S, C, I>(s);
+                let r = item.eval::<S, I>(s);
                 if !r.ok() {
                     return (r, false);
                 }
@@ -665,19 +662,19 @@ impl Node {
             }
             return (Res::of(Val::Ref(ValueRef::Null)), true);
         }
-        (self.eval::<S, C, I>(s), false)
+        (self.eval::<S, I>(s), false)
     }
 }
 
-fn call<'a, S: Slot<'a>, C: ?Sized, I: Input<C> + ?Sized>(
+fn call<'a, S: Slot<'a>, I: Input + ?Sized>(
     target: &'a Call,
     args: &'a [Node],
-    s: &Scope<'a, C, I>,
+    s: &Scope<'a, I>,
 ) -> Res<'a, S> {
     let name = match target {
         Call::StartsWith => {
             let mut vals = Buf::<2>::new();
-            let trace = match eval_items::<S, C, I, 2>(args, s, &mut vals) {
+            let trace = match eval_items::<S, I, 2>(args, s, &mut vals) {
                 Ok(trace) => trace,
                 Err(r) => return r,
             };
@@ -685,25 +682,25 @@ fn call<'a, S: Slot<'a>, C: ?Sized, I: Input<C> + ?Sized>(
         }
         Call::Named(name) => name,
     };
-    if let Some(function) = s.env.functions.get(&**name) {
+    if let Some(function) = s.opts.function(name) {
         if let Err(e) = function.check_arity(args.len()) {
             return Res::failed(e);
         }
         let mut vals = Buf::<4>::new();
-        let trace = match eval_items::<S, C, I, 4>(args, s, &mut vals) {
+        let trace = match eval_items::<S, I, 4>(args, s, &mut vals) {
             Ok(trace) => trace,
             Err(r) => return r,
         };
-        return call_result(function.call(s.ctx, &vals)).with_trace(trace);
+        return call_result(function.call(&vals)).with_trace(trace);
     }
-    if let Some(macro_) = s.env.macros.get(&**name) {
+    if let Some(macro_) = s.opts.macro_rule(name) {
         if !args.is_empty() {
             return Res::failed(Error::MacroArgs {
                 name: name.to_string(),
                 got: args.len(),
             });
         }
-        let mut r = macro_.rule.root.eval::<S, C, I>(s);
+        let mut r = macro_.rule.root.eval::<S, I>(s);
         if S::ENABLED
             && let Some(root) = r.trace.take_frag()
         {
@@ -724,14 +721,14 @@ fn call<'a, S: Slot<'a>, C: ?Sized, I: Input<C> + ?Sized>(
 // The error is a whole result by design: boxing it would allocate on the
 // missing-field path, which must stay allocation-free.
 #[allow(clippy::result_large_err)]
-fn eval_items<'a, S: Slot<'a>, C: ?Sized, I: Input<C> + ?Sized, const N: usize>(
+fn eval_items<'a, S: Slot<'a>, I: Input + ?Sized, const N: usize>(
     items: &'a [Node],
-    s: &Scope<'a, C, I>,
+    s: &Scope<'a, I>,
     vals: &mut Buf<'a, N>,
 ) -> Result<Option<Frag<'a>>, Res<'a, S>> {
     let mut traces: Vec<Option<Frag<'a>>> = Vec::new();
     for (i, item) in items.iter().enumerate() {
-        let mut r = item.eval::<S, C, I>(s);
+        let mut r = item.eval::<S, I>(s);
         if S::ENABLED {
             traces.push(r.trace.take_frag());
         }
@@ -749,12 +746,12 @@ fn eval_items<'a, S: Slot<'a>, C: ?Sized, I: Input<C> + ?Sized, const N: usize>(
 }
 
 /// Go `ArrayValue.Eval`: the items as an owned list.
-fn eval_array<'a, S: Slot<'a>, C: ?Sized, I: Input<C> + ?Sized>(
+fn eval_array<'a, S: Slot<'a>, I: Input + ?Sized>(
     items: &'a [Node],
-    s: &Scope<'a, C, I>,
+    s: &Scope<'a, I>,
 ) -> Res<'a, S> {
     let mut vals = Buf::<8>::new();
-    match eval_items::<S, C, I, 8>(items, s, &mut vals) {
+    match eval_items::<S, I, 8>(items, s, &mut vals) {
         Ok(trace) => {
             let values = vals.into_iter().map(Val::into_owned).collect();
             Res::of(Val::Owned(Value::Array(values))).with_trace(trace)

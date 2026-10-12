@@ -207,10 +207,9 @@ impl VisitMut for StaticLifetime<'_> {
 /// Only the path segments a rule reads are resolved. On fields,
 /// `#[rulekit(rename = "...")]` sets the name (over any serde rename), and
 /// `#[rulekit(bytes)]` reads a `Vec<u8>`, `&[u8]`, `[u8; N]`, `Box<[u8]>`, or
-/// `Cow<[u8]>` as a byte string. `#[rulekit(context = Ctx)]` on the type sets
-/// the context type. Lifetimes and type parameters are kept; each field type
-/// must implement `rulekit::InputValue`, or `rulekit::ByteStr` when marked
-/// `bytes`.
+/// `Cow<[u8]>` as a byte string. Lifetimes and type parameters are kept; each
+/// field type must implement `rulekit::InputValue`, or `rulekit::ByteStr` when
+/// marked `bytes`.
 #[proc_macro_derive(Input, attributes(rulekit, serde))]
 pub fn derive_input(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);

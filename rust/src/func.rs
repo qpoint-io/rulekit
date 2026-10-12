@@ -2,9 +2,9 @@
 //!
 //! A function's arguments are a struct deriving [`Args`](crate::Args) (one
 //! field per positional argument) and its return type is any [`Returns`]
-//! type. Both are named when the function is made (`Function::new::<A, R>`), so the implementation closure
-//! needs no type annotations and may borrow from the arguments and from the
-//! evaluation context.
+//! type. Both are named when the function is made (`Function::new::<A, R>`),
+//! so the implementation closure needs no type annotations and may borrow
+//! from its arguments.
 
 use std::fmt;
 use std::sync::Arc;
@@ -185,53 +185,46 @@ impl<'a> FromArg<'a> for ValueRef<'a> {
     }
 }
 
-/// Return types of functions. The implementing type is the `'static` form;
-/// [`Of`](Self::Of) is the type returned by one call, which may borrow from
-/// the evaluation context (for example `&'a str` for `&'static str`).
+/// Return types of functions.
 ///
-/// Implemented for `bool`, `i64`, `u64`, `f64`, `&str`, `String`, `&[u8]`,
-/// `Vec<u8>`, [`Ip`], [`Cidr`], [`Mac`], [`Url`], and, for values whose type
-/// is only known at run time, [`ValueRef`], [`Val`], and [`Value`].
+/// Implemented for `bool`, `i64`, `u64`, `f64`, `&'static str`, `String`,
+/// `&'static [u8]`, `Vec<u8>`, [`Ip`], [`Cidr`], [`Mac`], [`Url`], and, for
+/// values whose type is only known at run time, [`ValueRef`], [`Val`], and
+/// [`Value`].
 pub trait Returns: 'static {
-    /// The value returned by one call.
-    type Of<'a>;
     /// The type name of returned values (`"any"` when only known at run time).
     const TYPE: &'static str;
     /// Convert a returned value.
-    fn into_val(value: Self::Of<'_>) -> Val<'_>;
+    fn into_val(self) -> Val<'static>;
 }
 
 macro_rules! returns {
-    ($ty:ty, $of:ty, $name:literal, |$v:ident| $out:expr) => {
+    ($ty:ty, $name:literal, |$v:ident| $out:expr) => {
         impl Returns for $ty {
-            type Of<'a> = $of;
             const TYPE: &'static str = $name;
-            fn into_val($v: Self::Of<'_>) -> Val<'_> {
+            fn into_val(self) -> Val<'static> {
+                let $v = self;
                 $out
             }
         }
     };
 }
 
-returns!(bool, bool, "bool", |v| Val::Ref(ValueRef::Bool(v)));
-returns!(i64, i64, "int64", |v| Val::Ref(ValueRef::Int(v)));
-returns!(u64, u64, "uint64", |v| Val::Ref(ValueRef::Uint(v)));
-returns!(f64, f64, "float64", |v| Val::Ref(ValueRef::Float(v)));
-returns!(&'static str, &'a str, "string", |v| Val::Ref(
-    ValueRef::Str(v)
-));
-returns!(String, String, "string", |v| Val::Owned(Value::String(v)));
-returns!(&'static [u8], &'a [u8], "bytes", |v| Val::Ref(
-    ValueRef::Bytes(v)
-));
-returns!(Vec<u8>, Vec<u8>, "bytes", |v| Val::Owned(Value::Bytes(v)));
-returns!(Ip, Ip, "ip", |v| Val::Ref(ValueRef::Ip(v)));
-returns!(Cidr, Cidr, "cidr", |v| Val::Ref(ValueRef::Cidr(v)));
-returns!(Mac, Mac, "mac", |v| Val::Ref(ValueRef::Mac(v)));
-returns!(Url, Url, "url", |v| Val::Owned(Value::Url(Box::new(v))));
-returns!(ValueRef<'static>, ValueRef<'a>, "any", |v| Val::Ref(v));
-returns!(Val<'static>, Val<'a>, "any", |v| v);
-returns!(Value, Value, "any", |v| Val::Owned(v));
+returns!(bool, "bool", |v| Val::Ref(ValueRef::Bool(v)));
+returns!(i64, "int64", |v| Val::Ref(ValueRef::Int(v)));
+returns!(u64, "uint64", |v| Val::Ref(ValueRef::Uint(v)));
+returns!(f64, "float64", |v| Val::Ref(ValueRef::Float(v)));
+returns!(&'static str, "string", |v| Val::Ref(ValueRef::Str(v)));
+returns!(String, "string", |v| Val::Owned(Value::String(v)));
+returns!(&'static [u8], "bytes", |v| Val::Ref(ValueRef::Bytes(v)));
+returns!(Vec<u8>, "bytes", |v| Val::Owned(Value::Bytes(v)));
+returns!(Ip, "ip", |v| Val::Ref(ValueRef::Ip(v)));
+returns!(Cidr, "cidr", |v| Val::Ref(ValueRef::Cidr(v)));
+returns!(Mac, "mac", |v| Val::Ref(ValueRef::Mac(v)));
+returns!(Url, "url", |v| Val::Owned(Value::Url(Box::new(v))));
+returns!(ValueRef<'static>, "any", |v| Val::Ref(v));
+returns!(Val<'static>, "any", |v| v);
+returns!(Value, "any", |v| Val::Owned(v));
 
 /// A function's name and documentation, for [`Function::new`].
 ///
@@ -316,28 +309,24 @@ impl CallFailure {
     }
 }
 
-type Callable<C> =
-    dyn for<'a, 's> Fn(&'a C, &'s [Val<'s>]) -> Result<Val<'a>, CallFailure> + Send + Sync;
+type Callable = dyn for<'s> Fn(&'s [Val<'s>]) -> Result<Val<'static>, CallFailure> + Send + Sync;
 
 /// A custom function callable from rules as `name(arg, ...)`.
 ///
 /// Arguments are evaluated first; if one is missing, the call is not made and
 /// the result is unknown. The argument count must match the parameters (an
 /// [`Error::ArgCount`]); each argument must have its parameter's type (an
-/// [`Error::InvalidArg`]). The implementation receives the evaluation context
-/// and the arguments. It returns a value, missing fields
-/// ([`FnError::Missing`]: the result is unknown), or an error
-/// ([`FnError::Error`], reported as [`Error::Function`]).
+/// [`Error::InvalidArg`]). The implementation receives the arguments. It
+/// returns a value, missing fields ([`FnError::Missing`]: the result is
+/// unknown), or an error ([`FnError::Error`], reported as
+/// [`Error::Function`]).
 ///
-/// Functions only see their arguments and the context, not the rule's input.
-/// Register them with [`EnvBuilder::function`](crate::EnvBuilder::function).
+/// Functions only see their arguments, not the rule's input; state that
+/// outlives one evaluation is captured by the closure. Register them with
+/// [`OptsBuilder::function`](crate::OptsBuilder::function).
 ///
 /// ```rust
-/// use rulekit::{Env, FuncSchema, Function, NoArgs, NoInput, Opts};
-///
-/// struct Ctx {
-///     tenant: String,
-/// }
+/// use rulekit::{FuncSchema, Function, NoArgs, NoInput, Opts};
 ///
 /// #[derive(rulekit::Args)]
 /// struct ClampArgs {
@@ -347,29 +336,28 @@ type Callable<C> =
 ///
 /// let clamp = Function::new::<ClampArgs, i64>(
 ///     FuncSchema { name: "clamp", doc: "The smaller of n and max." },
-///     |_: &Ctx, a| Ok(a.n.min(a.max)),
+///     |a| Ok(a.n.min(a.max)),
 /// );
-/// // The result borrows from the context.
-/// let tenant = Function::new::<NoArgs, &str>(
+/// let tenant_name = String::from("acme");
+/// let tenant = Function::new::<NoArgs, String>(
 ///     FuncSchema { name: "tenant", doc: "The tenant of the request." },
-///     |ctx: &Ctx, _| Ok(ctx.tenant.as_str()),
+///     move |_| Ok(tenant_name.clone()),
 /// );
 ///
-/// let env = Env::builder().function(clamp).function(tenant).build()?;
+/// let opts = Opts::builder().function(clamp).function(tenant).build()?;
 /// let rule = rulekit::parse(r#"clamp(150, 100) == 100 and tenant() == "acme""#)?;
-/// let ctx = Ctx { tenant: "acme".into() };
-/// assert!(rule.eval(&ctx, &NoInput, Opts::new(&env)).pass());
+/// assert!(rule.eval(&NoInput, &opts).pass());
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
-pub struct Function<C: ?Sized = ()> {
+pub struct Function {
     name: &'static str,
     doc: &'static str,
     params: &'static [Param],
     returns: &'static str,
-    call: Arc<Callable<C>>,
+    call: Arc<Callable>,
 }
 
-impl<C: ?Sized> Clone for Function<C> {
+impl Clone for Function {
     fn clone(&self) -> Self {
         Function {
             name: self.name,
@@ -381,7 +369,7 @@ impl<C: ?Sized> Clone for Function<C> {
     }
 }
 
-impl<C: ?Sized> fmt::Debug for Function<C> {
+impl fmt::Debug for Function {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Function")
             .field("name", &self.name)
@@ -391,28 +379,25 @@ impl<C: ?Sized> fmt::Debug for Function<C> {
     }
 }
 
-impl<C: ?Sized + 'static> Function<C> {
+impl Function {
     /// A function named by `schema`, taking the arguments `A` (a struct
     /// deriving [`Args`](crate::Args), or [`NoArgs`]) and returning `R`,
-    /// implemented by `f`: `Function::new::<A, R>(schema, |ctx, args| ...)`.
+    /// implemented by `f`: `Function::new::<A, R>(schema, |args| ...)`.
     ///
-    /// The result may borrow from the context; argument values live only for
-    /// the call.
+    /// Argument values live only for the call.
     pub fn new<A: Args, R: Returns>(
         schema: FuncSchema,
-        f: impl for<'a, 's> Fn(&'a C, A::Of<'s>) -> Result<R::Of<'a>, FnError> + Send + Sync + 'static,
+        f: impl for<'s> Fn(A::Of<'s>) -> Result<R, FnError> + Send + Sync + 'static,
     ) -> Self {
         Function {
             name: schema.name,
             doc: schema.doc,
             params: A::PARAMS,
             returns: R::TYPE,
-            call: Arc::new(move |ctx, vals| invoke::<C, A, R, _>(&f, ctx, vals)),
+            call: Arc::new(move |vals| invoke::<A, R, _>(&f, vals)),
         }
     }
-}
 
-impl<C: ?Sized> Function<C> {
     /// The function name.
     pub fn name(&self) -> &'static str {
         self.name
@@ -433,9 +418,9 @@ impl<C: ?Sized> Function<C> {
         self.returns
     }
 
-    /// Check the argument count and run the function.
-    pub(crate) fn call<'a>(&self, ctx: &'a C, vals: &[Val<'_>]) -> Result<Val<'a>, CallFailure> {
-        (self.call)(ctx, vals).map_err(|failure| failure.named(self.name))
+    /// Run the function. The caller has checked the argument count.
+    pub(crate) fn call(&self, vals: &[Val<'_>]) -> Result<Val<'static>, CallFailure> {
+        (self.call)(vals).map_err(|failure| failure.named(self.name))
     }
 
     /// Check an argument count against the parameters (Go: before the
@@ -461,20 +446,15 @@ pub(crate) fn check_arity(name: &str, params: &[Param], got: usize) -> Result<()
 
 /// Convert the arguments, call `f`, and convert its result.
 #[inline(always)]
-pub(crate) fn invoke<'a, C, A, R, F>(
-    f: &F,
-    ctx: &'a C,
-    vals: &[Val<'_>],
-) -> Result<Val<'a>, CallFailure>
+pub(crate) fn invoke<A, R, F>(f: &F, vals: &[Val<'_>]) -> Result<Val<'static>, CallFailure>
 where
-    C: ?Sized,
     A: Args,
     R: Returns,
-    F: for<'b, 's> Fn(&'b C, A::Of<'s>) -> Result<R::Of<'b>, FnError>,
+    F: for<'s> Fn(A::Of<'s>) -> Result<R, FnError>,
 {
     let args = A::parse(vals).map_err(CallFailure::Error)?;
-    match f(ctx, args) {
-        Ok(value) => Ok(R::into_val(value)),
+    match f(args) {
+        Ok(value) => Ok(value.into_val()),
         Err(FnError::Missing(fields)) => Err(CallFailure::Missing(fields)),
         Err(FnError::Error(source)) => Err(CallFailure::Failed(source)),
     }
@@ -509,21 +489,19 @@ pub mod __private {
     /// `null`, as serde writes it; a path below it is missing. For other
     /// types this is a plain `get`.
     #[inline(always)]
-    pub fn field<'a, C, T>(
+    pub fn field<'a, T>(
         value: &'a T,
-        ctx: &'a C,
         path: &[crate::ast::Segment],
     ) -> Result<Option<crate::value::Val<'a>>, crate::error::BoxError>
     where
-        C: ?Sized,
-        T: crate::InputValue<C>,
+        T: crate::InputValue,
     {
         // Branch on the constant first so other types compile to the bare
         // call, with its result written straight into the caller's slot.
         if !T::ABSENT_IS_NULL || !path.is_empty() {
-            return crate::InputValue::get(value, ctx, path);
+            return crate::InputValue::get(value, path);
         }
-        match crate::InputValue::get(value, ctx, path)? {
+        match crate::InputValue::get(value, path)? {
             None => null(path),
             found => Ok(found),
         }
@@ -563,13 +541,11 @@ pub mod __private {
     /// Read a `#[rulekit(bytes)]` field as a byte string. `T` is spanned at
     /// the field type so a non-byte field fails there.
     #[inline(always)]
-    pub fn bytes_field<'a, C, T>(
+    pub fn bytes_field<'a, T>(
         value: &'a T,
-        _ctx: &'a C,
         path: &[crate::ast::Segment],
     ) -> Result<Option<crate::value::Val<'a>>, crate::error::BoxError>
     where
-        C: ?Sized,
         T: crate::ByteStr,
     {
         crate::bytes_input::bytes_value(value, path)

@@ -17,8 +17,8 @@
 //! - Inputs: [`derive(Input)`](Input) on your structs and enums (following
 //!   their serde attributes), [`kv!`], a string-keyed
 //!   map, or [`serde_json::Value`]. [`KvInput`] remains for owned trees.
-//! - [`Env`] holds custom [`Function`]s and [`Macro`]s; [`Opts`] passes it to
-//!   evaluation and turns on [`Trace`]s.
+//! - [`Opts`] holds custom [`Function`]s and [`Macro`]s and turns on
+//!   [`Trace`]s; build one with [`Opts::builder`].
 //! - [`format`](fn@format), [`Rule::print`], and [`rewrite`] print
 //!   expressions.
 //!
@@ -36,7 +36,8 @@
 //! let rule = rulekit::parse(r"domain matches /example\.com$/ and port == 8080")?;
 //! let input = Request { domain: "example.com", port: 8080 };
 //!
-//! let result = rule.eval(&(), &input, Opts::default());
+//! let opts = Opts::default();
+//! let result = rule.eval(&input, &opts);
 //! if let Some(err) = result.error() {
 //!     panic!("evaluation failed: {err}");
 //! } else if result.unknown() {
@@ -46,13 +47,6 @@
 //! }
 //! # Ok::<(), rulekit::ParseError>(())
 //! ```
-//!
-//! # Evaluation context
-//!
-//! [`Rule::eval`] takes a caller-defined context `&C` that is handed to
-//! inputs, [`Lazy`] values, and functions (for example a request or tenant).
-//! Use `&()` when there is none. The context type is fixed per [`Env`],
-//! [`Opts`], and [`KvInput`].
 
 #![warn(missing_docs)]
 
@@ -61,7 +55,6 @@ extern crate self as rulekit;
 
 pub mod ast;
 mod bytes_input;
-mod env;
 mod error;
 pub(crate) mod eval;
 mod ext_url;
@@ -72,6 +65,7 @@ mod json_input;
 mod kv;
 mod lex;
 mod literal;
+mod opts;
 mod parse;
 mod print;
 mod regex;
@@ -79,11 +73,10 @@ mod stdlib;
 pub mod value;
 
 use std::fmt;
-use std::sync::{Arc, LazyLock};
+use std::sync::Arc;
 
 pub use ast::Ast;
 pub use bytes_input::{ByteStr, Bytes, bytes};
-pub use env::{Env, EnvBuilder, Macro};
 pub use error::{BoxError, Error, ParseError};
 pub use eval::EvalResult;
 pub use eval::trace::{Diagnostic, DiagnosticCode, Trace, TraceStatus};
@@ -94,6 +87,7 @@ pub use input::{FnInput, Input, Kv, KvEntry, KvInput, Lazy, NoInput};
 pub use input_value::InputValue;
 pub use json_input::{JsonOptions, decode_json};
 pub use kv::{KvEnd, KvList, lazy};
+pub use opts::{Macro, Opts, OptsBuilder};
 pub use print::{Edit, PrintMode, format, rewrite};
 /// Derive [`Args`](trait@Args) for a struct of function arguments. See the
 /// trait for the rules.
@@ -145,10 +139,11 @@ pub use rulekit_macros::Args;
 /// let rule = rulekit::parse(
 ///     r#"severity == "warn" and (starts_with(type, "process.") or payload.model == "gpt-x")"#,
 /// )?;
-/// assert!(rule.eval(&(), &record, Opts::default()).pass());
+/// let opts = Opts::default();
+/// assert!(rule.eval(&record, &opts).pass());
 ///
 /// let rule = rulekit::parse(r#"payload.request_id == "r1""#)?;
-/// let result = rule.eval(&(), &record, Opts::default());
+/// let result = rule.eval(&record, &opts);
 /// assert_eq!(result.missing_fields().collect::<Vec<_>>(), ["payload.request_id"]);
 /// # Ok::<(), rulekit::ParseError>(())
 /// ```
@@ -211,58 +206,6 @@ pub fn compile(ast: Arc<Ast>) -> Result<Rule, ParseError> {
     Ok(Rule { ast, root })
 }
 
-/// Options for [`Rule::eval`]: the [`Env`] of custom functions and macros,
-/// and whether to record a [`Trace`].
-///
-/// `Opts::default()` uses an empty environment with tracing off, for rules
-/// that call no custom functions or macros and use the `()` context.
-///
-/// ```rust
-/// use rulekit::{Env, Opts};
-///
-/// let env: Env = Env::new();
-/// let opts = Opts::new(&env).with_trace(true);
-/// assert!(opts.trace);
-/// ```
-pub struct Opts<'e, C: ?Sized = ()> {
-    /// Custom functions and macros.
-    pub env: &'e Env<C>,
-    /// Record an evaluation [`Trace`]. Untraced evaluation runs code with no
-    /// trace bookkeeping at all.
-    pub trace: bool,
-}
-
-impl<C: ?Sized> Clone for Opts<'_, C> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<C: ?Sized> Copy for Opts<'_, C> {}
-
-impl<'e, C: ?Sized> Opts<'e, C> {
-    /// Options using `env`, with tracing off.
-    pub fn new(env: &'e Env<C>) -> Self {
-        Opts { env, trace: false }
-    }
-
-    /// The same options with tracing on or off.
-    pub fn with_trace(self, trace: bool) -> Self {
-        Opts { trace, ..self }
-    }
-}
-
-static EMPTY_ENV: LazyLock<Env> = LazyLock::new(Env::new);
-
-impl Default for Opts<'static> {
-    fn default() -> Self {
-        Opts {
-            env: &EMPTY_ENV,
-            trace: false,
-        }
-    }
-}
-
 impl Rule {
     /// The AST the rule was compiled from.
     pub fn ast(&self) -> &Ast {
@@ -275,31 +218,24 @@ impl Rule {
         format(&self.ast, mode)
     }
 
-    /// Evaluate the rule against `input` (Go `Rule.Eval(ctx, input, opts)`).
+    /// Evaluate the rule against `input` (Go `Rule.Eval(input, opts)`).
     ///
-    /// `ctx` is the caller's evaluation context, passed to the input, to
-    /// [`Lazy`] values, and to custom functions; use `&()` for none. The
-    /// result borrows from the rule, input, and context, so values can be
-    /// returned without copying.
+    /// The result borrows from the rule, input, and `opts`, so values can be
+    /// returned without copying; keep `opts` alive as long as the result.
     ///
     /// Values of incompatible types compare as false (a [`Trace`] records a
     /// [`Diagnostic`] for them). Fields the input lacks are reported by
     /// [`EvalResult::missing_fields`]; input and function failures by
     /// [`EvalResult::error`].
-    pub fn eval<'a, C: ?Sized, I: Input<C> + ?Sized>(
-        &'a self,
-        ctx: &'a C,
-        input: &'a I,
-        opts: Opts<'a, C>,
-    ) -> EvalResult<'a> {
-        let scope = eval::Scope {
-            input,
-            ctx,
-            env: opts.env,
-        };
+    pub fn eval<'a, I: Input + ?Sized>(&'a self, input: &'a I, opts: &'a Opts) -> EvalResult<'a> {
+        let scope = eval::Scope { input, opts };
         // `--cfg rulekit_size_probe` leaves the traced instantiation out, so
         // its compiled size can be measured (see bench/size.sh).
-        eval::run(&self.root, &scope, opts.trace && !cfg!(rulekit_size_probe))
+        eval::run(
+            &self.root,
+            &scope,
+            opts.trace() && !cfg!(rulekit_size_probe),
+        )
     }
 }
 

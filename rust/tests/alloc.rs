@@ -5,7 +5,7 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
 use rulekit::value::{Map, Value};
-use rulekit::{Env, KvInput, Opts};
+use rulekit::{KvInput, Opts};
 
 #[path = "../benches/cases.rs"]
 mod cases;
@@ -51,7 +51,7 @@ fn s(v: &str) -> Value {
 
 #[test]
 fn happy_path_eval_does_not_allocate() {
-    let no_macros = Env::<()>::new();
+    let opts = Opts::default();
     let mut eval_cases = cases::eval_cases();
 
     // Allocation-only coverage beyond the shared benchmark cases.
@@ -87,8 +87,7 @@ fn happy_path_eval_does_not_allocate() {
             name,
             rule: rulekit::parse(expr).expect("parse"),
             input,
-            env: Env::new(),
-            trace: false,
+            opts: Opts::default(),
         }),
     );
 
@@ -99,8 +98,7 @@ fn happy_path_eval_does_not_allocate() {
                 name,
                 rule,
                 input: cases::lazy_input(),
-                env: Env::new(),
-                trace: false,
+                opts: Opts::default(),
             }),
     );
 
@@ -110,13 +108,13 @@ fn happy_path_eval_does_not_allocate() {
             name,
             rule,
             input,
-            env,
+            opts,
             ..
         } = case;
         // Warm up: lazily built statics and resolved lazy inputs may allocate once.
-        drop(rule.eval(&(), input, Opts::new(env)));
+        drop(rule.eval(input, opts));
         let before = allocations();
-        let result = rule.eval(&(), input, Opts::new(env).with_trace(false));
+        let result = rule.eval(input, opts);
         let used = allocations() - before;
         assert!(result.error().is_none(), "{name}: {:?}", result.error());
         drop(result);
@@ -131,12 +129,13 @@ fn happy_path_eval_does_not_allocate() {
     let rule = rulekit::parse("[port]").expect("parse");
     let control = input(vec![("port", Value::Int(1))]);
     let before = allocations();
-    drop(rule.eval(&(), &control, Opts::new(&no_macros)));
+    drop(rule.eval(&control, &opts));
     assert!(allocations() > before, "allocation counter is not counting");
 }
 
 #[test]
 fn derived_struct_eval_does_not_allocate() {
+    let opts = Opts::default();
     use std::collections::HashMap;
 
     #[derive(rulekit::Input)]
@@ -160,14 +159,15 @@ fn derived_struct_eval_does_not_allocate() {
         r#"host == "api.acme.com" and user.name == "ada" and tags contains "db" and headers["x-env"] == "prod""#,
     )
     .unwrap();
-    drop(rule.eval(&(), &row, Opts::default()));
+    drop(rule.eval(&row, &opts));
     let before = allocations();
-    assert!(rule.eval(&(), &row, Opts::default()).pass());
+    assert!(rule.eval(&row, &opts).pass());
     assert_eq!(allocations(), before);
 }
 
 #[test]
 fn serde_shaped_event_eval_does_not_allocate() {
+    let opts = Opts::default();
     #[derive(rulekit::Input)]
     #[serde(untagged)]
     enum EventRecord {
@@ -243,15 +243,16 @@ fn serde_shaped_event_eval_does_not_allocate() {
         ),
     ] {
         let rule = rulekit::parse(expr).unwrap();
-        drop(rule.eval(&(), record, Opts::default()));
+        drop(rule.eval(record, &opts));
         let before = allocations();
-        assert!(rule.eval(&(), record, Opts::default()).pass(), "{expr}");
+        assert!(rule.eval(record, &opts).pass(), "{expr}");
         assert_eq!(allocations(), before, "{expr}");
     }
 }
 
 #[test]
 fn bytes_field_does_not_allocate() {
+    let opts = Opts::default();
     #[derive(rulekit::Input)]
     struct Row<'a> {
         #[rulekit(bytes)]
@@ -267,14 +268,15 @@ fn bytes_field_does_not_allocate() {
     };
     let rule =
         rulekit::parse(r#"body == "POST" and owned contains "OS" and raw == "POST""#).unwrap();
-    drop(rule.eval(&(), &row, Opts::default()));
+    drop(rule.eval(&row, &opts));
     let before = allocations();
-    assert!(rule.eval(&(), &row, Opts::default()).pass());
+    assert!(rule.eval(&row, &opts).pass());
     assert_eq!(allocations(), before);
 }
 
 #[test]
 fn derived_url_field_access_does_not_allocate() {
+    let opts = Opts::default();
     #[derive(rulekit::Input)]
     struct Row {
         page: url::Url,
@@ -289,14 +291,15 @@ fn derived_url_field_access_does_not_allocate() {
     )
     .unwrap();
     // Warm any one-time init, then count.
-    drop(rule.eval(&(), &row, Opts::default()));
+    drop(rule.eval(&row, &opts));
     let before = allocations();
-    assert!(rule.eval(&(), &row, Opts::default()).pass());
+    assert!(rule.eval(&row, &opts).pass());
     assert_eq!(allocations(), before);
 }
 
 #[test]
 fn http_uri_field_access_does_not_allocate() {
+    let opts = Opts::default();
     #[derive(rulekit::Input)]
     struct Row {
         page: http::Uri,
@@ -308,15 +311,15 @@ fn http_uri_field_access_does_not_allocate() {
         r#"page.host == "example.com" and page.path == "/a" and page.query.env == "prod""#,
     )
     .unwrap();
-    drop(fields.eval(&(), &row, Opts::default()));
+    drop(fields.eval(&row, &opts));
     let before = allocations();
-    assert!(fields.eval(&(), &row, Opts::default()).pass());
+    assert!(fields.eval(&row, &opts).pass());
     assert_eq!(allocations(), before, "field access allocated");
 
     let whole = rulekit::parse(r#"page == "http://example.com/a?env=prod""#).unwrap();
-    drop(whole.eval(&(), &row, Opts::default()));
+    drop(whole.eval(&row, &opts));
     let before = allocations();
-    assert!(whole.eval(&(), &row, Opts::default()).pass());
+    assert!(whole.eval(&row, &opts).pass());
     let used = allocations() - before;
     // Text form is borrowed parts; comparison must not allocate.
     assert_eq!(used, 0, "http::Uri comparison allocated");
@@ -324,29 +327,30 @@ fn http_uri_field_access_does_not_allocate() {
 
 #[test]
 fn unread_lazy_does_not_allocate_and_second_read_is_free() {
+    let opts = Opts::default();
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
     let hits = Arc::new(AtomicUsize::new(0));
     let counter = hits.clone();
     let input = rulekit::kv! {
         "host" => "api.acme.com",
-        "user" => rulekit::lazy(move |_: &()| {
+        "user" => rulekit::lazy(move || {
             counter.fetch_add(1, Ordering::SeqCst);
             Ok::<_, rulekit::BoxError>("ada")
         }),
     };
     let unread = rulekit::parse(r#"host == "api.acme.com""#).unwrap();
-    drop(unread.eval(&(), &input, Opts::default()));
+    drop(unread.eval(&input, &opts));
     let before = allocations();
-    assert!(unread.eval(&(), &input, Opts::default()).pass());
+    assert!(unread.eval(&input, &opts).pass());
     assert_eq!(allocations(), before);
     assert_eq!(hits.load(Ordering::SeqCst), 0);
 
     let read = rulekit::parse(r#"user == "ada""#).unwrap();
-    assert!(read.eval(&(), &input, Opts::default()).pass());
+    assert!(read.eval(&input, &opts).pass());
     assert_eq!(hits.load(Ordering::SeqCst), 1);
     let before = allocations();
-    assert!(read.eval(&(), &input, Opts::default()).pass());
+    assert!(read.eval(&input, &opts).pass());
     assert_eq!(allocations(), before, "memoized lazy read allocated");
     assert_eq!(hits.load(Ordering::SeqCst), 1);
 }

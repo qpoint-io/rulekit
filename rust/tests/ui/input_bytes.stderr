@@ -17,7 +17,7 @@ error[E0277]: the trait bound `std::string::String: rulekit::ByteStr` is not sat
 note: required by a bound in `rulekit::__private::bytes_field`
  --> src/func.rs
   |
-  |     pub fn bytes_field<'a, C, T>(
+  |     pub fn bytes_field<'a, T>(
   |            ----------- required by a bound in this function
 ...
   |         T: crate::ByteStr,

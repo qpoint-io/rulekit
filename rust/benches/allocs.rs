@@ -47,6 +47,7 @@ fn measure(name: &str, mut f: impl FnMut()) {
 }
 
 fn main() {
+    let opts = Opts::default();
     for case in cases::eval_cases() {
         measure(&format!("BenchmarkEval/{}", case.name), || {
             black_box(case.eval());
@@ -55,16 +56,16 @@ fn main() {
     for (name, rule, warm) in cases::lazy_cases() {
         let input = cases::lazy_input();
         if warm {
-            rule.eval(&(), &input, Opts::default());
+            rule.eval(&input, &opts);
         }
         measure(&format!("BenchmarkEvalLazyInput/{name}"), || {
-            black_box(rule.eval(&(), &input, Opts::default()).pass());
+            black_box(rule.eval(&input, &opts).pass());
         });
     }
     let rule = rulekit::parse(r#"expensive == "value""#).unwrap();
     measure("BenchmarkEvalLazyInput/resolved_per_eval", || {
         let input = cases::lazy_input();
-        black_box(rule.eval(&(), &input, Opts::default()).pass());
+        black_box(rule.eval(&input, &opts).pass());
     });
     let derived = cases::DerivedBench::new();
     measure("BenchmarkEval/derived_struct", || {
@@ -77,7 +78,7 @@ fn main() {
     for (name, expr) in cases::TYPED_EVENT_CASES {
         let rule = rulekit::parse(expr).unwrap();
         measure(&format!("BenchmarkEvalTypedEvent/{name}"), || {
-            black_box(rule.eval(&(), &event, Opts::default()).pass());
+            black_box(rule.eval(&event, &opts).pass());
         });
     }
     let trace = cases::trace_case();

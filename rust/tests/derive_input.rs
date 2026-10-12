@@ -8,8 +8,8 @@ use rulekit::{BoxError, InputValue, Opts};
 
 struct Boom;
 
-impl<C: ?Sized> InputValue<C> for Boom {
-    fn get<'a>(&'a self, _: &'a C, _: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+impl InputValue for Boom {
+    fn get<'a>(&'a self, _: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         panic!("untouched field was read");
     }
 }
@@ -52,12 +52,12 @@ fn derived_struct_reads_only_touched_fields() {
         r#"host == "api.acme.com" and port == 8443 and user-agent == "curl" and tags contains "db" and tags[1] == "api" and user.id == 42 and user.name == "ada" and headers["x-env"] == "prod" and extra == 7"#,
     )
     .unwrap();
-    assert!(rule.eval(&(), &req, Opts::default()).pass());
+    assert!(rule.eval(&req, &Opts::default()).pass());
 
     let missing = rulekit::parse("absent == 1").unwrap();
     assert_eq!(
         missing
-            .eval(&(), &req, Opts::default())
+            .eval(&req, &Opts::default())
             .missing_fields()
             .collect::<Vec<_>>(),
         ["absent"]
@@ -73,7 +73,7 @@ fn derived_slice_field_is_a_list() {
     let tags = ["db".to_owned(), "api".to_owned()];
     let row = Row { tags: &tags };
     let rule = rulekit::parse(r#"tags contains "api" and tags[0] == "db""#).unwrap();
-    assert!(rule.eval(&(), &row, Opts::default()).pass());
+    assert!(rule.eval(&row, &Opts::default()).pass());
 }
 
 #[test]
@@ -116,12 +116,12 @@ fn bytes_attribute_is_a_byte_string() {
         r#"body == "POST" and owned == "POST" and fixed == "POST" and boxed == "POST" and cow == "POST" and raw == "POST" and buf == "POST" and view == "POST" and array == "POST" and nums[0] == 80"#,
     )
     .unwrap();
-    assert!(rule.eval(&(), &row, Opts::default()).pass());
+    assert!(rule.eval(&row, &Opts::default()).pass());
 
     let indexed = rulekit::parse("body[0] == 80").unwrap();
-    assert!(indexed.eval(&(), &row, Opts::default()).unknown());
+    assert!(indexed.eval(&row, &Opts::default()).unknown());
     let as_text = rulekit::parse(r#"nums == "POST""#).unwrap();
-    assert!(!as_text.eval(&(), &row, Opts::default()).pass());
+    assert!(!as_text.eval(&row, &Opts::default()).pass());
 }
 
 #[test]
@@ -134,5 +134,5 @@ fn bytes_mut_is_a_byte_string() {
         raw: bytes::BytesMut::from(&b"POST"[..]),
     };
     let rule = rulekit::parse(r#"raw == "POST""#).unwrap();
-    assert!(rule.eval(&(), &row, Opts::default()).pass());
+    assert!(rule.eval(&row, &Opts::default()).pass());
 }

@@ -30,66 +30,56 @@ pub struct KvEnd;
 /// Same cell as [`Lazy`]: one resolution per instance, single-flight if
 /// several evaluations share it, and a failed resolution is not stored (the
 /// next read retries). The closure returns an owned value (`String`, `&str`
-/// copied into the memo, [`crate::value::Value`], or [`KvEntry`]). It cannot
-/// hand back a borrow of `ctx`; that borrow would not outlive the call.
+/// copied into the memo, [`crate::value::Value`], or [`KvEntry`]).
 ///
 /// ```rust
-/// use rulekit::{Opts, kv, lazy};
-///
-/// struct Ctx {
-///     user: String,
-/// }
+/// use rulekit::{BoxError, Opts, kv, lazy};
 ///
 /// let input = kv! {
 ///     "host" => "api.acme.com",
-///     "user" => lazy(|ctx: &Ctx| Ok(ctx.user.clone())),
+///     "user" => lazy(|| -> Result<String, BoxError> { panic!("user is never read") }),
 /// };
 /// let rule = rulekit::parse(r#"host == "api.acme.com""#)?;
-/// let env: rulekit::Env<Ctx> = rulekit::Env::new();
-/// // `user` is not read, so the closure is not called.
-/// assert!(rule.eval(&Ctx { user: "ada".into() }, &input, Opts::new(&env)).pass());
+/// assert!(rule.eval(&input, &Opts::default()).pass());
 /// # Ok::<(), rulekit::ParseError>(())
 /// ```
-pub fn lazy<C, T, F>(f: F) -> Lazy<C>
+pub fn lazy<T, F>(f: F) -> Lazy
 where
-    C: ?Sized,
-    T: Into<KvEntry<C>>,
-    F: Fn(&C) -> Result<T, BoxError> + Send + Sync + 'static,
+    T: Into<KvEntry>,
+    F: Fn() -> Result<T, BoxError> + Send + Sync + 'static,
 {
     Lazy::new(f)
 }
 
-impl<C, V, R> InputValue<C> for KvList<V, R>
+impl<V, R> InputValue for KvList<V, R>
 where
-    C: ?Sized,
-    V: InputValue<C>,
-    R: InputValue<C>,
+    V: InputValue,
+    R: InputValue,
 {
-    fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         let Some((head, rest)) = path.split_first() else {
             return Ok(Some(Val::Ref(ValueRef::Object(ObjectRef::Opaque))));
         };
         match head {
-            Segment::Key { key, .. } if key == self.key => InputValue::get(&self.value, ctx, rest),
-            Segment::Key { .. } => InputValue::get(&self.rest, ctx, path),
+            Segment::Key { key, .. } if key == self.key => InputValue::get(&self.value, rest),
+            Segment::Key { .. } => InputValue::get(&self.rest, path),
             Segment::Index(_) => Ok(None),
         }
     }
 }
 
-impl<C, V, R> Input<C> for KvList<V, R>
+impl<V, R> Input for KvList<V, R>
 where
-    C: ?Sized,
-    V: InputValue<C>,
-    R: Input<C> + InputValue<C>,
+    V: InputValue,
+    R: Input + InputValue,
 {
-    fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
-        InputValue::get(self, ctx, path)
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+        InputValue::get(self, path)
     }
 }
 
-impl<C: ?Sized> InputValue<C> for KvEnd {
-    fn get<'a>(&'a self, _: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+impl InputValue for KvEnd {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         if path.is_empty() {
             Ok(Some(Val::Ref(ValueRef::Object(ObjectRef::Opaque))))
         } else {
@@ -98,9 +88,9 @@ impl<C: ?Sized> InputValue<C> for KvEnd {
     }
 }
 
-impl<C: ?Sized> Input<C> for KvEnd {
-    fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
-        InputValue::get(self, ctx, path)
+impl Input for KvEnd {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+        InputValue::get(self, path)
     }
 }
 
@@ -125,7 +115,7 @@ impl<C: ?Sized> Input<C> for KvEnd {
 /// let rule = rulekit::parse(
 ///     r#"host == "api.acme.com" and port == 8443 and headers["x-env"] == "prod" and user.id == 42"#,
 /// )?;
-/// assert!(rule.eval(&(), &input, Opts::default()).pass());
+/// assert!(rule.eval(&input, &Opts::default()).pass());
 /// # Ok::<(), rulekit::ParseError>(())
 /// ```
 #[macro_export]

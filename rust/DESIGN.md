@@ -122,7 +122,7 @@ Source entry points:
 - [src/input.rs](src/input.rs), [src/input_value.rs](src/input_value.rs),
   [src/kv.rs](src/kv.rs), [macros/src/](macros/src/): lazy path access and derives.
 - [src/func.rs](src/func.rs), [src/stdlib.rs](src/stdlib.rs),
-  [src/env.rs](src/env.rs): typed functions, macros, and validated environments.
+  [src/opts.rs](src/opts.rs): typed functions, macros, and validated options.
 - [src/regex/](src/regex/), [src/json_input.rs](src/json_input.rs): shared regex
   dialect and JSON semantics.
 
@@ -238,19 +238,20 @@ regex-syntax both accept with identical membership under `\p`, `\P`, and `(?i)`,
 spelling rules. Membership follows each engine's Unicode version (Go: 17, regex-syntax: 16);
 vectors stay off code points that differ.
 
-## 6. Input, lazy values, Ctx
+## 6. Input and lazy values
 
-D2/D4/D9. Eval is generic over a caller context `C` (default `()`).
+D2/D4/D9. Evaluation has no caller context: per-evaluation data is part of the input,
+and long-lived state is captured by custom function and lazy closures.
 
 `Input` is object-safe and evaluation accepts unsized inputs, including
-`dyn Input<C>`. The `Kv` map owns its entries; `KvInput` owns the map tree.
+`dyn Input`. The `Kv` map owns its entries; `KvInput` owns the map tree.
 See [src/input.rs](src/input.rs) for the traits and lazy-entry API.
 
 - Traversal ports `kvInput.GetPath` + `indexPath`: map key lookup, index into arrays,
   value fields on typed values (`fields.rs`), hand-off of the remaining path to a nested
-  `Input`, lazy resolution only for map entries. Lazy results are `KvEntry<C>`, so a lazy
+  `Input`, lazy resolution only for map entries. Lazy results are `KvEntry`, so a lazy
   may return a subtree containing more lazies or inputs, as in Go.
-- `Lazy<C>` holds the shared context-aware closure, a `OnceLock` containing a
+- `Lazy` holds the shared closure, a `OnceLock` containing a
   boxed entry, and a mutex. Resolution: lock-free cell read → lock the entry
   mutex → re-check → call → store on success only. Resolution is single-flight
   per entry, errors are not memoized, and independent entries do not block each
@@ -260,17 +261,20 @@ See [src/input.rs](src/input.rs) for the traits and lazy-entry API.
   `Arc<Kv>`); cloning a `Lazy` produces a fresh, unresolved cell. A path string identifies
   exactly one map location, so this is the same memo, with no path-string hashing and no
   input-wide lock. Resolved values are borrowed from the cell for the input's lifetime.
-- Go has two lazy types (`LazyValue`, `LazyContextValue`); Rust has one that receives
-  `&C` (ignore it if unused).
+- Go has two lazy types (`LazyValue`, `LazyContextValue`); Rust has one, since there is no
+  context to receive.
 - API difference from Go: lazies and nested inputs may only be map entries. Arrays inside a
   `Kv` hold plain `Value`s (Go also allows an `Input` as a `[]any` element).
 
 ## 7. Eval, results, options
 
-- D8: `EnvBuilder::build` runs Go's `Opts.Validate` checks once (name conflicts with stdlib,
-  macro vs function conflicts). `Env` cannot be built unvalidated, so eval never validates.
-  `trace` is per call and lives in the cheap `Opts`, matching Go's `Opts.Trace` (D7).
-- One lifetime `'a` covers rule, input, ctx and env so results can borrow from any of them.
+- D8: `OptsBuilder::build` runs Go's `Opts.Validate` checks once (name conflicts with stdlib,
+  macro vs function conflicts, duplicate functions). `Opts` holds the functions, macros,
+  and `trace` flag, as Go's `Opts{Trace, Macros, Functions}` does (D7), and cannot be built
+  unvalidated, so eval never validates. Eval takes `&Opts`.
+- One lifetime `'a` covers rule, input and opts so results can borrow from any of them
+  (a macro's trace nodes borrow from `Opts`). Function results are `'static`: arguments
+  live only for the call.
 
 Node results store the value and borrowed missing path names inline. A boxed
 `Problem` holds rare errors or function-reported missing names, keeping the
@@ -287,7 +291,7 @@ function-reported names. Result and error APIs are documented in
 ## 8. Tracing (D7)
 
 Evaluation is generic over a trace slot: `()` without tracing, `Option<Frag>`
-with tracing. `Rule::eval` branches once on `opts.trace`; the untraced
+with tracing. `Rule::eval` branches once on `opts.trace()`; the untraced
 instantiation contains no trace code or per-node trace storage. Untraced
 evaluation keeps the stack-buffer path for array operands; traced evaluation
 evaluates them as nodes, as Go does, because traces need the array node.
@@ -320,17 +324,16 @@ Decision: one typed function API, mirroring Go's `rulekit.Func`.
   parameters, more than one lifetime, and a misplaced `Rest` are compile errors
   (tests/ui).
 - `Function::new::<A, R>` names the argument and return types (user decision) because a
-  closure taking `HostArgs<'s>` and returning `&'a str` (borrowed from the context) needs a
-  higher-ranked signature that Rust cannot infer from the closure alone; with A and R named,
-  the closure needs no annotations. Return types give the declared type statically (`"any"` only for
-  `ValueRef`/`Val`/`Value`). Results may borrow the context (`'a`) but not the arguments
-  (`'s`), which live only for the call.
+  closure taking `A::Of<'s>` needs a higher-ranked signature over `'s` that Rust cannot
+  infer from the closure alone; with A and R named, the closure needs no annotations.
+  Return types give the declared type statically (`"any"` only for
+  `ValueRef`/`Val`/`Value`).
 - `FuncSchema` is a plain struct of `&'static str` name and doc, so a struct literal works
   with string literals (run-time names can be leaked once at registration).
-- `EnvBuilder::function(f)` takes the name from the schema; `build()` rejects duplicates,
+- `OptsBuilder::function(f)` takes the name from the schema; `build()` rejects duplicates,
   stdlib shadowing, and macro/function collisions.
-- Functions get their arguments and the context only, never the rule's input. Macros take
-  no parameters; parameterized logic is a function.
+- Functions get their arguments only, never the rule's input; state is captured by the
+  closure. Macros take no parameters; parameterized logic is a function.
 - Arity is checked before arguments are evaluated (`Error::ArgCount`, with `variadic` for
   a minimum); a wrongly typed argument is `Error::InvalidArg`; `FnError::Missing` makes the
   result unknown; `FnError::Error` becomes `Error::Function`.
@@ -341,7 +344,7 @@ Decision: one typed function API, mirroring Go's `rulekit.Func`.
 
 ## 10. JSON input (`json_input.rs`)
 
-`decode_json<C>(bytes, JsonOptions { annotated_keys, typed_document }) -> Result<Kv<C>, Error>`
+`decode_json(bytes, JsonOptions { annotated_keys, typed_document }) -> Result<Kv, Error>`
 keeps `json.go`'s semantics layer (annotated keys, typed documents, normalization). Parsing
 uses `serde_json` with the additive `raw_value` feature so numbers keep their source text
 (never `arbitrary_precision`): integers outside int64/uint64 are errors. Exactly one JSON

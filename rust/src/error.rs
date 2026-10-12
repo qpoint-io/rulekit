@@ -142,7 +142,7 @@ impl std::error::Error for ParseError {}
 /// A boxed error from a caller-provided input or function.
 pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
-/// An evaluation, environment, or input-decoding error.
+/// An evaluation, options, or input-decoding error.
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum Error {
@@ -193,8 +193,8 @@ pub enum Error {
     },
     /// Several errors (both sides of `and`/`or` failed).
     Multiple(Vec<Error>),
-    /// Invalid functions or macros when building an `Env`.
-    Env(String),
+    /// Invalid functions or macros when building `Opts`.
+    Opts(String),
     /// Invalid JSON input for `decode_json`.
     Json(String),
     /// Invalid edits for `rewrite`.
@@ -234,7 +234,7 @@ impl fmt::Display for Error {
                 }
                 Ok(())
             }
-            Error::Env(msg) | Error::Json(msg) | Error::Rewrite(msg) => f.write_str(msg),
+            Error::Opts(msg) | Error::Json(msg) | Error::Rewrite(msg) => f.write_str(msg),
         }
     }
 }
