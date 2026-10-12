@@ -37,3 +37,30 @@ jobs:
 
       - name: Format, clippy, test
         run: make ci-rust
+
+  # The `unsafe` downcast in rust/src/serde_input.rs, checked by Miri and a
+  # short coverage-guided fuzz run.
+  rust-unsafe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri, rust-src
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            rust
+            rust/fuzz
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      - name: Miri
+        run: make miri-rust
+
+      - name: Fuzz
+        run: make fuzz-rust FUZZ_SECONDS=120

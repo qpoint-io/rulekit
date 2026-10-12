@@ -220,8 +220,12 @@ fn visit<T: ?Sized + Serialize>(value: &T, path: &[Segment]) -> Result<Found, Er
 
 /// Types read as rulekit values instead of through `serialize`.
 ///
-/// Only types without lifetime parameters may implement this: [`downcast`]
-/// relies on it.
+/// [`downcast`] relies on every implementor being a concrete type whose
+/// expanded form has no lifetimes at all: not a lifetime parameter, not an
+/// alias for `Foo<'static>`, not a reference or function pointer. `'static`
+/// alone is not enough: `Foo<'static>` and `Foo<'short>` share a `typeid`.
+/// The trait is private, so only the list below implements it; adding to
+/// that list needs this check and the `downcast_tests` matrix.
 trait Leaf: InputValue + 'static {}
 
 macro_rules! leaves {
@@ -264,13 +268,15 @@ fn downcast<T: ?Sized, U: Leaf>(value: &T) -> Option<&U> {
     let ptr = value as *const T;
     let id = typeid::of::<T>();
     // SAFETY, for each branch: `typeid::of::<T>()` is `T`'s `TypeId` with
-    // every lifetime replaced by `'static`. `U: Leaf` has no lifetime
-    // parameters (the contract of `Leaf`), so an id equal to that of `U`,
-    // `&U`, or `&&U` means `T` is `U` or a reference to it, whatever the
-    // lifetimes of the references. `ptr` is valid and aligned for `T` and
-    // lives as long as `value`, so each pointer cast and dereference reads
-    // the `U` that `value` holds or points to. The returned borrow lasts no
-    // longer than `value`'s own, which every reference in `T` outlives.
+    // its free lifetimes erased (typeid 1.x documents non-`'static` support;
+    // higher-ranked binders such as `for<'a> fn(&'a str)` stay distinct).
+    // `U: Leaf` contains no lifetimes (the contract of `Leaf`), so an id
+    // equal to that of `U`, `&U`, or `&&U` means `T` is `U` or a shared
+    // reference chain to it, whatever the lifetimes of those references;
+    // `&mut` is a different id. `ptr` is valid and aligned for `T` and lives
+    // as long as `value`, so each pointer cast and dereference reads the `U`
+    // that `value` holds or points to. The returned borrow lasts no longer
+    // than `value`'s own, which every reference in `T` outlives.
     if id == typeid::of::<U>() {
         Some(unsafe { &*ptr.cast::<U>() })
     } else if id == typeid::of::<&U>() {
@@ -1013,5 +1019,287 @@ where
         _len: usize,
     ) -> Result<Impossible<R, Error>, Error> {
         not_text()
+    }
+}
+
+/// The one `unsafe` block in this crate is [`downcast`]. These tests pin its
+/// contract directly, and run under Miri (`make miri-rust`, both aliasing
+/// models) to check that every reference it returns is valid for the borrow
+/// it is handed out with.
+#[cfg(test)]
+mod downcast_tests {
+    use super::*;
+    use std::borrow::Cow;
+    use std::cell::Cell;
+    use std::rc::Rc;
+    use std::sync::Arc;
+
+    /// Runs `$body` with `$v` bound to one value of each leaf type, `$t`
+    /// being its type, including a three-byte OUI `Mac` and both URL types.
+    macro_rules! each_leaf {
+        ($m:ident) => {
+            $m! {
+                a: IpAddr = "10.1.2.3".parse().unwrap(),
+                a6: IpAddr = "::ffff:10.1.2.3".parse().unwrap(),
+                b: Ipv4Addr = "192.168.0.1".parse().unwrap(),
+                c: Ipv6Addr = "fe80::1".parse().unwrap(),
+                d: IpNet = "10.0.0.0/8".parse().unwrap(),
+                e: Ipv4Net = "0.0.0.0/0".parse().unwrap(),
+                f: Ipv6Net = "2001:db8::/128".parse().unwrap(),
+                g: Ip = Ip::parse("1.2.3.4").unwrap(),
+                h: Cidr = Cidr::parse("fd00::/8").unwrap(),
+                i: Mac = Mac::parse("aa:bb:cc:dd:ee:ff").unwrap(),
+                i8: Mac = Mac::parse("aa:bb:cc:dd:ee:ff:00:11").unwrap(),
+                oui: Mac = Mac::parse("aa:bb:cc:dd:ee:ff").unwrap().oui(),
+                j: Url = Url::parse("https://user@example.com:8443/a/b?q=1&q=2#f").unwrap(),
+                j2: Url = Url::parse("/relative/only").unwrap(),
+                #[cfg(feature = "url")]
+                k: ::url::Url = ::url::Url::parse("http://example.org/x?y=%2F").unwrap(),
+            }
+        };
+    }
+
+    /// `downcast` of `U`, `&U`, and `&&U` returns the very `U` it was given,
+    /// not a copy and not a neighbour; every other shape returns `None`.
+    fn check<U: Leaf + Clone>(value: U) {
+        assert!(std::ptr::eq(downcast::<U, U>(&value).unwrap(), &value));
+        let one = &value;
+        assert!(std::ptr::eq(downcast::<&U, U>(&one).unwrap(), &value));
+        let two = &one;
+        assert!(std::ptr::eq(downcast::<&&U, U>(&two).unwrap(), &value));
+        let three = &two;
+        assert!(downcast::<&&&U, U>(&three).is_none());
+        assert!(downcast::<&&&&U, U>(&&three).is_none());
+
+        let mut owned = value.clone();
+        {
+            let mutable = &mut owned;
+            assert!(downcast::<&mut U, U>(&mutable).is_none());
+            assert!(downcast::<&&mut U, U>(&&mutable).is_none());
+        }
+        {
+            let shared = &value;
+            let mut slot = shared;
+            let mixed = &mut slot;
+            assert!(downcast::<&mut &U, U>(&mixed).is_none());
+        }
+        let raw: *const U = &value;
+        assert!(downcast::<*const U, U>(&raw).is_none());
+        assert!(downcast::<*mut U, U>(&(raw as *mut U)).is_none());
+        assert!(downcast::<Box<U>, U>(&Box::new(value.clone())).is_none());
+        assert!(downcast::<&Box<U>, U>(&&Box::new(value.clone())).is_none());
+        assert!(downcast::<Rc<U>, U>(&Rc::new(value.clone())).is_none());
+        assert!(downcast::<Arc<U>, U>(&Arc::new(value.clone())).is_none());
+        assert!(downcast::<Option<U>, U>(&Some(value.clone())).is_none());
+        assert!(downcast::<Option<&U>, U>(&Some(&value)).is_none());
+        assert!(downcast::<Cow<'_, U>, U>(&Cow::Borrowed(&value)).is_none());
+        assert!(downcast::<Cell<&U>, U>(&Cell::new(&value)).is_none());
+        let array: [U; 1] = [value.clone()];
+        assert!(downcast::<[U; 1], U>(&array).is_none());
+        assert!(downcast::<(U,), U>(&(value.clone(),)).is_none());
+        assert!(downcast::<[U], U>(std::slice::from_ref(&value)).is_none());
+        assert!(downcast::<[U], U>(&[] as &[U]).is_none());
+        assert!(downcast::<&[U], U>(&std::slice::from_ref(&value)).is_none());
+        let erased: &dyn Erased = &value;
+        assert!(downcast::<dyn Erased, U>(erased).is_none());
+        assert!(downcast::<&dyn Erased, U>(&erased).is_none());
+
+        /// The same layout as `U`, a different type.
+        #[repr(transparent)]
+        struct Lookalike<U>(U);
+        assert!(downcast::<Lookalike<U>, U>(&Lookalike(value.clone())).is_none());
+
+        /// A lifetime-bearing wrapper around a borrowed `U`.
+        struct Borrowed<'a, U>(#[allow(dead_code)] &'a U);
+        assert!(downcast::<Borrowed<'_, U>, U>(&Borrowed(&value)).is_none());
+    }
+
+    trait Erased {}
+    impl<T: ?Sized> Erased for T {}
+
+    #[test]
+    fn each_leaf_by_value_and_through_one_or_two_references() {
+        macro_rules! run {
+            ($($(#[$cfg:meta])* $v:ident : $t:ty = $e:expr),* $(,)?) => {
+                $($(#[$cfg])* check::<$t>($e);)*
+            };
+        }
+        each_leaf!(run);
+    }
+
+    /// No leaf matches another at any accepted depth, including the pairs
+    /// with the same layout (`Ip` wraps an `IpAddr`, `Cidr` an `IpNet`).
+    #[test]
+    fn leaves_do_not_alias_each_other() {
+        macro_rules! cross {
+            ($($(#[$cfg:meta])* $v:ident : $t:ty = $e:expr),* $(,)?) => {
+                $($(#[$cfg])* let $v: $t = $e;)*
+                cross!(@all [$($(#[$cfg])* $t),*] $($(#[$cfg])* $v : $t),*);
+            };
+            (@all $list:tt $($(#[$cfg:meta])* $v:ident : $t:ty),*) => {
+                $($(#[$cfg])* cross!(@one $v : $t ; $list);)*
+            };
+            (@one $v:ident : $t:ty ; [$($(#[$cfg:meta])* $u:ty),*]) => {
+                $(
+                    $(#[$cfg])*
+                    if typeid::of::<$t>() != typeid::of::<$u>() {
+                        assert!(downcast::<$t, $u>(&$v).is_none());
+                        assert!(downcast::<&$t, $u>(&&$v).is_none());
+                        assert!(downcast::<&&$t, $u>(&&&$v).is_none());
+                    }
+                )*
+            };
+        }
+        each_leaf!(cross);
+        assert!(downcast::<str, Url>("https://example.com").is_none());
+        assert!(downcast::<&str, Url>(&"https://example.com").is_none());
+        assert!(downcast::<String, Url>(&"https://example.com".to_owned()).is_none());
+        assert!(downcast::<[u8; 6], Mac>(&[1, 2, 3, 4, 5, 6]).is_none());
+        assert!(downcast::<(), Mac>(&()).is_none());
+    }
+
+    /// Higher-ranked types keep their binders in `typeid`, and none of them
+    /// is a leaf.
+    #[test]
+    fn higher_ranked_types_are_not_leaves() {
+        fn takes(_: &str) {}
+        let hr: for<'a> fn(&'a str) = takes;
+        let st: fn(&'static str) = takes;
+        assert_ne!(
+            typeid::of::<for<'a> fn(&'a str)>(),
+            typeid::of::<fn(&'static str)>()
+        );
+        assert!(downcast::<for<'a> fn(&'a str), Url>(&hr).is_none());
+        assert!(downcast::<fn(&'static str), Url>(&st).is_none());
+        let obj: &dyn for<'a> Fn(&'a IpAddr) = &|_| {};
+        assert!(downcast::<dyn for<'a> Fn(&'a IpAddr), IpAddr>(obj).is_none());
+    }
+
+    /// References with short, distinct lifetimes still match: `typeid`
+    /// erases them, and the borrow returned lives no longer than the input.
+    /// Under Miri, mutating the leaf after the borrow ends checks that the
+    /// cast left no live alias behind.
+    #[test]
+    fn short_lived_references() {
+        fn inner<'a, 'b>(value: &'a &'b IpAddr) -> Option<&'a IpAddr> {
+            downcast::<&'b IpAddr, IpAddr>(value)
+        }
+        fn inner2<'a, 'b, 'c>(value: &'a &'b &'c Url) -> Option<&'a Url> {
+            downcast::<&'b &'c Url, Url>(value)
+        }
+        for n in 0..4u8 {
+            let mut addr = IpAddr::from([10, 0, 0, n]);
+            {
+                let borrowed = &addr;
+                let got = inner(&borrowed).unwrap();
+                assert!(std::ptr::eq(got, &addr));
+                assert_eq!(*got, IpAddr::from([10, 0, 0, n]));
+            }
+            addr = IpAddr::from([0, 0, 0, 0]);
+            assert!(addr.is_unspecified());
+
+            let mut url = Url::parse(&format!("https://h{n}.example/p")).unwrap();
+            {
+                let one = &url;
+                let two = &one;
+                let got = inner2(&two).unwrap();
+                assert!(std::ptr::eq(got, &url));
+            }
+            url = Url::parse("https://moved.example").unwrap();
+            drop(url);
+        }
+    }
+
+    /// `typed` recognises each leaf as `T`, `&T`, and `&&T`, and its read is
+    /// the leaf's own `InputValue` read, compared as values, not as text.
+    #[test]
+    fn typed_reads_each_leaf_as_its_own_input_value() {
+        fn own<U: Leaf>(value: &U, path: &[Segment]) -> Option<Value> {
+            InputValue::get(value, path)
+                .unwrap()
+                .map(|val| Found::from_val(val).into_item())
+        }
+        fn via(found: Result<Found, Error>) -> Option<Value> {
+            match found.unwrap() {
+                Found::Missing => None,
+                found => Some(found.into_item()),
+            }
+        }
+        fn same<U: Leaf>(value: &U) {
+            let key = |k: &str| Segment::Key {
+                key: k.to_owned(),
+                bracket: false,
+            };
+            let mut paths = vec![vec![], vec![Segment::Index(0)]];
+            for f in [
+                "version", "ip", "prefix", "host", "port", "scheme", "path", "query", "user",
+                "oui", "fragment", "zz",
+            ] {
+                paths.push(vec![key(f)]);
+                paths.push(vec![key(f), key("q")]);
+                paths.push(vec![key(f), Segment::Index(0)]);
+            }
+            for path in &paths {
+                let want = own(value, path);
+                assert_eq!(via(typed(value, path).unwrap()), want, "{path:?}");
+                assert_eq!(via(typed(&value, path).unwrap()), want, "{path:?}");
+                assert_eq!(via(typed(&&value, path).unwrap()), want, "{path:?}");
+                assert!(typed(&&&value, path).is_none());
+            }
+        }
+        macro_rules! run {
+            ($($(#[$cfg:meta])* $v:ident : $t:ty = $e:expr),* $(,)?) => {
+                $($(#[$cfg])* same::<$t>(&$e);)*
+            };
+        }
+        each_leaf!(run);
+    }
+
+    /// A `Serialize` impl may hand the walk a leaf it builds on its own
+    /// stack, dropped before the read returns: the read must own its result.
+    #[test]
+    fn leaves_built_inside_serialize_are_read_before_they_drop() {
+        struct Temp;
+        impl Serialize for Temp {
+            fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+                use serde::ser::SerializeStruct;
+                let url = Url::parse("https://tmp.example:9/a?k=v").unwrap();
+                let one = &url;
+                let ip = IpAddr::from([127, 0, 0, 1]);
+                let mut st = s.serialize_struct("Temp", 2)?;
+                st.serialize_field("url", &one)?;
+                st.serialize_field("ip", &ip)?;
+                st.end()
+            }
+        }
+        let key = |k: &str| Segment::Key {
+            key: k.to_owned(),
+            bracket: false,
+        };
+        let host = resolve(&Temp, &[key("url"), key("host")])
+            .unwrap()
+            .into_item();
+        assert_eq!(host, Value::String("tmp.example".into()));
+        let whole = resolve(&Temp, &[key("url")]).unwrap().into_item();
+        assert_eq!(
+            whole,
+            own_url("https://tmp.example:9/a?k=v"),
+            "the whole URL outlives the `Url` it was read from"
+        );
+        let ip = resolve(&Temp, &[key("ip")]).unwrap().into_item();
+        assert_eq!(
+            ip,
+            Found::from_val(
+                InputValue::get(&IpAddr::from([127, 0, 0, 1]), &[])
+                    .unwrap()
+                    .unwrap()
+            )
+            .into_item()
+        );
+
+        fn own_url(s: &str) -> Value {
+            let url = Url::parse(s).unwrap();
+            Found::from_val(InputValue::get(&url, &[]).unwrap().unwrap()).into_item()
+        }
     }
 }
