@@ -34,8 +34,9 @@ fn same(label: &str, text: &str, expr: &str, external: &impl Input) {
         return;
     };
     let rule = rulekit::parse(expr).unwrap();
-    let want = rule.eval(&(), &native, Opts::default());
-    let got = rule.eval(&(), external, Opts::default());
+    let opts = Opts::default();
+    let want = rule.eval(&native, &opts);
+    let got = rule.eval(external, &opts);
     assert_eq!(
         got.error().map(|e| e.to_string()),
         want.error().map(|e| e.to_string()),

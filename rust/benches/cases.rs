@@ -6,21 +6,19 @@
 use rulekit::value::{Ip, Map, Url, Value, ValueRef};
 use std::collections::HashMap;
 
-use rulekit::{Env, FuncSchema, Function, KvEntry, KvInput, Lazy, Opts, Rule};
+use rulekit::{FuncSchema, Function, KvEntry, KvInput, Lazy, Opts, Rule};
 
-/// One `BenchmarkEval`-style case: a rule, its input, and its environment.
+/// One `BenchmarkEval`-style case: a rule, its input, and its options.
 pub struct EvalCase {
     pub name: &'static str,
     pub rule: Rule,
     pub input: KvInput,
-    pub env: Env,
-    pub trace: bool,
+    pub opts: Opts,
 }
 
 impl EvalCase {
     pub fn eval(&self) -> bool {
-        let opts = Opts::new(&self.env).with_trace(self.trace);
-        let result = self.rule.eval(&(), &self.input, opts);
+        let result = self.rule.eval(&self.input, &self.opts);
         assert!(
             result.error().is_none(),
             "{}: {:?}",
@@ -62,8 +60,7 @@ fn case(name: &'static str, expr: &str, input: KvInput) -> EvalCase {
         name,
         rule: rulekit::parse(expr).expect("parse"),
         input,
-        env: Env::new(),
-        trace: false,
+        opts: Opts::default(),
     }
 }
 
@@ -92,8 +89,8 @@ pub fn eval_cases() -> Vec<EvalCase> {
         r#"has_prefix(path, "/api")"#,
         input(vec![("path", s("/api/v1"))]),
     );
-    custom.env = Env::builder().function(has_prefix()).build().unwrap();
-    macro_case.env = Env::builder()
+    custom.opts = Opts::builder().function(has_prefix()).build().unwrap();
+    macro_case.opts = Opts::builder()
         .macro_source("is_internal", "ip in 172.16.0.0/16")
         .unwrap()
         .build()
@@ -191,13 +188,13 @@ pub fn eval_cases() -> Vec<EvalCase> {
 /// Go `BenchmarkEvalTrace`.
 pub fn trace_case() -> EvalCase {
     let mut c = case("BenchmarkEvalTrace", FULL, traversal("192.168.2.37"));
-    c.trace = true;
+    c.opts = Opts::builder().trace(true).build().unwrap();
     c
 }
 
 /// An input whose `expensive` field is a lazy value.
 pub fn lazy_input() -> KvInput {
-    let lazy = KvEntry::Lazy(Lazy::new(|_: &()| Ok(s("value"))));
+    let lazy = KvEntry::Lazy(Lazy::new(|| Ok(s("value"))));
     KvInput::new(
         [
             ("allow".to_owned(), KvEntry::Value(Value::Bool(true))),
@@ -257,7 +254,7 @@ fn has_prefix() -> Function {
             name: "has_prefix",
             doc: "",
         },
-        |_: &(), a| Ok(a.value.starts_with(a.prefix)),
+        |a| Ok(a.value.starts_with(a.prefix)),
     )
 }
 
@@ -272,6 +269,7 @@ pub struct DerivedInput {
 pub struct DerivedBench {
     pub rule: Rule,
     pub input: DerivedInput,
+    pub opts: Opts,
     pub kv: EvalCase,
 }
 
@@ -290,6 +288,7 @@ impl DerivedBench {
         );
         Self {
             rule: rulekit::parse(expr).expect("parse"),
+            opts: Opts::default(),
             input: DerivedInput {
                 host: "api.acme.com".into(),
                 port: 8443,
@@ -301,7 +300,7 @@ impl DerivedBench {
     }
 
     pub fn eval(&self) -> bool {
-        self.rule.eval(&(), &self.input, Opts::default()).pass()
+        self.rule.eval(&self.input, &self.opts).pass()
     }
 }
 

@@ -210,7 +210,7 @@ fn run_case(case: &Case, mode: &str, report: &mut Report) -> Result<(), String> 
     let input = match &case.input {
         Some(json) => {
             let bytes = serde_json::to_vec(json).expect("serialize input");
-            let decoded = rulekit::decode_json::<()>(&bytes, json_options(mode));
+            let decoded = rulekit::decode_json(&bytes, json_options(mode));
             if want.decode_error {
                 if case.expr.is_some() {
                     return Err("decode_error cases must not have an expr".into());
@@ -275,26 +275,26 @@ fn run_case(case: &Case, mode: &str, report: &mut Report) -> Result<(), String> 
         }
     }
     if want.evaluates() {
-        let mut builder = rulekit::Env::<()>::builder();
-        for (name, source) in case.macros.iter().flatten() {
-            builder = builder
-                .macro_source(name.clone(), source)
-                .map_err(|err| format!("macro {name:?}: {err}"))?;
-        }
-        let env = builder.build().map_err(|err| format!("env: {err}"))?;
-        let eval = |trace: bool| {
-            let opts = Opts::new(&env).with_trace(trace);
-            match &input {
-                Some(input) => rule.eval(&(), input, opts),
-                None => rule.eval(&(), &NoInput, opts),
+        let build = |trace: bool| {
+            let mut builder = Opts::builder().trace(trace);
+            for (name, source) in case.macros.iter().flatten() {
+                builder = builder
+                    .macro_source(name.clone(), source)
+                    .map_err(|err| format!("macro {name:?}: {err}"))?;
             }
+            builder.build().map_err(|err| format!("opts: {err}"))
         };
-        let plain = eval(false);
+        let (plain_opts, traced_opts) = (build(false)?, build(true)?);
+        let eval = |opts| match &input {
+            Some(input) => rule.eval(input, opts),
+            None => rule.eval(&NoInput, opts),
+        };
+        let plain = eval(&plain_opts);
         if plain.trace().is_some() {
             return Err("trace must be absent when tracing is off".into());
         }
         check_result(&plain, want).map_err(|err| format!("untraced: {err}"))?;
-        let traced = eval(true);
+        let traced = eval(&traced_opts);
         check_result(&traced, want).map_err(|err| format!("traced: {err}"))?;
         if let Some(expect) = &want.trace {
             let trace = traced.trace().ok_or("traced result has no trace")?;
@@ -442,8 +442,8 @@ fn expected_value(json: &Json) -> Result<Value, String> {
                 typed_document: true,
                 ..Default::default()
             };
-            let mut kv = rulekit::decode_json::<()>(&doc, opts)
-                .map_err(|err| format!("expected value: {err}"))?;
+            let mut kv =
+                rulekit::decode_json(&doc, opts).map_err(|err| format!("expected value: {err}"))?;
             match kv.remove("v") {
                 Some(rulekit::KvEntry::Value(v)) => v,
                 _ => return Err("expected value: not a value".into()),

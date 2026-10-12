@@ -38,15 +38,15 @@ use crate::value::{
 ///
 /// A caller-defined value (a lazy field, a custom impl) may fail. The impls
 /// in this crate for plain data do not.
-pub trait InputValue<C: ?Sized = ()> {
+pub trait InputValue {
     /// Whether an absent value (`get` with an empty path returning
     /// `Ok(None)`) is one serde writes as `null`, as for [`Option::None`].
     /// A `derive(Input)` field of such a type reads `None` as `null`; for
     /// other types the check compiles away.
     const ABSENT_IS_NULL: bool = false;
 
-    /// The value at `path`, borrowing from `self` or `ctx` when it can.
-    fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError>;
+    /// The value at `path`, borrowing from `self` when it can.
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError>;
 }
 
 /// Walk `path` from a value already in hand.
@@ -85,59 +85,59 @@ fn leaf<'a>(value: ValueRef<'a>, path: &[Segment]) -> Result<Option<Val<'a>>, Bo
 
 // Sized only: `&[T]` is its own impl so a slice field can hand out
 // `&&[T]` (sized) as `&dyn ListSource`. A `?Sized` blanket would overlap it.
-impl<C: ?Sized, T: InputValue<C>> InputValue<C> for &T {
+impl<T: InputValue> InputValue for &T {
     const ABSENT_IS_NULL: bool = T::ABSENT_IS_NULL;
 
-    fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
-        InputValue::get(&**self, ctx, path)
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+        InputValue::get(&**self, path)
     }
 }
 
-impl<C: ?Sized, T: InputValue<C> + ?Sized> InputValue<C> for Box<T> {
+impl<T: InputValue + ?Sized> InputValue for Box<T> {
     const ABSENT_IS_NULL: bool = T::ABSENT_IS_NULL;
 
-    fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
-        InputValue::get(&**self, ctx, path)
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+        InputValue::get(&**self, path)
     }
 }
 
-impl<C: ?Sized, T: InputValue<C> + ?Sized> InputValue<C> for Rc<T> {
+impl<T: InputValue + ?Sized> InputValue for Rc<T> {
     const ABSENT_IS_NULL: bool = T::ABSENT_IS_NULL;
 
-    fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
-        InputValue::get(&**self, ctx, path)
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+        InputValue::get(&**self, path)
     }
 }
 
-impl<C: ?Sized, T: InputValue<C> + ?Sized> InputValue<C> for Arc<T> {
+impl<T: InputValue + ?Sized> InputValue for Arc<T> {
     const ABSENT_IS_NULL: bool = T::ABSENT_IS_NULL;
 
-    fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
-        InputValue::get(&**self, ctx, path)
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+        InputValue::get(&**self, path)
     }
 }
 
-impl<C: ?Sized, T: InputValue<C>> InputValue<C> for Option<T> {
+impl<T: InputValue> InputValue for Option<T> {
     const ABSENT_IS_NULL: bool = true;
 
-    fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         match self {
-            Some(value) => InputValue::get(value, ctx, path),
+            Some(value) => InputValue::get(value, path),
             None => Ok(None),
         }
     }
 }
 
-impl<C: ?Sized> InputValue<C> for bool {
-    fn get<'a>(&'a self, _: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+impl InputValue for bool {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         leaf(ValueRef::Bool(*self), path)
     }
 }
 
 macro_rules! signed {
     ($($t:ty),*) => {$(
-        impl<C: ?Sized> InputValue<C> for $t {
-            fn get<'a>(&'a self, _: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+        impl InputValue for $t {
+            fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
                 leaf(ValueRef::Int(i64::from(*self)), path)
             }
         }
@@ -145,14 +145,14 @@ macro_rules! signed {
 }
 signed!(i8, i16, i32);
 
-impl<C: ?Sized> InputValue<C> for i64 {
-    fn get<'a>(&'a self, _: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+impl InputValue for i64 {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         leaf(ValueRef::Int(*self), path)
     }
 }
 
-impl<C: ?Sized> InputValue<C> for isize {
-    fn get<'a>(&'a self, _: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+impl InputValue for isize {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         // `isize` fits in `i64` on every supported target.
         leaf(ValueRef::Int(*self as i64), path)
     }
@@ -160,8 +160,8 @@ impl<C: ?Sized> InputValue<C> for isize {
 
 macro_rules! small_unsigned {
     ($($t:ty),*) => {$(
-        impl<C: ?Sized> InputValue<C> for $t {
-            fn get<'a>(&'a self, _: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+        impl InputValue for $t {
+            fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
                 leaf(ValueRef::Int(i64::from(*self)), path)
             }
         }
@@ -177,122 +177,122 @@ fn wide_uint(n: u64) -> ValueRef<'static> {
     }
 }
 
-impl<C: ?Sized> InputValue<C> for u64 {
-    fn get<'a>(&'a self, _: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+impl InputValue for u64 {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         leaf(wide_uint(*self), path)
     }
 }
 
-impl<C: ?Sized> InputValue<C> for usize {
-    fn get<'a>(&'a self, _: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+impl InputValue for usize {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         leaf(wide_uint(*self as u64), path)
     }
 }
 
-impl<C: ?Sized> InputValue<C> for f32 {
-    fn get<'a>(&'a self, _: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+impl InputValue for f32 {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         leaf(ValueRef::Float(f64::from(*self)), path)
     }
 }
 
-impl<C: ?Sized> InputValue<C> for f64 {
-    fn get<'a>(&'a self, _: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+impl InputValue for f64 {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         leaf(ValueRef::Float(*self), path)
     }
 }
 
-impl<C: ?Sized> InputValue<C> for str {
-    fn get<'a>(&'a self, _: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+impl InputValue for str {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         leaf(ValueRef::Str(self), path)
     }
 }
 
-impl<C: ?Sized> InputValue<C> for &str {
-    fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
-        InputValue::get(*self, ctx, path)
+impl InputValue for &str {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+        InputValue::get(*self, path)
     }
 }
 
-impl<C: ?Sized> InputValue<C> for String {
-    fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
-        InputValue::get(self.as_str(), ctx, path)
+impl InputValue for String {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+        InputValue::get(self.as_str(), path)
     }
 }
 
-impl<C: ?Sized> InputValue<C> for Cow<'_, str> {
-    fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
-        InputValue::get(self.as_ref(), ctx, path)
+impl InputValue for Cow<'_, str> {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+        InputValue::get(self.as_ref(), path)
     }
 }
 
-impl<C: ?Sized> InputValue<C> for IpAddr {
-    fn get<'a>(&'a self, _: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+impl InputValue for IpAddr {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         leaf(ValueRef::Ip(Ip::from_addr(*self)), path)
     }
 }
 
-impl<C: ?Sized> InputValue<C> for Ipv4Addr {
-    fn get<'a>(&'a self, _: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+impl InputValue for Ipv4Addr {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         leaf(ValueRef::Ip(Ip::from_addr(IpAddr::V4(*self))), path)
     }
 }
 
-impl<C: ?Sized> InputValue<C> for Ipv6Addr {
-    fn get<'a>(&'a self, _: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+impl InputValue for Ipv6Addr {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         leaf(ValueRef::Ip(Ip::from_addr(IpAddr::V6(*self))), path)
     }
 }
 
-impl<C: ?Sized> InputValue<C> for Ip {
-    fn get<'a>(&'a self, _: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+impl InputValue for Ip {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         leaf(ValueRef::Ip(*self), path)
     }
 }
 
-impl<C: ?Sized> InputValue<C> for IpNet {
-    fn get<'a>(&'a self, _: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+impl InputValue for IpNet {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         leaf(ValueRef::Cidr(Cidr::from_net(*self)), path)
     }
 }
 
-impl<C: ?Sized> InputValue<C> for Ipv4Net {
-    fn get<'a>(&'a self, _: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+impl InputValue for Ipv4Net {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         leaf(ValueRef::Cidr(Cidr::from_net(IpNet::from(*self))), path)
     }
 }
 
-impl<C: ?Sized> InputValue<C> for Ipv6Net {
-    fn get<'a>(&'a self, _: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+impl InputValue for Ipv6Net {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         leaf(ValueRef::Cidr(Cidr::from_net(IpNet::from(*self))), path)
     }
 }
 
-impl<C: ?Sized> InputValue<C> for Cidr {
-    fn get<'a>(&'a self, _: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+impl InputValue for Cidr {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         leaf(ValueRef::Cidr(*self), path)
     }
 }
 
-impl<C: ?Sized> InputValue<C> for Mac {
-    fn get<'a>(&'a self, _: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+impl InputValue for Mac {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         leaf(ValueRef::Mac(*self), path)
     }
 }
 
-impl<C: ?Sized> InputValue<C> for Url {
-    fn get<'a>(&'a self, _: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+impl InputValue for Url {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         leaf(ValueRef::Url(self), path)
     }
 }
 
-impl<C: ?Sized> InputValue<C> for Value {
-    fn get<'a>(&'a self, _: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+impl InputValue for Value {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         leaf(self.as_ref(), path)
     }
 }
 
-fn view_item<T: InputValue<()>>(item: &T) -> ValueRef<'_> {
-    match InputValue::get(item, &(), &[]) {
+fn view_item<T: InputValue>(item: &T) -> ValueRef<'_> {
+    match InputValue::get(item, &[]) {
         Ok(Some(Val::Ref(value))) => value,
         // A present item that cannot be borrowed is null, so list length holds.
         _ => ValueRef::Null,
@@ -301,7 +301,7 @@ fn view_item<T: InputValue<()>>(item: &T) -> ValueRef<'_> {
 
 impl<T> ListSource for &[T]
 where
-    T: InputValue<()>,
+    T: InputValue,
 {
     fn len(&self) -> usize {
         (*self).len()
@@ -314,7 +314,7 @@ where
 
 impl<T> ListSource for Vec<T>
 where
-    T: InputValue<()>,
+    T: InputValue,
 {
     fn len(&self) -> usize {
         Vec::len(self)
@@ -327,7 +327,7 @@ where
 
 impl<T, const N: usize> ListSource for [T; N]
 where
-    T: InputValue<()>,
+    T: InputValue,
 {
     fn len(&self) -> usize {
         N
@@ -340,7 +340,7 @@ where
 
 impl<T> ListSource for VecDeque<T>
 where
-    T: InputValue<()>,
+    T: InputValue,
 {
     fn len(&self) -> usize {
         VecDeque::len(self)
@@ -351,88 +351,80 @@ where
     }
 }
 
-fn list_at<'a, T, C, I>(
+fn list_at<'a, T, I>(
     items: &'a T,
-    ctx: &'a C,
     path: &[Segment],
     index_of: impl FnOnce(&'a T, usize) -> Option<&'a I>,
 ) -> Result<Option<Val<'a>>, BoxError>
 where
     T: ListSource,
-    C: ?Sized,
-    I: InputValue<C> + ?Sized + 'a,
+    I: InputValue + ?Sized + 'a,
 {
     let Some((head, rest)) = path.split_first() else {
         return Ok(Some(Val::Ref(ValueRef::Array(ArrayRef::List(items)))));
     };
     match head {
         Segment::Index(index) => match index_of(items, *index) {
-            Some(item) => InputValue::get(item, ctx, rest),
+            Some(item) => InputValue::get(item, rest),
             None => Ok(None),
         },
         Segment::Key { .. } => Ok(None),
     }
 }
 
-impl<C, T> InputValue<C> for Vec<T>
+impl<T> InputValue for Vec<T>
 where
-    C: ?Sized,
-    T: InputValue<C> + InputValue<()>,
+    T: InputValue,
 {
-    fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
-        list_at(self, ctx, path, |items, index| items.as_slice().get(index))
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+        list_at(self, path, |items, index| items.as_slice().get(index))
     }
 }
 
-impl<C, T> InputValue<C> for VecDeque<T>
+impl<T> InputValue for VecDeque<T>
 where
-    C: ?Sized,
-    T: InputValue<C> + InputValue<()>,
+    T: InputValue,
 {
-    fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
-        list_at(self, ctx, path, |items, index| VecDeque::get(items, index))
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+        list_at(self, path, |items, index| VecDeque::get(items, index))
     }
 }
 
-impl<C, T, const N: usize> InputValue<C> for [T; N]
+impl<T, const N: usize> InputValue for [T; N]
 where
-    C: ?Sized,
-    T: InputValue<C> + InputValue<()>,
+    T: InputValue,
 {
-    fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
-        list_at(self, ctx, path, |items, index| items.as_slice().get(index))
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+        list_at(self, path, |items, index| items.as_slice().get(index))
     }
 }
 
-impl<C, T> InputValue<C> for &[T]
+impl<T> InputValue for &[T]
 where
-    C: ?Sized,
-    T: InputValue<C> + InputValue<()>,
+    T: InputValue,
 {
-    fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         // `self` is `&&[T]`: a reference to the caller's slice pointer, which
         // is sized and implements [`ListSource`].
-        list_at(self, ctx, path, |items, index| <[T]>::get(items, index))
+        list_at(self, path, |items, index| <[T]>::get(items, index))
     }
 }
 
-fn object_at<'a, T, C, V>(
+fn object_at<'a, T, V>(
     object: &'a T,
-    ctx: &'a C,
     path: &[Segment],
     lookup: impl FnOnce(&'a T, &str) -> Option<&'a V>,
 ) -> Result<Option<Val<'a>>, BoxError>
 where
     T: ObjectSource,
-    C: ?Sized,
-    V: InputValue<C> + ?Sized + 'a,
+    V: InputValue + ?Sized + 'a,
 {
     let Some((head, rest)) = path.split_first() else {
         return Ok(Some(Val::Ref(ValueRef::Object(ObjectRef::Source(object)))));
     };
     match head {
         Segment::Key { key, .. } => match lookup(object, key) {
-            Some(value) => InputValue::get(value, ctx, rest),
+            Some(value) => InputValue::get(value, rest),
             None => Ok(None),
         },
         Segment::Index(_) => Ok(None),
@@ -442,69 +434,65 @@ where
 impl<K, V, S> ObjectSource for HashMap<K, V, S>
 where
     K: Eq + Hash + Borrow<str>,
-    V: InputValue<()>,
+    V: InputValue,
     S: BuildHasher,
 {
     fn get(&self, key: &str) -> Option<Val<'_>> {
         self.get(key)
-            .and_then(|value| value.get(&(), &[]).ok().flatten())
+            .and_then(|value| value.get(&[]).ok().flatten())
     }
 }
 
 impl<K, V> ObjectSource for BTreeMap<K, V>
 where
     K: Ord + Borrow<str>,
-    V: InputValue<()>,
+    V: InputValue,
 {
     fn get(&self, key: &str) -> Option<Val<'_>> {
         self.get(key)
-            .and_then(|value| value.get(&(), &[]).ok().flatten())
+            .and_then(|value| value.get(&[]).ok().flatten())
     }
 }
 
-impl<C, K, V, S> InputValue<C> for HashMap<K, V, S>
+impl<K, V, S> InputValue for HashMap<K, V, S>
 where
-    C: ?Sized,
     K: Eq + Hash + Borrow<str>,
-    V: InputValue<C> + InputValue<()>,
+    V: InputValue,
     S: BuildHasher,
 {
-    fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
-        object_at(self, ctx, path, |map, key| map.get(key))
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+        object_at(self, path, |map, key| map.get(key))
     }
 }
 
-impl<C, K, V, S> Input<C> for HashMap<K, V, S>
+impl<K, V, S> Input for HashMap<K, V, S>
 where
-    C: ?Sized,
     K: Eq + Hash + Borrow<str>,
-    V: InputValue<C> + InputValue<()>,
+    V: InputValue,
     S: BuildHasher,
 {
-    fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
-        InputValue::get(self, ctx, path)
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+        InputValue::get(self, path)
     }
 }
 
-impl<C, K, V> InputValue<C> for BTreeMap<K, V>
+impl<K, V> InputValue for BTreeMap<K, V>
 where
-    C: ?Sized,
     K: Ord + Borrow<str>,
-    V: InputValue<C> + InputValue<()>,
+    V: InputValue,
 {
-    fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
-        object_at(self, ctx, path, |map, key| map.get(key))
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+        object_at(self, path, |map, key| map.get(key))
     }
 }
 
-impl<C, K, V> Input<C> for BTreeMap<K, V>
+impl<K, V> Input for BTreeMap<K, V>
 where
-    C: ?Sized,
     K: Ord + Borrow<str>,
-    V: InputValue<C> + InputValue<()>,
+    V: InputValue,
 {
-    fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
-        InputValue::get(self, ctx, path)
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+        InputValue::get(self, path)
     }
 }
 
@@ -569,15 +557,15 @@ fn json_path<'a>(value: &'a serde_json::Value, path: &[Segment]) -> Option<Val<'
     }
 }
 
-impl<C: ?Sized> InputValue<C> for serde_json::Value {
-    fn get<'a>(&'a self, _: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+impl InputValue for serde_json::Value {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         Ok(json_path(self, path))
     }
 }
 
-impl<C: ?Sized> Input<C> for serde_json::Value {
-    fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
-        InputValue::get(self, ctx, path)
+impl Input for serde_json::Value {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+        InputValue::get(self, path)
     }
 }
 
@@ -587,8 +575,8 @@ impl ObjectSource for serde_json::Map<String, serde_json::Value> {
     }
 }
 
-impl<C: ?Sized> InputValue<C> for serde_json::Map<String, serde_json::Value> {
-    fn get<'a>(&'a self, _: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+impl InputValue for serde_json::Map<String, serde_json::Value> {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         let Some((head, rest)) = path.split_first() else {
             return Ok(Some(Val::Ref(ValueRef::Object(ObjectRef::Source(self)))));
         };
@@ -601,8 +589,8 @@ impl<C: ?Sized> InputValue<C> for serde_json::Map<String, serde_json::Value> {
     }
 }
 
-impl<C: ?Sized> Input<C> for serde_json::Map<String, serde_json::Value> {
-    fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
-        InputValue::get(self, ctx, path)
+impl Input for serde_json::Map<String, serde_json::Value> {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+        InputValue::get(self, path)
     }
 }

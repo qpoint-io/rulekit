@@ -11,34 +11,34 @@ use crate::value::{Map, ObjectRef, Val, Value, ValueRef};
 /// Resolves rule paths (such as `request.headers["host"]` or `tags[0]`)
 /// against evaluation data.
 ///
-/// Implemented by [`KvInput`], [`FnInput`], and [`NoInput`], and by
-/// references, `Box`es, and `Arc`s of inputs. `C` is the caller's
-/// evaluation context type.
-pub trait Input<C: ?Sized = ()> {
-    /// The value at `path`, which may borrow from the input or `ctx`.
+/// Implemented by [`KvInput`], [`FnInput`], and [`NoInput`], by string-keyed
+/// maps and `serde_json` values, by `#[derive(Input)]` types, and by
+/// references, `Box`es, and `Arc`s of inputs.
+pub trait Input {
+    /// The value at `path`, which may borrow from the input.
     ///
     /// Return `Ok(None)` when the path is absent: the rule result is then
     /// unknown, with the field listed in
     /// [`EvalResult::missing_fields`](crate::EvalResult::missing_fields).
     /// An `Err` is reported as [`Error::Input`](crate::Error::Input).
-    fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError>;
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError>;
 }
 
-impl<C: ?Sized, T: Input<C> + ?Sized> Input<C> for &T {
-    fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
-        (**self).get(ctx, path)
+impl<T: Input + ?Sized> Input for &T {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+        (**self).get(path)
     }
 }
 
-impl<C: ?Sized, T: Input<C> + ?Sized> Input<C> for Box<T> {
-    fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
-        (**self).get(ctx, path)
+impl<T: Input + ?Sized> Input for Box<T> {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+        (**self).get(path)
     }
 }
 
-impl<C: ?Sized, T: Input<C> + ?Sized> Input<C> for Arc<T> {
-    fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
-        (**self).get(ctx, path)
+impl<T: Input + ?Sized> Input for Arc<T> {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+        (**self).get(path)
     }
 }
 
@@ -46,45 +46,46 @@ impl<C: ?Sized, T: Input<C> + ?Sized> Input<C> for Arc<T> {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct NoInput;
 
-impl<C: ?Sized> Input<C> for NoInput {
-    fn get<'a>(&'a self, _: &'a C, _: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+impl Input for NoInput {
+    fn get<'a>(&'a self, _: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         Ok(None)
     }
 }
 
 /// An input backed by a closure that resolves a path to an owned value.
 ///
-/// The closure receives the evaluation context and the path; return
-/// `Ok(None)` for an absent field. Nested in a [`KvInput`] as a
-/// [`KvEntry::Input`], it receives the rest of the path below its key.
+/// Return `Ok(None)` for an absent field. Nested in a [`KvInput`] as a
+/// [`KvEntry::Input`], the closure receives the rest of the path below its
+/// key.
 ///
 /// ```rust
 /// use rulekit::ast::Segment;
 /// use rulekit::value::Value;
 /// use rulekit::{BoxError, FnInput, Opts};
 ///
-/// let input = FnInput(|_: &(), path: &[Segment]| {
+/// let input = FnInput(|path: &[Segment]| {
 ///     Ok::<_, BoxError>(match path {
 ///         [Segment::Key { key, .. }] if key == "port" => Some(Value::Int(443)),
 ///         _ => None,
 ///     })
 /// });
+/// let opts = Opts::default();
 ///
 /// let rule = rulekit::parse("port == 443")?;
-/// assert!(rule.eval(&(), &input, Opts::default()).pass());
+/// assert!(rule.eval(&input, &opts).pass());
 ///
 /// let rule = rulekit::parse("host == \"example.com\"")?;
-/// assert_eq!(rule.eval(&(), &input, Opts::default()).missing_fields().collect::<Vec<_>>(), ["host"]);
+/// assert_eq!(rule.eval(&input, &opts).missing_fields().collect::<Vec<_>>(), ["host"]);
 /// # Ok::<(), rulekit::ParseError>(())
 /// ```
 pub struct FnInput<F>(pub F);
 
-impl<C: ?Sized, F> Input<C> for FnInput<F>
+impl<F> Input for FnInput<F>
 where
-    F: Fn(&C, &[Segment]) -> Result<Option<Value>, BoxError>,
+    F: Fn(&[Segment]) -> Result<Option<Value>, BoxError>,
 {
-    fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
-        Ok((self.0)(ctx, path)?.map(Val::Owned))
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+        Ok((self.0)(path)?.map(Val::Owned))
     }
 }
 
@@ -92,54 +93,55 @@ where
 ///
 /// Build one by hand (it is a `HashMap`, so `Kv::from_iter` and `insert`
 /// work) or decode it from JSON with [`decode_json`](crate::decode_json).
-pub type Kv<C = ()> = Map<KvEntry<C>>;
+pub type Kv = Map<KvEntry>;
 
 /// One entry of a [`Kv`] map.
 ///
 /// `Value` converts into `KvEntry::Value` with `into()`.
-pub enum KvEntry<C: ?Sized = ()> {
+#[derive(Clone)]
+pub enum KvEntry {
     /// Plain data, including nested plain objects (`Value::Object`).
     Value(Value),
     /// A nested map whose entries may themselves be inputs.
-    Object(Kv<C>),
+    Object(Kv),
     /// A nested input that resolves the rest of any path through it.
-    Input(Arc<dyn Input<C> + Send + Sync>),
-    /// A value computed from the context on first use.
-    Lazy(Lazy<C>),
+    Input(Arc<dyn Input + Send + Sync>),
+    /// A value computed the first time it is read.
+    Lazy(Lazy),
 }
 
-type LazyFn<C> = dyn Fn(&C) -> Result<KvEntry<C>, BoxError> + Send + Sync;
+type LazyFn = dyn Fn() -> Result<KvEntry, BoxError> + Send + Sync;
 
-/// A value computed from the evaluation context the first time a rule reads
-/// it, then memoized in this entry.
+/// A value computed the first time a rule reads it, then memoized in this
+/// entry.
 ///
 /// Resolution is single-flight: concurrent evaluations sharing one
 /// [`KvInput`] call the function once. Errors are not memoized, so a later
 /// read retries. Once resolved, reads take no lock. Cloning gives a fresh,
 /// unresolved entry, so memoization is per input instance.
-pub struct Lazy<C: ?Sized = ()> {
-    f: Arc<LazyFn<C>>,
-    value: OnceLock<Box<KvEntry<C>>>,
+pub struct Lazy {
+    f: Arc<LazyFn>,
+    value: OnceLock<Box<KvEntry>>,
     lock: Mutex<()>,
 }
 
-impl<C: ?Sized> Lazy<C> {
+impl Lazy {
     /// A lazy entry computed by `f`, which returns a [`Value`] or a
     /// [`KvEntry`] (for example a [`KvEntry::Object`] or [`KvEntry::Input`]
     /// to resolve the rest of the path).
     pub fn new<T, F>(f: F) -> Self
     where
-        T: Into<KvEntry<C>>,
-        F: Fn(&C) -> Result<T, BoxError> + Send + Sync + 'static,
+        T: Into<KvEntry>,
+        F: Fn() -> Result<T, BoxError> + Send + Sync + 'static,
     {
         Lazy {
-            f: Arc::new(move |ctx: &C| f(ctx).map(Into::into)),
+            f: Arc::new(move || f().map(Into::into)),
             value: OnceLock::new(),
             lock: Mutex::new(()),
         }
     }
 
-    fn resolve(&self, ctx: &C) -> Result<&KvEntry<C>, BoxError> {
+    fn resolve(&self) -> Result<&KvEntry, BoxError> {
         if let Some(v) = self.value.get() {
             return Ok(&**v);
         }
@@ -152,12 +154,12 @@ impl<C: ?Sized> Lazy<C> {
         if let Some(v) = self.value.get() {
             return Ok(&**v);
         }
-        let v = Box::new((self.f)(ctx)?);
+        let v = Box::new((self.f)()?);
         Ok(&**self.value.get_or_init(|| v))
     }
 }
 
-impl<C: ?Sized> Clone for Lazy<C> {
+impl Clone for Lazy {
     fn clone(&self) -> Self {
         Lazy {
             f: self.f.clone(),
@@ -167,9 +169,9 @@ impl<C: ?Sized> Clone for Lazy<C> {
     }
 }
 
-impl<C: ?Sized> InputValue<C> for Lazy<C> {
-    fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
-        let resolved = self.resolve(ctx)?;
+impl InputValue for Lazy {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+        let resolved = self.resolve()?;
         let cursor = match resolved {
             KvEntry::Value(v) => Cursor::Val(Val::Ref(v.as_ref())),
             KvEntry::Object(kv) => Cursor::Kv(kv),
@@ -177,17 +179,17 @@ impl<C: ?Sized> InputValue<C> for Lazy<C> {
             // A lazy that yields another lazy is not resolved again.
             KvEntry::Lazy(_) => Cursor::Val(Val::Ref(ValueRef::Object(ObjectRef::Opaque))),
         };
-        walk(cursor, ctx, path)
+        walk(cursor, path)
     }
 }
 
-impl<C: ?Sized> Input<C> for Lazy<C> {
-    fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
-        InputValue::get(self, ctx, path)
+impl Input for Lazy {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+        InputValue::get(self, path)
     }
 }
 
-impl<C: ?Sized> fmt::Debug for Lazy<C> {
+impl fmt::Debug for Lazy {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Lazy")
             .field("resolved", &self.value.get().is_some())
@@ -195,30 +197,19 @@ impl<C: ?Sized> fmt::Debug for Lazy<C> {
     }
 }
 
-impl<C: ?Sized> Clone for KvEntry<C> {
-    fn clone(&self) -> Self {
-        match self {
-            KvEntry::Value(v) => KvEntry::Value(v.clone()),
-            KvEntry::Object(kv) => KvEntry::Object(kv.clone()),
-            KvEntry::Input(input) => KvEntry::Input(input.clone()),
-            KvEntry::Lazy(lazy) => KvEntry::Lazy(lazy.clone()),
-        }
-    }
-}
-
-impl<C: ?Sized> From<Value> for KvEntry<C> {
+impl From<Value> for KvEntry {
     fn from(v: Value) -> Self {
         KvEntry::Value(v)
     }
 }
 
-impl<C: ?Sized> From<String> for KvEntry<C> {
+impl From<String> for KvEntry {
     fn from(s: String) -> Self {
         Value::String(s).into()
     }
 }
 
-impl<C: ?Sized> From<&str> for KvEntry<C> {
+impl From<&str> for KvEntry {
     fn from(s: &str) -> Self {
         Value::String(s.to_owned()).into()
     }
@@ -237,14 +228,10 @@ impl<C: ?Sized> From<&str> for KvEntry<C> {
 /// use std::sync::Arc;
 /// use rulekit::ast::Segment;
 /// use rulekit::value::Value;
-/// use rulekit::{BoxError, Env, FnInput, Kv, KvEntry, KvInput, Lazy, Opts};
-///
-/// struct Ctx {
-///     user: String,
-/// }
+/// use rulekit::{BoxError, FnInput, Kv, KvEntry, KvInput, Lazy, Opts};
 ///
 /// // Resolves `request.headers.<name>`.
-/// let headers = FnInput(|_: &Ctx, path: &[Segment]| {
+/// let headers = FnInput(|path: &[Segment]| {
 ///     Ok::<_, BoxError>(match path {
 ///         [Segment::Key { key, .. }] if key == "host" => {
 ///             Some(Value::String("example.com".into()))
@@ -253,7 +240,7 @@ impl<C: ?Sized> From<&str> for KvEntry<C> {
 ///     })
 /// });
 ///
-/// let request: Kv<Ctx> = Kv::from_iter([
+/// let request: Kv = Kv::from_iter([
 ///     ("method".to_owned(), Value::String("GET".into()).into()),
 ///     ("headers".to_owned(), KvEntry::Input(Arc::new(headers))),
 /// ]);
@@ -261,25 +248,23 @@ impl<C: ?Sized> From<&str> for KvEntry<C> {
 ///     ("request".to_owned(), KvEntry::Object(request)),
 ///     (
 ///         "user".to_owned(),
-///         KvEntry::Lazy(Lazy::new(|ctx: &Ctx| Ok(Value::String(ctx.user.clone())))),
+///         KvEntry::Lazy(Lazy::new(|| Ok(Value::String("alice".into())))),
 ///     ),
 /// ]));
 ///
 /// let rule = rulekit::parse(
 ///     r#"request.method == "GET" and request.headers.host == "example.com" and user == "alice""#,
 /// )?;
-/// let env = Env::new();
-/// let ctx = Ctx { user: "alice".into() };
-/// assert!(rule.eval(&ctx, &input, Opts::new(&env)).pass());
+/// assert!(rule.eval(&input, &Opts::default()).pass());
 /// # Ok::<(), rulekit::ParseError>(())
 /// ```
-pub struct KvInput<C: ?Sized = ()> {
-    kv: Kv<C>,
+pub struct KvInput {
+    kv: Kv,
 }
 
-impl<C: ?Sized> KvInput<C> {
+impl KvInput {
     /// An input over `kv`.
-    pub fn new(kv: Kv<C>) -> Self {
+    pub fn new(kv: Kv) -> Self {
         KvInput { kv }
     }
 
@@ -294,34 +279,30 @@ impl<C: ?Sized> KvInput<C> {
     }
 }
 
-enum Cursor<'a, C: ?Sized> {
-    Kv(&'a Kv<C>),
-    Input(&'a (dyn Input<C> + Send + Sync)),
+enum Cursor<'a> {
+    Kv(&'a Kv),
+    Input(&'a (dyn Input + Send + Sync)),
     Val(Val<'a>),
 }
 
-impl<C: ?Sized> Input<C> for KvInput<C> {
-    fn get<'a>(&'a self, ctx: &'a C, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
+impl Input for KvInput {
+    fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
         if path.is_empty() {
             return Ok(None);
         }
-        walk(Cursor::Kv(&self.kv), ctx, path)
+        walk(Cursor::Kv(&self.kv), path)
     }
 }
 
-fn walk<'a, C: ?Sized>(
-    mut cursor: Cursor<'a, C>,
-    ctx: &'a C,
-    path: &[Segment],
-) -> Result<Option<Val<'a>>, BoxError> {
+fn walk<'a>(mut cursor: Cursor<'a>, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
     for (i, segment) in path.iter().enumerate() {
         if let Cursor::Input(input) = cursor {
-            return input.get(ctx, &path[i..]);
+            return input.get(&path[i..]);
         }
         let next = match cursor {
             Cursor::Val(v) => step(v, segment).map(Cursor::Val),
             Cursor::Kv(kv) => match segment {
-                Segment::Key { key, .. } => kv.get(key).map(|e| entry(e, ctx)).transpose()?,
+                Segment::Key { key, .. } => kv.get(key).map(entry).transpose()?,
                 Segment::Index(_) => None,
             },
             Cursor::Input(_) => unreachable!("inputs take over the rest of the path"),
@@ -340,9 +321,9 @@ fn walk<'a, C: ?Sized>(
 /// The cursor for a map entry, resolving a lazy entry (Go `resolveLazy`).
 /// A lazy that yields another lazy is not resolved again: like a Go func
 /// value, it is an opaque value.
-fn entry<'a, C: ?Sized>(entry: &'a KvEntry<C>, ctx: &'a C) -> Result<Cursor<'a, C>, BoxError> {
+fn entry(entry: &KvEntry) -> Result<Cursor<'_>, BoxError> {
     let entry = match entry {
-        KvEntry::Lazy(lazy) => lazy.resolve(ctx)?,
+        KvEntry::Lazy(lazy) => lazy.resolve()?,
         other => other,
     };
     Ok(match entry {

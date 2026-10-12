@@ -34,7 +34,8 @@ struct Request<'a> {
 let rule = rulekit::parse(r"domain matches /example\.com$/ and port == 8080")?;
 let input = Request { domain: "example.com", port: 8080 };
 
-let result = rule.eval(&(), &input, Opts::default());
+let opts = Opts::default();
+let result = rule.eval(&input, &opts);
 if let Some(err) = result.error() {
     eprintln!("error evaluating rule: {err}");
 } else if result.unknown() {
@@ -46,7 +47,8 @@ if let Some(err) = result.error() {
 }
 ```
 
-`Rule::eval(ctx, input, opts)` returns an `EvalResult`:
+`Rule::eval(input, opts)` returns an `EvalResult`, which borrows from the rule,
+the input, and `opts`:
 
 - `value()`: the result value, usually a boolean
 - `error()`: an evaluation error (input or function failure, unknown function, bad argument)
@@ -56,8 +58,7 @@ if let Some(err) = result.error() {
 - `ok()` / `complete()`: no error and no missing fields
 - `unknown()`: no error, but more input is needed
 
-`ctx` is your evaluation context (for example a request or tenant), passed to
-inputs, lazy values, and functions. Use `&()` when there is none.
+Per-evaluation data (a request, a tenant) is part of the input.
 
 A parse error reports its line and column, and its `Display` points at the
 offending source.
@@ -71,44 +72,37 @@ input is not walked or copied. Strings are borrowed from your data.
 
 ```rust
 use std::collections::HashMap;
-use rulekit::{Opts, kv, lazy};
-
-struct Ctx {
-    user: String,
-}
+use rulekit::{Opts, lazy};
 
 #[derive(rulekit::Input)]
 struct Request<'a> {
     method: &'a str,
     headers: &'a HashMap<String, String>,
-    user: rulekit::Lazy<Ctx>,
+    user: rulekit::Lazy,
 }
 
 let headers = HashMap::from([("host".into(), "example.com".into())]);
 let input = Request {
     method: "GET",
     headers: &headers,
-    user: lazy(|ctx: &Ctx| Ok(ctx.user.clone())),
+    user: lazy(|| Ok("alice".to_owned())),
 };
 
 let rule = rulekit::parse(
     r#"method == "GET" and headers.host == "example.com" and user == "alice""#,
 )?;
-let env: rulekit::Env<Ctx> = rulekit::Env::new();
-let ctx = Ctx { user: "alice".into() };
-assert!(rule.eval(&ctx, &input, Opts::new(&env)).pass());
+assert!(rule.eval(&input, &Opts::default()).pass());
 ```
 
 `#[rulekit(rename = "x")]` changes the name a rule sees. `#[rulekit(bytes)]`
 reads a `Vec<u8>`, `&[u8]`, `[u8; N]`,
 `Box<[u8]>`, or `Cow<[u8]>` field as a byte string instead of a list of
-numbers. `#[rulekit(context = Ctx)]` on the struct sets the context type when
-it is not `()`. An unknown field is missing. A `None` field is `null`, as
+numbers. An unknown field is missing. A `None` field is `null`, as
 serde writes it, unless `skip_serializing_if` omits it; a bare `None` input
 value is missing.
 
-`kv!` is the ad-hoc form. A nested `{ ... }` is another map. [`lazy`] runs the first time the field is read, then reuses that owned
-value (a borrow of `ctx` is copied into the memo):
+`kv!` is the ad-hoc form. A nested `{ ... }` is another map. [`lazy`] runs the
+first time the field is read, then reuses that owned value:
 
 ```rust
 use rulekit::{Opts, kv};
@@ -119,7 +113,7 @@ let input = kv! {
     "user" => { "id" => 42 },
 };
 let rule = rulekit::parse(r#"host == "api.acme.com" and port == 8443 and user.id == 42"#)?;
-assert!(rule.eval(&(), &input, Opts::default()).pass());
+assert!(rule.eval(&input, &Opts::default()).pass());
 ```
 
 List membership is `tags contains "db"` (`in` takes an array or CIDR literal,
@@ -184,7 +178,7 @@ let record = EventRecord::Entity(EntityRecord {
 let rule = rulekit::parse(
     r#"severity == "warn" and (starts_with(type, "process.") or payload.model == "gpt-x")"#,
 )?;
-assert!(rule.eval(&(), &record, Opts::default()).pass());
+assert!(rule.eval(&record, &Opts::default()).pass());
 # Ok::<(), rulekit::ParseError>(())
 ```
 
@@ -219,20 +213,21 @@ use rulekit::{JsonOptions, KvInput, Opts, decode_json};
 
 let data = br#"{"src.$ip": "10.1.2.3", "port": 443}"#;
 let opts = JsonOptions { annotated_keys: true, ..JsonOptions::default() };
-let input = KvInput::new(decode_json::<()>(data, opts)?);
+let input = KvInput::new(decode_json(data, opts)?);
 
 let rule = rulekit::parse("src in 10.0.0.0/8 and port == 443")?;
-assert!(rule.eval(&(), &input, Opts::default()).pass());
+assert!(rule.eval(&input, &Opts::default()).pass());
 ```
 
 ## Functions and macros
 
-Custom functions and macros live in an `Env`, passed with `Opts::new(&env)`.
-`EnvBuilder::build` rejects names that shadow the standard library
-(`starts_with`) and macros named like a function.
+Custom functions and macros live in `Opts`, built once with `Opts::builder()`
+and passed to `Rule::eval`. `OptsBuilder::build` rejects duplicate function
+names, names that shadow the standard library (`starts_with`), and macros
+named like a function. `Opts::default()` has neither.
 
 ```rust
-use rulekit::{Env, FuncSchema, Function, NoInput, Opts};
+use rulekit::{FuncSchema, Function, NoInput, Opts};
 
 // One field per positional argument, in order.
 #[derive(rulekit::Args)]
@@ -243,16 +238,16 @@ struct ClampArgs {
 
 let clamp = Function::new::<ClampArgs, i64>(
     FuncSchema { name: "clamp", doc: "The smaller of n and max." },
-    |_: &(), a| Ok(a.n.min(a.max)),
+    |a| Ok(a.n.min(a.max)),
 );
 
-let env = Env::builder()
+let opts = Opts::builder()
     .function(clamp)
     .macro_source("is_internal", "ip in 10.0.0.0/8")?
     .build()?;
 
 let rule = rulekit::parse("clamp(150, 100) == 100 and not is_internal()")?;
-let result = rule.eval(&(), &NoInput, Opts::new(&env));
+let result = rule.eval(&NoInput, &opts);
 assert_eq!(result.missing_fields().collect::<Vec<_>>(), ["ip"]);
 ```
 
@@ -264,25 +259,27 @@ field (`#[rulekit(rename = "...")]` to change it), of any `FromArg` type
 for borrowed arguments, and a last `Rest<'a>` field for the remaining
 arguments; `NoArgs` is the argument type of a function without arguments.
 `Function::new::<A, R>` names the argument struct and the return type
-(`bool`, `i64`, `&str`, `String`, `Ip`, ..., or `ValueRef`/`Val` when the
-type is decided at run time), so the closure needs no annotations and may
-return data borrowed from the context. `FuncSchema` holds the name and doc.
+(`bool`, `i64`, `&'static str`, `String`, `Ip`, ..., or `ValueRef`/`Val` when
+the type is decided at run time), so the closure needs no annotations.
+`FuncSchema` holds the name and doc.
 
-Wrong argument counts and types are errors. Functions receive the evaluation
-context and their arguments, not the rule's input. A function returns
+Wrong argument counts and types are errors. Functions receive their
+arguments, not the rule's input; state that outlives one evaluation is
+captured by the closure. A function returns
 `Err(FnError::missing([...]))` when it needs input that is not there (the rule
 result is then unknown), or any other error with `?` or `FnError::msg`. Macros
 take no arguments; use a function for parameterized logic.
 
 ## Tracing
 
-`Opts::with_trace(true)` records how each node evaluated:
+`OptsBuilder::trace(true)` records how each node evaluated:
 
 ```rust
 use rulekit::{NoInput, Opts, TraceStatus};
 
 let rule = rulekit::parse("port == 443 or tls")?;
-let result = rule.eval(&(), &NoInput, Opts::default().with_trace(true));
+let opts = Opts::builder().trace(true).build()?;
+let result = rule.eval(&NoInput, &opts);
 let trace = result.trace().unwrap();
 assert_eq!(trace.status(), TraceStatus::Missing);
 assert_eq!(trace.missing_fields(), ["port", "tls"]);
@@ -326,15 +323,15 @@ assert_eq!(out, "c == 2   -- first check\nand b");
 | Go | Rust |
 | --- | --- |
 | `Parse`, `ParseAST`, `Compile` | `parse`, `Ast::parse`, `compile` |
-| `rule.Eval(ctx, input, opts)` | `rule.eval(&ctx, &input, opts)` |
+| `rule.Eval(ctx, input, opts)` | `rule.eval(&input, &opts)` (no context: per-evaluation data goes in the input) |
 | `Result` | `EvalResult` |
-| `Opts{Functions, Macros, Trace}` | `Opts { env, trace }` with `Env::builder()` |
+| `Opts{Functions, Macros, Trace}` | `Opts` with `Opts::builder()` (`function`, `macro_source`, `trace`) |
 | struct / map literal | `#[derive(Input)]`, `kv!` |
 | `FromKV`, `KV` | `KvInput::new`, `Kv` (owned escape hatch) |
 | `FromFunc`, `FromContextFunc` | `FnInput` |
 | `LazyValue`, `LazyContextValue` | `lazy`, `Lazy` |
 | `DecodeJSON`, `JSONOptions` | `decode_json`, `JsonOptions` |
-| `MacroSet.Register` | `EnvBuilder::macro_source` |
+| `MacroSet.Register` | `OptsBuilder::macro_source` |
 | `rulekit.Func` with an args struct | `Function::new::<A, R>(FuncSchema { name, doc }, closure)` with `#[derive(rulekit::Args)]` |
 | `Format`, `Rewrite`, `Edit` | `format`, `rewrite`, `Edit` |
 | `Source()`, `Compact()`, `Multiline(indent)` | `PrintMode::Source`, `Compact`, `Multiline(indent)` |

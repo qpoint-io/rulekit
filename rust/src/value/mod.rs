@@ -293,7 +293,7 @@ impl fmt::Debug for ObjectRef<'_> {
 
 /// A borrowed or owned value: what inputs, functions, and evaluation return.
 ///
-/// Borrow when the data outlives the evaluation (input data, the context);
+/// Borrow when the data outlives the evaluation (input data, the rule, `Opts`);
 /// own computed values. `From` converts a [`Value`] or [`ValueRef`].
 #[derive(Clone, Debug)]
 pub enum Val<'a> {

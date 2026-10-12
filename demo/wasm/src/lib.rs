@@ -307,11 +307,15 @@ fn eval_rule_json(source: &str, input_json: &str) -> EvalResponse {
         Ok(rule) => rule,
         Err(err) => return failed(err.to_string()),
     };
-    let input = match rulekit::decode_json::<()>(input_json.as_bytes(), JsonOptions::default()) {
+    let input = match rulekit::decode_json(input_json.as_bytes(), JsonOptions::default()) {
         Ok(kv) => KvInput::new(kv),
         Err(err) => return failed(format!("input json: {err}")),
     };
-    let res = rule.eval(&(), &input, Opts::default().with_trace(true));
+    let opts = match Opts::builder().trace(true).build() {
+        Ok(opts) => opts,
+        Err(err) => return failed(err.to_string()),
+    };
+    let res = rule.eval(&input, &opts);
     EvalResponse {
         ok: res.error().is_none(),
         value: present(res.value()),

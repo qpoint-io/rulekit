@@ -61,13 +61,13 @@ pub struct JsonOptions {
 ///     annotated_keys: true,
 ///     ..JsonOptions::default()
 /// };
-/// let input = KvInput::new(decode_json::<()>(data, opts)?);
+/// let input = KvInput::new(decode_json(data, opts)?);
 ///
 /// let rule = rulekit::parse(r#"src in 10.0.0.0/8 and port == 443 and tags contains "prod""#)?;
-/// assert!(rule.eval(&(), &input, Opts::default()).pass());
+/// assert!(rule.eval(&input, &Opts::default()).pass());
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
-pub fn decode_json<C: ?Sized>(data: &[u8], opts: JsonOptions) -> Result<Kv<C>, Error> {
+pub fn decode_json(data: &[u8], opts: JsonOptions) -> Result<Kv, Error> {
     if opts.annotated_keys && opts.typed_document {
         return Err(err(
             "json options annotated_keys and typed_document are mutually exclusive",
@@ -105,7 +105,7 @@ fn json_err(e: serde_json::Error) -> Error {
     err(format!("invalid json: {e}"))
 }
 
-fn ctx(prefix: String, e: Error) -> Error {
+fn within(prefix: String, e: Error) -> Error {
     match e {
         Error::Json(msg) => Error::Json(format!("{prefix}: {msg}")),
         other => other,
@@ -274,7 +274,7 @@ fn plain(value: Json, annotated: bool) -> Result<Value, Error> {
             items
                 .into_iter()
                 .enumerate()
-                .map(|(i, v)| plain(v, annotated).map_err(|e| ctx(format!("index {i}"), e)))
+                .map(|(i, v)| plain(v, annotated).map_err(|e| within(format!("index {i}"), e)))
                 .collect::<Result<_, _>>()?,
         ),
         Json::Object(map) => {
@@ -289,10 +289,10 @@ fn plain(value: Json, annotated: bool) -> Result<Value, Error> {
                     return Err(err(format!("duplicate normalized key {out_key:?}")));
                 }
                 let mut value =
-                    plain(child, annotated).map_err(|e| ctx(format!("key {key:?}"), e))?;
+                    plain(child, annotated).map_err(|e| within(format!("key {key:?}"), e))?;
                 if let Some(suffix) = suffix {
                     value = scalar(suffix, Raw::Value(&value), "")
-                        .map_err(|e| ctx(format!("key {key:?}"), e))?;
+                        .map_err(|e| within(format!("key {key:?}"), e))?;
                 }
                 out.insert(out_key.to_owned(), value);
             }
@@ -351,7 +351,7 @@ fn typed_document(raw: Json) -> Result<Map<Value>, Error> {
                 "typed json key {key:?} must not use annotated suffix \".${suffix}\""
             )));
         }
-        let value = typed_node(child).map_err(|e| ctx(format!("key {key:?}"), e))?;
+        let value = typed_node(child).map_err(|e| within(format!("key {key:?}"), e))?;
         out.insert(key, value);
     }
     Ok(out)
@@ -378,7 +378,7 @@ fn typed_node(value: Json) -> Result<Value, Error> {
             for (key, child) in map {
                 out.insert(
                     key.clone(),
-                    typed_node(child).map_err(|e| ctx(format!("key {key:?}"), e))?,
+                    typed_node(child).map_err(|e| within(format!("key {key:?}"), e))?,
                 );
             }
             Ok(Value::Object(out))
@@ -391,7 +391,7 @@ fn typed_node(value: Json) -> Result<Value, Error> {
                 items
                     .into_iter()
                     .enumerate()
-                    .map(|(i, v)| typed_node(v).map_err(|e| ctx(format!("index {i}"), e)))
+                    .map(|(i, v)| typed_node(v).map_err(|e| within(format!("index {i}"), e)))
                     .collect::<Result<_, _>>()?,
             ))
         }
@@ -597,7 +597,7 @@ mod tests {
         assert!(decode(r#"{"a": 1} {}"#, plain).is_err());
         assert!(decode(r#"{"s": "\ud800"}"#, plain).is_err());
         assert!(decode(r#"{"\udc00": 1}"#, plain).is_err());
-        assert!(decode_json::<()>(b"{\"s\": \"a\xffb\"}", plain).is_err());
+        assert!(decode_json(b"{\"s\": \"a\xffb\"}", plain).is_err());
         assert!(decode("\u{feff}{}", plain).is_err());
         assert!(decode("[1]", plain).is_err());
         assert!(decode("", plain).is_err());

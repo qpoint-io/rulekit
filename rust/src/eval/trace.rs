@@ -115,10 +115,11 @@ impl Diagnostic {
 
 /// How evaluation reached its result, node by node.
 ///
-/// Returned by [`EvalResult::trace`](crate::EvalResult::trace) when [`Opts::trace`](crate::Opts::trace)
-/// is set. The root describes the whole rule; [`children`](Self::children)
-/// follow the expression tree. A macro call has the macro's expression as its
-/// child. A trace borrows from the rule and the input like the result does;
+/// Returned by [`EvalResult::trace`](crate::EvalResult::trace) when
+/// [`Opts::trace`](crate::Opts::trace) is set. The root describes the whole
+/// rule; [`children`](Self::children) follow the expression tree. A macro call
+/// has the macro's expression as its child. A trace borrows from the rule, the
+/// input, and the options like the result does;
 /// [`into_owned`](Self::into_owned) detaches it.
 ///
 /// ```rust
@@ -128,7 +129,8 @@ impl Diagnostic {
 /// let rule = rulekit::parse("port == 443 or tls")?;
 /// let input = KvInput::from_values(Map::from_iter([("port".to_owned(), Value::Int(443))]));
 ///
-/// let result = rule.eval(&(), &input, Opts::default().with_trace(true));
+/// let opts = Opts::builder().trace(true).build()?;
+/// let result = rule.eval(&input, &opts);
 /// let trace = result.trace().expect("tracing was on");
 /// assert_eq!(trace.status(), TraceStatus::Passed);
 /// assert_eq!(trace.expr(), "port == 443 or tls");
@@ -137,7 +139,7 @@ impl Diagnostic {
 /// let [left, right] = trace.children() else { panic!() };
 /// assert_eq!(left.status(), TraceStatus::Passed);
 /// assert_eq!(right.status(), TraceStatus::Pruned);
-/// # Ok::<(), rulekit::ParseError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Clone, Debug)]
 pub struct Trace<'a> {
