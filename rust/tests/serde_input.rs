@@ -1,6 +1,7 @@
 //! `SerdeInput` reads any `Serialize` value with serde's names and layout.
 
 use std::collections::BTreeMap;
+use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -10,6 +11,7 @@ use rulekit::value::{Cidr, Ip, Mac, Url, Val, ValueRef};
 use rulekit::{Input, InputValue, Opts, SerdeInput, kv};
 use serde::Serialize;
 use serde::ser::{self, SerializeStruct, Serializer};
+use serde_json::value::RawValue;
 use serde_json::{Value as Json, json};
 
 #[derive(Debug, PartialEq)]
@@ -371,6 +373,15 @@ fn map_keys_match_as_serde_json_writes_them() {
     pass(&c, "headers");
 }
 
+/// A map written with float keys, which no std map can hold.
+struct FloatKeys<K>(Vec<(K, u8)>);
+
+impl<K: Serialize> Serialize for FloatKeys<K> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_map(self.0.iter().map(|(key, value)| (key, value)))
+    }
+}
+
 #[test]
 fn map_key_kinds() {
     #[derive(Serialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -385,6 +396,8 @@ fn map_key_kinds() {
         by_level: BTreeMap<Level, u8>,
         by_signed: BTreeMap<i64, u8>,
         by_pair: BTreeMap<(u8, u8), u8>,
+        by_float: FloatKeys<f64>,
+        by_f32: FloatKeys<f32>,
     }
     let keys = Keys {
         by_bool: BTreeMap::from([(true, 1)]),
@@ -392,17 +405,26 @@ fn map_key_kinds() {
         by_level: BTreeMap::from([(Level::Low, 3), (Level::High, 4)]),
         by_signed: BTreeMap::from([(-1, 5)]),
         by_pair: BTreeMap::from([((1, 2), 6)]),
+        by_float: FloatKeys(vec![(1.5, 7), (2.0, 8)]),
+        by_f32: FloatKeys(vec![(0.1, 9)]),
     };
     pass(
         &keys,
         r#"by_bool["true"] == 1 and by_char["x"] == 2 and by_level.High == 4
-           and by_level.Low == 3 and by_signed["-1"] == 5"#,
+           and by_level.Low == 3 and by_signed["-1"] == 5
+           and by_float["1.5"] == 7 and by_float["2.0"] == 8 and by_f32["0.1"] == 9"#,
     );
     // serde_json cannot write a tuple key either.
     let Outcome::Error(message) = outcome(&keys, r#"by_pair["1"] == 6"#) else {
         panic!("expected an error");
     };
     assert!(message.contains("key must be a string"), "{message}");
+    // A float key must be finite.
+    let nan = FloatKeys(vec![(f64::NAN, 1)]);
+    let Outcome::Error(message) = outcome(&nan, r#"["NaN"] == 1"#) else {
+        panic!("expected an error");
+    };
+    assert!(message.contains("float key must be finite"), "{message}");
 }
 
 #[derive(Serialize)]
@@ -573,6 +595,14 @@ fn arbitrary_precision_numbers_are_numbers() {
         &value,
         "int == -42 and wide == 18446744073709551615 and float == 1.5",
     );
+    // Nothing is below a number: not even the struct's own private field.
+    missing(&value, "int.zz == 1", &["int.zz"]);
+    missing(
+        &value,
+        r#"int["$serde_json::private::Number"] == 1"#,
+        &[r#"int["$serde_json::private::Number"]"#],
+    );
+    missing(&value, "float[0] == 1", &["float[0]"]);
 }
 
 // --- typed leaves ---
@@ -841,6 +871,21 @@ fn siblings() -> Siblings {
     }
 }
 
+#[derive(Serialize)]
+enum Wide {
+    A { x: u32 },
+    B { y: u32, bad: Failing },
+    C { ip: IpAddr },
+}
+
+#[derive(Serialize)]
+struct Flattened {
+    #[serde(flatten)]
+    first: Wide,
+    #[serde(flatten)]
+    second: Wide,
+}
+
 #[test]
 fn siblings_off_the_path_are_never_serialized() {
     let value = siblings();
@@ -851,6 +896,29 @@ fn siblings_off_the_path_are_never_serialized() {
     missing(&value, "nested.missing", &["nested.missing"]);
     missing(&value, "list[0]", &["list[0]"]);
     missing(&value, "map.k", &["map.k"]);
+
+    // Once the target is read nothing after it is serialized, even what
+    // serde buffers: `second` is a failing struct variant, flattened.
+    let flat = Flattened {
+        first: Wide::A { x: 1 },
+        second: Wide::B { y: 2, bad: Failing },
+    };
+    pass(&flat, "A.x == 1");
+    // Reading into it is another matter: serde buffers the whole payload
+    // before the walk sees it.
+    let Outcome::Error(message) = outcome(&flat, "B.y == 2") else {
+        panic!("expected the buffered payload to fail");
+    };
+    assert!(message.contains("cannot serialize"), "{message}");
+    // That buffering also writes a typed value as the text serde gives it.
+    let flat = Flattened {
+        first: Wide::C {
+            ip: "10.1.1.1".parse().unwrap(),
+        },
+        second: Wide::A { x: 1 },
+    };
+    fail(&flat, "C.ip in 10.0.0.0/8");
+    pass(&flat, r#"C.ip == "10.1.1.1""#);
 }
 
 #[test]
@@ -887,6 +955,22 @@ impl Serialize for Counted<'_> {
     }
 }
 
+/// Written with `collect_str`, and counts how many times it is formatted.
+struct Shown<'a>(&'a AtomicUsize);
+
+impl fmt::Display for Shown<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        f.write_str("shown")
+    }
+}
+
+impl Serialize for Shown<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
 #[test]
 fn only_the_target_is_serialized() {
     #[derive(Serialize)]
@@ -894,12 +978,15 @@ fn only_the_target_is_serialized() {
         a: Counted<'a>,
         b: Counted<'a>,
         c: Counted<'a>,
+        shown: Shown<'a>,
     }
     let calls = AtomicUsize::new(0);
+    let formats = AtomicUsize::new(0);
     let value = Fields {
         a: Counted(&calls, 1),
         b: Counted(&calls, 2),
         c: Counted(&calls, 3),
+        shown: Shown(&formats),
     };
     pass(&value, "b == 2");
     assert_eq!(calls.load(Ordering::SeqCst), 1);
@@ -907,6 +994,13 @@ fn only_the_target_is_serialized() {
     assert_eq!(calls.load(Ordering::SeqCst), 2);
     missing(&value, "d == 4", &["d"]);
     assert_eq!(calls.load(Ordering::SeqCst), 2);
+
+    // A `collect_str` value is formatted once when it is read, and not at
+    // all for a path below it, which is missing.
+    pass(&value, r#"shown == "shown""#);
+    assert_eq!(formats.load(Ordering::SeqCst), 1);
+    missing(&value, "shown.zz == 1", &["shown.zz"]);
+    assert_eq!(formats.load(Ordering::SeqCst), 1);
 }
 
 // --- whole values ---
@@ -993,6 +1087,8 @@ mod wire {
     pub enum Record {
         Entity(EntityRecord),
         Host(HostRecord),
+        Flat(Flat),
+        Misc(Misc),
     }
 
     #[derive(Serialize)]
@@ -1113,6 +1209,48 @@ mod wire {
         pub steps: Vec<Meta>,
         #[serde(flatten)]
         pub extra: BTreeMap<String, Json>,
+    }
+
+    #[derive(Serialize)]
+    pub enum Body {
+        Circle { r: f64, tags: Vec<String> },
+    }
+
+    #[derive(Serialize)]
+    pub enum Extra {
+        Pair(u8, String),
+        Named(Meta),
+    }
+
+    /// Externally tagged enums flattened into a struct: serde buffers their
+    /// struct and tuple variants before the walk sees them.
+    #[derive(Serialize)]
+    pub struct Flat {
+        pub id: u32,
+        #[serde(flatten)]
+        pub first: Body,
+        #[serde(flatten)]
+        pub second: Extra,
+    }
+
+    /// `RawValue`s, non-finite floats (`null`), and float map keys.
+    #[derive(Serialize)]
+    pub struct Misc {
+        pub raw_object: Box<RawValue>,
+        pub raw_array: Box<RawValue>,
+        pub raw_scalar: Box<RawValue>,
+        pub raw_list: Vec<Box<RawValue>>,
+        pub nan: f64,
+        pub inf: f32,
+        pub neg_inf: f64,
+        pub finite: f32,
+        pub floats: Vec<f64>,
+        pub by_f64: FloatKeys<f64>,
+        pub by_f32: FloatKeys<f32>,
+    }
+
+    pub fn raw(json: &str) -> Box<RawValue> {
+        RawValue::from_string(json.to_owned()).unwrap()
     }
 }
 
@@ -1297,6 +1435,38 @@ fn wire_records() -> Vec<wire::Record> {
                 }],
                 extra: BTreeMap::from([("note".into(), json!({"deep": [true]}))]),
             }),
+        }),
+        Record::Flat(Flat {
+            id: 1,
+            first: Body::Circle {
+                r: 0.5,
+                tags: vec!["a".into(), "b".into()],
+            },
+            second: Extra::Pair(7, "seven".into()),
+        }),
+        Record::Flat(Flat {
+            id: 2,
+            first: Body::Circle {
+                r: f64::NAN,
+                tags: vec![],
+            },
+            second: Extra::Named(Meta {
+                vendor: "v".into(),
+                version: 3,
+            }),
+        }),
+        Record::Misc(Misc {
+            raw_object: raw(r#"{"a": [1, {"b": null}], "c": "x", "d": 1.5}"#),
+            raw_array: raw(r#"[true, {"k": [2]}, "s"]"#),
+            raw_scalar: raw("42"),
+            raw_list: vec![raw(r#"{"n": 1}"#), raw("[1, 2]"), raw("null")],
+            nan: f64::NAN,
+            inf: f32::INFINITY,
+            neg_inf: f64::NEG_INFINITY,
+            finite: 0.1,
+            floats: vec![1.5, f64::NAN, f64::INFINITY],
+            by_f64: FloatKeys(vec![(1.5, 1), (2.0, 2), (1e21, 3), (-0.25, 4)]),
+            by_f32: FloatKeys(vec![(0.1, 5), (3.0, 6)]),
         }),
     ]
 }

@@ -1,9 +1,9 @@
 //! [`SerdeInput`]: read any [`serde::Serialize`] value as an input.
 //!
 //! A path is resolved by running `T::serialize` into a serializer that
-//! follows it. Struct fields, map keys, enum variants, and sequence positions
-//! that are not on the path are skipped without serializing them, and the walk
-//! ignores everything after the target.
+//! follows it. Only what the path names is serialized, and the walk stops at
+//! the target; the exceptions are listed under "What is serialized" on
+//! [`SerdeInput`].
 
 use std::fmt::{self, Display};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -29,8 +29,8 @@ use crate::value::{Cidr, Ip, Mac, Map, ObjectRef, Url, Val, Value, ValueRef};
 /// anything with a hand-written `Serialize`. `#[derive(Input)]` stays the
 /// choice when you own the type: it reads fields in place, borrows strings,
 /// and never allocates, but needs the dependency. Here every field read is
-/// one walk through `T::serialize`, and the value read is owned (serde lends
-/// a string for one callback only).
+/// one walk through `T::serialize`, stopped at the target, and the value read
+/// is owned (serde lends a string for one callback only).
 ///
 /// ```rust
 /// use rulekit::{Opts, SerdeInput};
@@ -86,6 +86,26 @@ use crate::value::{Cidr, Ip, Mac, Map, ObjectRef, Url, Val, Value, ValueRef};
 ///   name, `Vec<u8>` is a list of numbers, and `serialize_bytes` (as
 ///   `serde_bytes` writes) is a byte string. Integers beyond `u64` are an
 ///   input error.
+/// - `NaN` and the infinities are `null`, as in `serde_json::to_value`. A
+///   map key may also be a finite float, written as `serde_json` writes it.
+/// - A `serde_json::value::RawValue` is its JSON, parsed, and the path
+///   continues into it.
+///
+/// # What is serialized
+///
+/// Only what the path names. A struct field, map value, variant, or list
+/// item off the path never has its `serialize` called, and the walk stops
+/// when the target is read, so nothing after it is visited: a later field
+/// that fails to serialize does not matter. Three things still run before
+/// the target:
+///
+/// - A map key is serialized, to compare it with the path.
+/// - Your own `Serialize` code, `skip_serializing_if` predicates included,
+///   runs as written up to the target.
+/// - Serde itself buffers the payload of a `#[serde(flatten)]`ed externally
+///   tagged enum's struct or tuple variant, in full, before rulekit sees it.
+///   Its fields are serialized even when the path names a different one, and
+///   a field that fails there is an input error.
 ///
 /// # Typed leaves
 ///
@@ -109,6 +129,9 @@ use crate::value::{Cidr, Ip, Mac, Map, ObjectRef, Url, Val, Value, ValueRef};
 /// never reaches the walk as that type: it writes the text, so it reads as a
 /// string.
 /// `ipnet` and `url` implement `Serialize` behind their own `serde` features.
+/// Serde buffers the payload of a `#[serde(flatten)]`ed externally tagged
+/// struct or tuple variant (see [What is serialized](#what-is-serialized)),
+/// so a typed value inside one reads as a string too.
 ///
 /// `SerdeInput` is also an [`InputValue`], so it nests: a derived struct or
 /// `kv!` entry can hold one.
@@ -137,7 +160,7 @@ impl<T: ?Sized> fmt::Debug for SerdeInput<'_, T> {
 
 impl<T: ?Sized + Serialize> InputValue for SerdeInput<'_, T> {
     fn get<'a>(&'a self, path: &[Segment]) -> Result<Option<Val<'a>>, BoxError> {
-        Ok(visit(self.0, path)?.into_val())
+        Ok(resolve(self.0, path)?.into_val())
     }
 }
 
@@ -148,6 +171,7 @@ impl<T: ?Sized + Serialize> Input for SerdeInput<'_, T> {
 }
 
 /// What a walk found at the end of the path.
+#[derive(Debug)]
 enum Found {
     /// Nothing is there: a missing field.
     Missing,
@@ -263,22 +287,35 @@ fn read_leaf<L: Leaf>(leaf: &L, path: &[Segment]) -> Result<Found, Error> {
     match InputValue::get(leaf, path) {
         Ok(Some(val)) => Ok(Found::from_val(val)),
         Ok(None) => Ok(Found::Missing),
-        Err(err) => Err(Error(err.to_string())),
+        Err(err) => Err(Error::msg(&err.to_string())),
     }
 }
 
+/// Why a walk stopped.
 #[derive(Debug)]
-struct Error(String);
+enum Error {
+    /// The path resolved to this. It is returned as an error so that the
+    /// `Serialize` impls on the way out stop too: nothing after the target is
+    /// serialized, not even what serde itself buffers for a flattened enum.
+    /// [`resolve`] turns it back into the value.
+    Done(Found),
+    /// A real failure: a `Serialize` impl's error, or a value a rule cannot
+    /// hold.
+    Failed(String),
+}
 
 impl Error {
     fn msg(msg: &str) -> Error {
-        Error(msg.to_owned())
+        Error::Failed(msg.to_owned())
     }
 }
 
 impl Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
+        match self {
+            Error::Done(_) => f.write_str("lookup finished (a `Serialize` impl replaced this)"),
+            Error::Failed(msg) => f.write_str(msg),
+        }
     }
 }
 
@@ -286,13 +323,32 @@ impl std::error::Error for Error {}
 
 impl ser::Error for Error {
     fn custom<T: Display>(msg: T) -> Error {
-        Error(msg.to_string())
+        Error::Failed(msg.to_string())
+    }
+}
+
+/// [`visit`], with the early exit of a resolved path turned back into its
+/// value: what a walk from the root, or into a value of its own, returns.
+fn resolve<T: ?Sized + Serialize>(value: &T, path: &[Segment]) -> Result<Found, Error> {
+    match visit(value, path) {
+        Err(Error::Done(found)) => Ok(found),
+        result => result,
     }
 }
 
 /// The unsigned integer a rule sees: `int64` when it fits.
 fn uint(n: u64) -> Value {
     i64::try_from(n).map_or(Value::Uint(n), Value::Int)
+}
+
+/// A float as `serde_json::to_value` reads it: `NaN` and the infinities are
+/// `null`.
+fn float(v: f64) -> Value {
+    if v.is_finite() {
+        Value::Float(v)
+    } else {
+        Value::Null
+    }
 }
 
 /// Follows `path` through the value being serialized.
@@ -387,15 +443,21 @@ impl<'p> Serializer for Walk<'p> {
     }
 
     fn serialize_f32(self, v: f32) -> Result<Found, Error> {
-        self.scalar(|| Ok(Value::Float(f64::from(v))))
+        self.scalar(|| Ok(float(f64::from(v))))
     }
 
     fn serialize_f64(self, v: f64) -> Result<Found, Error> {
-        self.scalar(|| Ok(Value::Float(v)))
+        self.scalar(|| Ok(float(v)))
     }
 
     fn serialize_char(self, v: char) -> Result<Found, Error> {
         self.scalar(|| Ok(Value::String(v.to_string())))
+    }
+
+    // Formats once, into the string the value owns, and not at all when a
+    // path below a string is read.
+    fn collect_str<T: ?Sized + Display>(self, value: &T) -> Result<Found, Error> {
+        self.scalar(|| Ok(Value::String(value.to_string())))
     }
 
     fn serialize_str(self, v: &str) -> Result<Found, Error> {
@@ -484,12 +546,16 @@ impl<'p> Serializer for Walk<'p> {
     }
 
     fn serialize_struct(self, name: &'static str, _len: usize) -> Result<Fields<'p>, Error> {
-        // `serde_json`'s `arbitrary_precision` writes a number as a struct
-        // holding its digits.
-        if name == NUMBER_TOKEN && self.path.is_empty() {
-            return Ok(Fields::Number(None));
-        }
-        Ok(Fields::new(self.path))
+        Ok(match name {
+            NUMBER_TOKEN if self.path.is_empty() => Fields::Number(None),
+            // Nothing is below a number.
+            NUMBER_TOKEN => Fields::Done(Found::Missing),
+            RAW_TOKEN => Fields::Raw {
+                path: self.path,
+                out: None,
+            },
+            _ => Fields::new(self.path),
+        })
     }
 
     fn serialize_struct_variant(
@@ -507,7 +573,11 @@ impl<'p> Serializer for Walk<'p> {
     }
 }
 
+// serde_json writes a number (feature `arbitrary_precision`) and a `RawValue`
+// (feature `raw_value`) as a struct with one field, named like the struct,
+// that holds the digits or the JSON text.
 const NUMBER_TOKEN: &str = "$serde_json::private::Number";
+const RAW_TOKEN: &str = "$serde_json::private::RawValue";
 
 /// Where `path` goes relative to an externally tagged variant, which serde
 /// writes as the object `{variant: content}`.
@@ -532,12 +602,11 @@ fn enter<'p>(path: &'p [Segment], variant: &str) -> Enter<'p> {
 enum Items<'p> {
     /// Reading the whole array.
     Collect(Vec<Value>),
-    /// Looking for the item at `index`; `found` is set once it is read.
+    /// Looking for the item at `index`, which ends the walk.
     Find {
         index: usize,
         pos: usize,
         rest: &'p [Segment],
-        found: Option<Found>,
     },
     /// The result is known; the items are not read.
     Done(Found),
@@ -551,7 +620,6 @@ impl<'p> Items<'p> {
                 index,
                 pos: 0,
                 rest,
-                found: None,
             },
             Some((Segment::Key { .. }, _)) => Items::Done(Found::Missing),
         }
@@ -560,18 +628,13 @@ impl<'p> Items<'p> {
     fn push<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), Error> {
         match self {
             Items::Collect(items) => items.push(visit(value, &[])?.into_item()),
-            Items::Find {
-                index,
-                pos,
-                rest,
-                found,
-            } if found.is_none() => {
+            Items::Find { index, pos, rest } => {
                 if pos == index {
-                    *found = Some(visit(value, rest)?);
+                    return Err(Error::Done(visit(value, rest)?));
                 }
                 *pos += 1;
             }
-            Items::Find { .. } | Items::Done(_) => {}
+            Items::Done(_) => {}
         }
         Ok(())
     }
@@ -579,7 +642,8 @@ impl<'p> Items<'p> {
     fn finish(self) -> Result<Found, Error> {
         Ok(match self {
             Items::Collect(items) => Found::Value(Value::Array(items)),
-            Items::Find { found, .. } => found.unwrap_or(Found::Missing),
+            // Past the end.
+            Items::Find { .. } => Found::Missing,
             Items::Done(found) => found,
         })
     }
@@ -639,18 +703,23 @@ impl SerializeTupleVariant for Items<'_> {
 
 /// The entries of a map, struct, or struct variant.
 enum Fields<'p> {
-    /// Looking for `key`; `found` is set once its value is read. `matched`
-    /// is a map key that matched, whose value is next.
+    /// Looking for `key`. `matched` is a map key that matched, whose value is
+    /// next. The value ends the walk, so only the first of two equal keys is
+    /// read.
     Find {
         key: &'p str,
         rest: &'p [Segment],
         matched: bool,
-        found: Option<Found>,
     },
     /// The result is known; the entries are not read.
     Done(Found),
     /// A number written as a struct with its digits as the one field.
     Number(Option<Value>),
+    /// A `RawValue`: a struct with its JSON text as the one field.
+    Raw {
+        path: &'p [Segment],
+        out: Option<Found>,
+    },
 }
 
 impl<'p> Fields<'p> {
@@ -661,7 +730,6 @@ impl<'p> Fields<'p> {
                 key,
                 rest,
                 matched: false,
-                found: None,
             },
             Some((Segment::Index(_), _)) => Fields::Done(Found::Missing),
         }
@@ -669,21 +737,23 @@ impl<'p> Fields<'p> {
 
     fn field<T: ?Sized + Serialize>(&mut self, name: &str, value: &T) -> Result<(), Error> {
         match self {
-            Fields::Find {
-                key, rest, found, ..
-            } if found.is_none() && *key == name => *found = Some(visit(value, rest)?),
-            Fields::Number(digits) => *digits = Some(value.serialize(Text(number))??),
-            Fields::Find { .. } | Fields::Done(_) => {}
+            Fields::Find { key, rest, .. } if *key == name => Err(Error::Done(visit(value, rest)?)),
+            Fields::Number(digits) => {
+                *digits = Some(value.serialize(Text(number))??);
+                Ok(())
+            }
+            Fields::Raw { path, out } => {
+                let path = *path;
+                *out = Some(value.serialize(Text(|text: &str| raw(text, path)))??);
+                Ok(())
+            }
+            Fields::Find { .. } | Fields::Done(_) => Ok(()),
         }
-        Ok(())
     }
 
     fn key<T: ?Sized + Serialize>(&mut self, key: &T) -> Result<(), Error> {
         if let Fields::Find {
-            key: want,
-            matched,
-            found: None,
-            ..
+            key: want, matched, ..
         } = self
         {
             *matched = key.serialize(Text(|text: &str| text == *want))?;
@@ -692,24 +762,23 @@ impl<'p> Fields<'p> {
     }
 
     fn value<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), Error> {
-        if let Fields::Find {
-            rest,
-            matched: matched @ true,
-            found,
-            ..
-        } = self
-        {
-            *matched = false;
-            *found = Some(visit(value, rest)?);
+        match self {
+            Fields::Find {
+                rest,
+                matched: true,
+                ..
+            } => Err(Error::Done(visit(value, rest)?)),
+            _ => Ok(()),
         }
-        Ok(())
     }
 
     fn finish(self) -> Result<Found, Error> {
         Ok(match self {
-            Fields::Find { found, .. } => found.unwrap_or(Found::Missing),
+            // The key never came up.
+            Fields::Find { .. } => Found::Missing,
             Fields::Done(found) => found,
             Fields::Number(digits) => digits.map_or(Found::Missing, Found::Value),
+            Fields::Raw { out, .. } => out.unwrap_or(Found::Missing),
         })
     }
 }
@@ -722,8 +791,16 @@ fn number(text: &str) -> Result<Value, Error> {
     } else if let Ok(n) = text.parse::<f64>() {
         Ok(Value::Float(n))
     } else {
-        Err(Error(format!("invalid number {text:?}")))
+        Err(Error::msg(&format!("invalid number {text:?}")))
     }
+}
+
+/// What `serde_json::to_value` makes of a `RawValue`: its JSON text, parsed.
+/// The path continues into that value, walked like any other `Serialize`.
+fn raw(text: &str, path: &[Segment]) -> Result<Found, Error> {
+    let parsed: serde_json::Value =
+        serde_json::from_str(text).map_err(|err| Error::msg(&err.to_string()))?;
+    resolve(&parsed, path)
 }
 
 impl SerializeMap for Fields<'_> {
@@ -778,13 +855,27 @@ impl SerializeStructVariant for Fields<'_> {
 }
 
 /// Serializes a map key or a number's digits: hands `f` the text of a
-/// string, `char`, `bool`, integer, unit variant name, or a newtype around
-/// one of those, as `serde_json` writes a map key. Anything else is an
-/// error.
+/// string, `char`, `bool`, integer, finite float, unit variant name, or a
+/// newtype around one of those, as `serde_json` writes a map key. Anything
+/// else is an error.
 struct Text<F>(F);
 
 fn not_text<T>() -> Result<T, Error> {
     Err(Error::msg("map key must be a string"))
+}
+
+// The text `serde_json` writes for a finite float, which it also uses for a
+// map key. `NaN` and the infinities are an error there, as here.
+macro_rules! text_of_float {
+    ($($method:ident($ty:ty)),* $(,)?) => {$(
+        fn $method(self, v: $ty) -> Result<R, Error> {
+            if !v.is_finite() {
+                return Err(Error::msg("float key must be finite (got NaN or +/-inf)"));
+            }
+            let text = serde_json::to_string(&v).map_err(|err| Error::msg(&err.to_string()))?;
+            Ok((self.0)(&text))
+        }
+    )*};
 }
 
 macro_rules! text_of_display {
@@ -844,13 +935,7 @@ where
         value.serialize(self)
     }
 
-    fn serialize_f32(self, _v: f32) -> Result<R, Error> {
-        not_text()
-    }
-
-    fn serialize_f64(self, _v: f64) -> Result<R, Error> {
-        not_text()
-    }
+    text_of_float! { serialize_f32(f32), serialize_f64(f64) }
 
     fn serialize_bytes(self, _v: &[u8]) -> Result<R, Error> {
         not_text()
