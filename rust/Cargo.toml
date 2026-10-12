@@ -51,6 +51,8 @@ criterion = "0.8.2"
 ipnet = { version = "2.12.2", features = ["serde"] }
 url = { version = "2", features = ["serde"] }
 trybuild = "1.0.121"
+arbitrary = { version = "1", features = ["derive"] }
+proptest = "1"
 
 [[bench]]
 name = "eval"

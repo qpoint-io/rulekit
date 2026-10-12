@@ -1,0 +1,28 @@
+[package]
+name = "rulekit-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+arbitrary = { version = "1", features = ["derive"] }
+ipnet = { version = "2.12.2", features = ["serde"] }
+libfuzzer-sys = "0.4"
+rulekit = { path = ".." }
+serde = "1"
+serde_json = "1"
+url = { version = "2", features = ["serde"] }
+
+# Not part of the rulekit workspace: it needs nightly and libFuzzer.
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "serde_input"
+path = "fuzz_targets/serde_input.rs"
+test = false
+doc = false
+bench = false
