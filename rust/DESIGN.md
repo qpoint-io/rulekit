@@ -118,11 +118,27 @@ so shapes equal what `serde_json` writes. Serde's own output does the layout
 work: renames, all four enum representations, `flatten` (written through
 `serialize_map`), and `skip_serializing_if` arrive as struct, map, sequence,
 and variant calls, which the serializer matches against the next path
-segment. A field, key, variant, or position off the path is not serialized
-(its `Serialize` impl is never called); after the target is read, later
-entries are ignored. `skip_serializing_if` predicates still run for fields
-after the target, and a list or map is scanned from the start. When a key
-occurs twice (a named field and a flattened entry) the first wins.
+segment. A field, map value, variant, or list item off the path is not
+serialized (its `Serialize` impl is never called). When the target is read
+the walk returns it as a private error, `Error::Done`, so the `Serialize`
+impls on the way out stop with it and nothing after the target is visited,
+including what serde buffers for a flattened enum; the entry point turns it
+back into the value. When a key occurs twice (a named field and a flattened
+entry) the first wins, as the walk stops there.
+
+What does run: map keys before the target are serialized, to compare them;
+`skip_serializing_if` predicates and custom `Serialize` code before the
+target run as written; and serde buffers the payload of an externally tagged
+enum's struct or tuple variant that is `#[serde(flatten)]`ed
+(`FlatMapSerializer` serializes every field into a `Content` before handing
+it to the map). That buffering cannot be skipped, so those fields are
+serialized whether or not the path names them, a failing field there is an
+input error, and a typed leaf inside one reaches the walk as the text serde
+wrote. Newtype variants, and internally or adjacently tagged and untagged
+enums, are not buffered. The `Error::Done` return is also why a
+`Serialize` impl that replaces the error it gets (instead of returning it)
+turns a found value into an input error; serde's derive and flatten and
+`serde_json::Value` return it.
 
 Typed leaves: serde writes an `IpAddr` as a string, but a rule needs an IP.
 Before serializing a value the walk would yield or descend into, it compares
@@ -152,8 +168,19 @@ opaque form), and its fields read by path. `None` is `null` (a path below it
 is missing), a unit variant is its name, `Vec<u8>` is a list of numbers,
 `serialize_bytes` is a byte string. Integers are `int64`, or `uint64` above
 `i64::MAX`; a `u128`/`i128` beyond `u64` is an input error, as
-`serde_json::to_value` fails on it. A number `serde_json` writes as a struct
-(its `arbitrary_precision` feature) is read as a number.
+`serde_json::to_value` fails on it. `NaN` and the infinities are `null`, as
+`to_value` makes them.
+
+`serde_json` writes two values as structs, which `to_value` reads back and so
+does the walk (matched by struct name): a `RawValue` (`raw_value`, already
+enabled) is its JSON text, parsed, and the path continues into the parsed
+value; a number (`arbitrary_precision`) is a number, and nothing is below it.
+A map key follows `serde_json`'s key serializer: string, `char`, `bool`,
+integer, unit variant, newtype, and a finite float, written with
+`serde_json::to_string`, which is the text `serde_json` uses for the key.
+Other keys, and non-finite floats, are input errors. A `collect_str` leaf
+(how `Display`-written types like `ipnet` serialize) is formatted once, into
+the string the value owns, and not at all when a path below it is read.
 
 ## 1. Crate layout and dependencies
 

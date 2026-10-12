@@ -245,9 +245,13 @@ Choosing between the two:
 - `#[derive(Input)]` needs the dependency on the type, and reads fields in
   place: strings are borrowed and nothing allocates.
 - `SerdeInput` works on anything `Serialize`. Each field a rule reads is one
-  walk through `Serialize`, and what it reads is owned. A field, key, variant,
-  or list item the path does not name is never serialized, and the walk stops
-  at the target.
+  walk through `Serialize`, and what it reads is owned. A field, map value,
+  variant, or list item the path does not name is never serialized, and the
+  walk stops at the target, so nothing after it is visited. Map keys before
+  the target are serialized to compare them, and serde itself buffers the
+  payload of an externally tagged enum's struct or tuple variant that is
+  `#[serde(flatten)]`ed: those fields are serialized in full, and a typed
+  value inside one reads as a string.
 
 `SerdeInput` is an `Input` and an `InputValue`, so it also nests, as a
 derived field or a `kv!` entry.
