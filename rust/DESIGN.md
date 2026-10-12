@@ -18,10 +18,10 @@ reads only those segments. Lists and objects are `&dyn` sources
 `headers["k"]` do not copy the collection. A borrowed `&[T]` is handed out as
 `&&[T]`: a slice is unsized and cannot itself be `&dyn`.
 
-Rejected: implementing input via `serde::Serialize`. Serde walks every field
-in order and returns strings with a lifetime that ends when the serializer
-call returns, so strings would be copied and unread fields would still be
-visited.
+Serde is not the primary input: walking `Serialize` lends strings only for
+one callback, so leaves are copied, and every field read is a separate walk.
+It is the opt-in path (`SerdeInput`, below) for types that cannot depend on
+rulekit.
 
 ### `derive(Input)` follows serde (decision)
 
@@ -103,6 +103,58 @@ behave as rulekit's URL parsed from `as_str()` / the display form after those
 crates normalize; the original spelling is not recoverable. Field access and
 URI comparison borrow.
 
+### `SerdeInput`: any `Serialize` value (decision)
+
+Decision: `SerdeInput::new(&value)` reads any `T: Serialize`, so types that
+must not depend on rulekit (qcontrol's `qevents`) are filtered with the same
+paths the derive reads. The cost is the one named above and accepted for
+types that cannot use the derive: each field read is one walk through
+`T::serialize`, and the value read is owned (serde lends a string for one
+callback; borrowing past it would need `unsafe` lifetime extension, which is
+not done).
+
+The walk is a private `Serializer` reporting `is_human_readable() == true`,
+so shapes equal what `serde_json` writes. Serde's own output does the layout
+work: renames, all four enum representations, `flatten` (written through
+`serialize_map`), and `skip_serializing_if` arrive as struct, map, sequence,
+and variant calls, which the serializer matches against the next path
+segment. A field, key, variant, or position off the path is not serialized
+(its `Serialize` impl is never called); after the target is read, later
+entries are ignored. `skip_serializing_if` predicates still run for fields
+after the target, and a list or map is scanned from the start. When a key
+occurs twice (a named field and a flattened entry) the first wins.
+
+Typed leaves: serde writes an `IpAddr` as a string, but a rule needs an IP.
+Before serializing a value the walk would yield or descend into, it compares
+`typeid::of::<T>()` with the leaf types: `std::net::{IpAddr, Ipv4Addr,
+Ipv6Addr}`, `ipnet::{IpNet, Ipv4Net, Ipv6Net}`, rulekit's `Ip`, `Cidr`,
+`Mac`, `Url`, and `url::Url`. A match is read through the type's own
+`InputValue` impl, so it is the same value with the same built-in fields
+below it (`url.host`, `ip.version`), then made owned. `downcast` is the one
+`unsafe` in the crate. `typeid::of` erases lifetimes, so it is only used
+with the `Leaf` marker trait, whose types have no lifetime parameters: equal
+ids then mean equal types. serde passes list elements and map values by
+reference (`Vec<IpAddr>` calls the serializer with `&IpAddr`), so `&U` and
+`&&U` match too. A value forwarded straight to the inner `serialize` never
+reaches the serializer as a typed call: `Box`, `Rc`, `Arc`, `Cow`,
+`#[serde(transparent)]`, and untagged newtype variants read as the string
+serde writes. `ipnet` and `url` implement `Serialize`
+behind their `serde` features. `http::Uri` has no `Serialize` impl, so
+nothing can reach the walk as one; use `derive(Input)` for it. `Ip`, `Cidr`,
+`Mac`, and `Url` gained `Serialize` impls (their text form) so a plain serde
+struct can hold them.
+
+Whole values: a struct, map, or variant read whole is `ObjectRef::Opaque`,
+as for the derive, without serializing any field. A sequence, tuple, or tuple
+struct read whole is an owned array of its items, so `tags contains "x"`
+works; an item that is an object is an empty object there (`Value` has no
+opaque form), and its fields read by path. `None` is `null` (a path below it
+is missing), a unit variant is its name, `Vec<u8>` is a list of numbers,
+`serialize_bytes` is a byte string. Integers are `int64`, or `uint64` above
+`i64::MAX`; a `u128`/`i128` beyond `u64` is an input error, as
+`serde_json::to_value` fails on it. A number `serde_json` writes as a struct
+(its `arbitrary_precision` feature) is read as a number.
+
 ## 1. Crate layout and dependencies
 
 The `rulekit` library and `rulekit-macros` proc-macro crate form the workspace in
@@ -120,7 +172,8 @@ Source entry points:
 - [src/value/](src/value/): owned/borrowed values, typed values, fields, and text forms.
 - [src/eval/](src/eval/): lowering, evaluation, comparison, results, and traces.
 - [src/input.rs](src/input.rs), [src/input_value.rs](src/input_value.rs),
-  [src/kv.rs](src/kv.rs), [macros/src/](macros/src/): lazy path access and derives.
+  [src/kv.rs](src/kv.rs), [src/serde_input.rs](src/serde_input.rs),
+  [macros/src/](macros/src/): lazy path access and derives.
 - [src/func.rs](src/func.rs), [src/stdlib.rs](src/stdlib.rs),
   [src/opts.rs](src/opts.rs): typed functions, macros, and validated options.
 - [src/regex/](src/regex/), [src/json_input.rs](src/json_input.rs): shared regex
@@ -129,7 +182,8 @@ Source entry points:
 Key dependencies serve narrow roles: `regex`/`regex-syntax` for the regex engine
 and dialect validation, `ipnet` with std IP types for network values, `fluent-uri`
 for URI parsing without normalization, `base64` for padded standard decoding,
-`serde`/`serde_json` for AST JSON and input decoding, `smallvec` for inline
+`serde`/`serde_json` for AST JSON and input decoding, `typeid` to recognize
+typed values in `SerdeInput`, `smallvec` for inline
 evaluation buffers, and `foldhash` for the string-keyed `Map`.
 
 ## 2. Values

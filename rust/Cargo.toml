@@ -22,6 +22,7 @@ regex-syntax = "0.8.11"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
 smallvec = { version = "1", features = ["const_generics", "union"] }
+typeid = "1"
 bytes = { version = "1", optional = true }
 http = { version = "1", optional = true }
 serde_bytes = { version = "0.11", optional = true }
@@ -45,6 +46,10 @@ members = ["macros"]
 
 [dev-dependencies]
 criterion = "0.8.2"
+# `ipnet` and `url` implement `Serialize` behind their own `serde` features;
+# the tests for `SerdeInput` read values of those types.
+ipnet = { version = "2.12.2", features = ["serde"] }
+url = { version = "2", features = ["serde"] }
 trybuild = "1.0.121"
 
 [[bench]]

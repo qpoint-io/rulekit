@@ -68,6 +68,22 @@ impl std::fmt::Display for ValueParseError {
 
 impl std::error::Error for ValueParseError {}
 
+// `Ip`, `Cidr`, `Mac`, and `Url` serialize as their text form, a string, as
+// `std::net::IpAddr` does in human-readable formats. A type that holds one
+// can then derive `Serialize` and be read by `SerdeInput`, which recognizes
+// them as typed values.
+macro_rules! serialize_as_text {
+    ($($ty:ty),* $(,)?) => {$(
+        impl serde::Serialize for $ty {
+            fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                serializer.collect_str(self)
+            }
+        }
+    )*};
+}
+
+serialize_as_text!(Ip, Cidr, Mac, Url);
+
 /// A string-keyed map (fast, non-cryptographic hashing).
 pub type Map<V> = HashMap<String, V, foldhash::fast::RandomState>;
 

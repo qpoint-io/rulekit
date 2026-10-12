@@ -65,10 +65,11 @@ offending source.
 
 ## Input
 
-Pass a `#[derive(rulekit::Input)]` struct or enum, a `kv!` map, a
-`HashMap`/`BTreeMap` with string keys, or a `serde_json::Value` or
-`serde_json::Map`. A rule reads only the fields it names; the rest of a large
-input is not walked or copied. Strings are borrowed from your data.
+Pass a `#[derive(rulekit::Input)]` struct or enum, any `Serialize` value
+wrapped in `SerdeInput`, a `kv!` map, a `HashMap`/`BTreeMap` with string keys,
+or a `serde_json::Value` or `serde_json::Map`. A rule reads only the fields it
+names; the rest of a large input is not walked or copied. With the derive,
+strings are borrowed from your data.
 
 ```rust
 use std::collections::HashMap;
@@ -201,6 +202,72 @@ and fail); a path below it is missing. `#[rulekit(rename)]` wins over serde's
 name. A struct, struct variant, or tuple read whole is an opaque object;
 index or key into it instead. When a named field and a flattened entry share
 a key, the named field wins (serde would write the key twice).
+
+### Any `Serialize` type: `SerdeInput`
+
+`SerdeInput::new(&value)` reads any `serde::Serialize` value, for types that
+cannot depend on rulekit (an event crate shared with other tools, a type from
+a library). A rule path is the path in the value's `serde_json` form, with
+serde's own names and layout: `rename`, `rename_all`, all four enum
+representations, `flatten`, `skip_serializing_if` (an omitted field is
+missing), newtypes, and custom `Serialize` impls.
+
+```rust
+use rulekit::{Opts, SerdeInput};
+use serde::Serialize;
+
+#[derive(Serialize)]
+#[serde(tag = "type", content = "payload")]
+enum Event {
+    #[serde(rename = "llm.request")]
+    Request {
+        model: String,
+        ip: std::net::IpAddr,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        request_id: Option<String>,
+    },
+}
+
+let event = Event::Request {
+    model: "gpt-x".into(),
+    ip: "10.1.2.3".parse().unwrap(),
+    request_id: None,
+};
+// serde_json: {"type":"llm.request","payload":{"model":"gpt-x","ip":"10.1.2.3"}}
+let rule = rulekit::parse(
+    r#"type == "llm.request" and payload.model == "gpt-x" and payload.ip in 10.0.0.0/8"#,
+)?;
+assert!(rule.eval(&SerdeInput::new(&event), &Opts::default()).pass());
+```
+
+Choosing between the two:
+
+- `#[derive(Input)]` needs the dependency on the type, and reads fields in
+  place: strings are borrowed and nothing allocates.
+- `SerdeInput` works on anything `Serialize`. Each field a rule reads is one
+  walk through `Serialize`, and what it reads is owned. A field, key, variant,
+  or list item the path does not name is never serialized, and the walk stops
+  at the target.
+
+`SerdeInput` is an `Input` and an `InputValue`, so it also nests, as a
+derived field or a `kv!` entry.
+
+Serde writes an `IpAddr` as a string, but `ip in 10.0.0.0/8` needs an IP. A
+value that reaches the walk as one of these types is read as the typed value,
+with its built-in fields (`ip.version`, `net.prefix`, `url.host`):
+`std::net::{IpAddr, Ipv4Addr, Ipv6Addr}`, `ipnet::{IpNet, Ipv4Net,
+Ipv6Net}` (`ipnet`'s `serde` feature), `url::Url` (`url`'s `serde` feature),
+and rulekit's `value::{Ip, Cidr, Mac, Url}`, which serialize as their text.
+That covers a field, a list element, a map value, and the content of an
+`Option`, a newtype, or an externally or adjacently tagged variant, also
+behind `&`. A `Box`, `Rc`, `Arc`, `Cow`, `#[serde(transparent)]` wrapper, or
+untagged newtype variant hands serde's text through, so it reads as a string.
+`http::Uri` has no `Serialize` impl; use `#[derive(Input)]`.
+
+A struct, map, or variant read whole is an opaque object. A list or tuple
+read whole is an array (`tags contains "db"` works); `None` is `null`; and
+when a key occurs twice (a named field and a flattened entry) the first
+wins.
 
 ### JSON
 
