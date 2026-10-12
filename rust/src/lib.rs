@@ -15,8 +15,9 @@
 //! - [`Rule::eval`] evaluates a rule against an [`Input`] and returns an
 //!   [`EvalResult`]: a value, an error, or the fields the input lacked.
 //! - Inputs: [`derive(Input)`](Input) on your structs and enums (following
-//!   their serde attributes), [`kv!`], a string-keyed
-//!   map, or [`serde_json::Value`]. [`KvInput`] remains for owned trees.
+//!   their serde attributes), [`SerdeInput`] over any [`serde::Serialize`]
+//!   value, [`kv!`], a string-keyed map, or [`serde_json::Value`]. [`KvInput`]
+//!   remains for owned trees.
 //! - [`Opts`] holds custom [`Function`]s and [`Macro`]s and turns on
 //!   [`Trace`]s; build one with [`Opts::builder`].
 //! - [`format`](fn@format), [`Rule::print`], and [`rewrite`] print
@@ -69,6 +70,7 @@ mod opts;
 mod parse;
 mod print;
 mod regex;
+mod serde_input;
 mod stdlib;
 pub mod value;
 
@@ -149,6 +151,7 @@ pub use rulekit_macros::Args;
 /// ```
 #[cfg(feature = "derive")]
 pub use rulekit_macros::Input;
+pub use serde_input::SerdeInput;
 
 /// A compiled rule, ready to evaluate.
 ///
