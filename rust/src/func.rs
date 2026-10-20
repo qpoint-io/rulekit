@@ -10,7 +10,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use crate::error::{BoxError, Error};
-use crate::value::{Cidr, Ip, Mac, TextForm, Url, Val, Value, ValueRef};
+use crate::value::{ArrayRef, Cidr, Ip, Mac, TextForm, Url, Val, Value, ValueRef};
 
 /// One positional parameter of a function: its name, the type name its
 /// argument must have (`"any"` for any value), and whether it is the rest
@@ -133,8 +133,9 @@ impl<'a> Rest<'a> {
 /// argument is not a `u64`, and a URL is not a `&str`.
 ///
 /// Implemented for `bool`, `i64`, `u64`, `f64`, `&str`, `&[u8]`, [`Ip`],
-/// [`Cidr`], [`Mac`], `&`[`Url`], `&regex::Regex`, [`TextForm`] (a string or
-/// any value with a text form), and [`ValueRef`] (any value).
+/// [`Cidr`], [`Mac`], `&`[`Url`], `&regex::Regex`, [`ArrayRef`] (a borrowed
+/// list), [`TextForm`] (a string or any value with a text form), and
+/// [`ValueRef`] (any value).
 pub trait FromArg<'a>: Sized {
     /// The type name of accepted arguments (`"any"` for every value).
     const TYPE: &'static str;
@@ -167,6 +168,7 @@ from_arg!(Cidr, "cidr", ValueRef::Cidr(v) => v);
 from_arg!(Mac, "mac", ValueRef::Mac(v) => v);
 from_arg!(&'a Url, "url", ValueRef::Url(v) => v);
 from_arg!(&'a regex::Regex, "regex", ValueRef::Regex(v) => v);
+from_arg!(ArrayRef<'a>, "array", ValueRef::Array(v) => v);
 
 /// Strings and values with a text form (IPs, CIDRs, MACs, URLs), read as
 /// their text.
@@ -259,7 +261,8 @@ impl Args for NoArgs {
 
 /// Why a custom [`Function`] produced no value.
 ///
-/// `?` converts any error type into [`FnError::Error`].
+/// `?` converts any error type, a [`BoxError`], or a `String`/`&str` message
+/// into [`FnError::Error`].
 #[derive(Debug)]
 pub enum FnError {
     /// The function needs fields the input lacks: the rule result is unknown
@@ -281,9 +284,9 @@ impl FnError {
     }
 }
 
-impl<E: std::error::Error + Send + Sync + 'static> From<E> for FnError {
+impl<E: Into<BoxError>> From<E> for FnError {
     fn from(error: E) -> Self {
-        FnError::Error(Box::new(error))
+        FnError::Error(error.into())
     }
 }
 

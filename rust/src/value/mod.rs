@@ -84,6 +84,46 @@ macro_rules! serialize_as_text {
 
 serialize_as_text!(Ip, Cidr, Mac, Url);
 
+/// The JSON-like form: lists as sequences, objects as maps, bytes as serde
+/// bytes (an array of numbers in JSON), regexes as their pattern, and typed
+/// network values as their text. Opaque and user-source objects cannot be
+/// listed, so they serialize as `null`, as [`ValueRef::to_owned`] makes them.
+impl serde::Serialize for ValueRef<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match *self {
+            ValueRef::Null | ValueRef::Object(ObjectRef::Opaque | ObjectRef::Source(_)) => {
+                serializer.serialize_unit()
+            }
+            ValueRef::Bool(b) => serializer.serialize_bool(b),
+            ValueRef::Int(n) => serializer.serialize_i64(n),
+            ValueRef::Uint(n) => serializer.serialize_u64(n),
+            ValueRef::Float(n) => serializer.serialize_f64(n),
+            ValueRef::Str(s) | ValueRef::Query(s) => serializer.serialize_str(s),
+            ValueRef::Bytes(b) => serializer.serialize_bytes(b),
+            ValueRef::Ip(ip) => ip.serialize(serializer),
+            ValueRef::Cidr(c) => c.serialize(serializer),
+            ValueRef::Mac(m) => m.serialize(serializer),
+            ValueRef::Url(u) => u.serialize(serializer),
+            ValueRef::UrlText(t) => serializer.serialize_str(&t.render()),
+            ValueRef::Regex(r) => serializer.serialize_str(r.as_str()),
+            ValueRef::Array(a) => serializer.collect_seq(a.iter()),
+            ValueRef::Object(ObjectRef::Map(m)) => serializer.collect_map(m),
+        }
+    }
+}
+
+impl serde::Serialize for Value {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.as_ref().serialize(serializer)
+    }
+}
+
+impl serde::Serialize for Val<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.as_ref().serialize(serializer)
+    }
+}
+
 /// A string-keyed map (fast, non-cryptographic hashing).
 pub type Map<V> = HashMap<String, V, foldhash::fast::RandomState>;
 
