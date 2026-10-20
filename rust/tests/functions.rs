@@ -26,6 +26,11 @@ struct KeyArgs<'a> {
 }
 
 #[derive(rulekit::Args)]
+struct CountArgs<'a> {
+    list: rulekit::value::ArrayRef<'a>,
+}
+
+#[derive(rulekit::Args)]
 struct JoinArgs<'a> {
     separator: &'a str,
     parts: Rest<'a>,
@@ -259,6 +264,47 @@ fn functions_can_report_missing_fields_and_errors() {
             vec![],
             Some(r#"function "lookup": unsupported key"#.to_owned())
         )
+    );
+}
+
+#[test]
+fn question_mark_converts_boxed_errors() {
+    fn backend() -> Result<i64, Box<dyn std::error::Error + Send + Sync>> {
+        Err("backend down".into())
+    }
+    let f = Function::new::<NoArgs, i64>(FuncSchema { name: "f", doc: "" }, |_| Ok(backend()?));
+    let opts = Opts::builder().function(f).build().unwrap();
+    let rule = rulekit::parse("f() == 1").unwrap();
+    let result = rule.eval(&NoInput, &opts);
+    assert_eq!(
+        result.error().map(ToString::to_string).as_deref(),
+        Some(r#"function "f": backend down"#)
+    );
+}
+
+#[test]
+fn array_arguments_borrow_input_and_literal_lists() {
+    let count = Function::new::<CountArgs, i64>(
+        FuncSchema {
+            name: "count",
+            doc: "",
+        },
+        |a| Ok(a.list.len() as i64),
+    );
+    assert_eq!(count.params()[0].ty(), "array");
+    let opts = Opts::builder().function(count).build().unwrap();
+    let kv = input(&[
+        ("tags", Value::Array(vec![Value::Int(1), Value::Int(2)])),
+        ("host", Value::String("h".into())),
+    ]);
+    let rule = rulekit::parse(r#"count(tags) == 2 and count([host, "x", 3]) == 3"#).unwrap();
+    assert!(rule.eval(&kv, &opts).pass());
+
+    let rule = rulekit::parse("count(host) == 1").unwrap();
+    let result = rule.eval(&kv, &opts);
+    assert!(
+        matches!(result.error(), Some(Error::InvalidArg { name, expected, got })
+        if name == "list" && expected == "array" && got == "string")
     );
 }
 
