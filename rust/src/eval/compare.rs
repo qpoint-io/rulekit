@@ -123,6 +123,19 @@ pub(crate) fn compare(left: ValueRef<'_>, op: CmpOp, right: ValueRef<'_>) -> Out
     }
 }
 
+/// Go `compareIn`: whether `x` is an element of `list`, i.e. `list contains x`
+/// except regex elements compare as `x == /re/`, so `"ab" in [/a/]` matches.
+pub(crate) fn compare_in(x: ValueRef<'_>, list: ArrayRef<'_>) -> Outcome {
+    if let ValueRef::Array(_) = x {
+        // contains does not take a list on the right.
+        return diagnostic(Diagnostic::InvalidShape);
+    }
+    compare_slice(list, CmpOp::Eq, |item, op| match item {
+        ValueRef::Regex(_) => compare(x, op, item),
+        _ => compare(item, op, x),
+    })
+}
+
 /// Go `compareSliceDetailed`: `!=` passes when no element is equal;
 /// `contains` on a list is element equality; otherwise any element passing
 /// passes. The first diagnostic is kept when no element was comparable.

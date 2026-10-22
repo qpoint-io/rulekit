@@ -19,7 +19,7 @@ use crate::literal::parse_literal;
 use crate::opts::Opts;
 use crate::print::{canonical_all, path_string};
 use crate::value::{ArrayRef, Val, Value, ValueRef};
-use compare::{CmpOp, compare, compare_slice};
+use compare::{CmpOp, compare, compare_in, compare_slice};
 use trace::{Diagnostic, Frag, Trace, combine};
 
 /// A compiled expression node. `meta` identifies the AST node for traces; it
@@ -550,16 +550,17 @@ impl Node {
             }
             Kind::In { lhs, rhs } => self.binary::<S, I>(lhs, rhs, s, |lv, rv| {
                 // The parser guarantees a list on the right.
-                let ValueRef::Array(_) = rv else {
+                let ValueRef::Array(list) = rv else {
                     return (false, None);
                 };
-                // `x in list` is `list contains x`; a list-valued x is in the
-                // list when ANY of its elements is.
+                // `x in list` is `list contains x`, except a regex element
+                // matches x like `x == /re/`; a list-valued x is in the list
+                // when ANY of its elements is.
                 let outcome = match lv {
                     ValueRef::Array(items) => {
-                        compare_slice(items, CmpOp::Eq, |el, _| compare(rv, CmpOp::Contains, el))
+                        compare_slice(items, CmpOp::Eq, |el, _| compare_in(el, list))
                     }
-                    _ => compare(rv, CmpOp::Contains, lv),
+                    _ => compare_in(lv, list),
                 };
                 let diagnostic = if S::ENABLED {
                     Diagnostic::new(outcome.diagnostic, rv, CmpOp::Contains, lv)

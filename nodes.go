@@ -352,13 +352,14 @@ func (n *nodeIn) Eval(ctx context.Context, input Input, opts Opts) Result {
 		}
 	}
 
-	// `FIELD in ARR` == `ARR contains FIELD`; a list-valued FIELD is in ARR
-	// when ANY of its elements is.
+	// `FIELD in ARR` == `ARR contains FIELD`, except a regex element matches
+	// FIELD like `FIELD == /re/`. A list-valued FIELD is in ARR when ANY of its
+	// elements is.
 	outcome, ok := compareAnyElem(lv.Value, func(el any) compareOutcome {
-		return compareDetailed(rvArr, op_CONTAINS, el)
+		return compareIn(el, rvArr)
 	})
 	if !ok {
-		outcome = compareDetailed(rvArr, op_CONTAINS, lv.Value)
+		outcome = compareIn(lv.Value, rvArr)
 	}
 	trace := traceIfEnabled(tracing, lv.Trace, rv.Trace)
 	if tracing && outcome.diagnostic != compareDiagnosticNone {
@@ -368,6 +369,22 @@ func (n *nodeIn) Eval(ctx context.Context, input Input, opts Opts) Result {
 		Value: outcome.pass,
 		Trace: trace,
 	}
+}
+
+// compareIn reports whether x is an element of list: `list contains x`, with
+// regex elements compared as `x == /re/` so `"ab" in [/a/]` matches.
+func compareIn(x any, list []any) compareOutcome {
+	switch x.(type) {
+	case []any, []string:
+		// the contains operator does not support arrays on the right side.
+		return invalidShape()
+	}
+	return compareSliceDetailed(list, op_EQ, func(item any, op int) compareOutcome {
+		if re, ok := item.(*regexp.Regexp); ok {
+			return compareDetailed(x, op, re)
+		}
+		return compareDetailed(item, op, x)
+	})
 }
 
 func (n *nodeIn) String() string {

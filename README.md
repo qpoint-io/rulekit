@@ -100,7 +100,7 @@ The Result also provides additional helper methods:
 | `<`        | `lt`   | Less than                                                            |
 | `<=`       | `le`   | Less than or equal to                                                |
 | `contains` |        | A string contains a substring, an array contains an element, or a CIDR contains an IP |
-| `in`       |        | A value is an element of an array, or an IP is within a CIDR. If the left side is an array, the check passes when ANY of its elements matches (same as `==` and `contains`) |
+| `in`       |        | A value is an element of an array, or an IP is within a CIDR. A regex element matches like `==`: `id in ["grok", /claude/]` passes for `claude-cli`. If the left side is an array, the check passes when ANY of its elements matches (same as `==` and `contains`) |
 | `matches`  | `=~`   | Match against a regular expression                                   |
 | `not contains`, `not in`, `not matches` | `not =~` | The negation of `contains`, `in`, or `matches`. `a not in [1, 2]` means `not (a in [1, 2])` |
 
