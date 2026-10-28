@@ -346,6 +346,13 @@
     {"name": "in array: regex is not comparable to regex", "expr": "/a/ in [/a/]", "expect": {"value": false}},
     {"name": "in array: number is not comparable to regex", "expr": "5 in [/5/]", "expect": {"value": false}},
     {"name": "array contains regex matches elements", "expr": "ids contains /claude/", "input": {"ids": ["a", "claude-cli"]}, "expect": {"value": true}},
+    {"name": "in list field: element matches", "expr": "x in allowed", "input": {"x": "b", "allowed": ["a", "b"]}, "expect": {"value": true}},
+    {"name": "in list field: no element matches", "expr": "x in allowed", "input": {"x": "c", "allowed": ["a", "b"]}, "expect": {"value": false}},
+    {"name": "not in list field: element matches", "expr": "x not in allowed", "input": {"x": "b", "allowed": ["a", "b"]}, "expect": {"value": false}},
+    {"name": "in list field: list-valued left matches any element", "expr": "xs in allowed", "input": {"xs": ["c", "b"], "allowed": ["a", "b"]}, "expect": {"value": true}},
+    {"name": "in list field: missing list is unknown", "expr": "x in allowed", "input": {"x": "b"}, "expect": {"value": null, "missing_fields": ["allowed"]}},
+    {"name": "in list field: a string is not a list", "expr": "x in allowed", "input": {"x": "b", "allowed": "abc"}, "expect": {"value": false}},
+    {"name": "in grouped expression", "expr": "x in (allowed or [\"b\"])", "input": {"x": "b", "allowed": []}, "expect": {"value": true}},
     {"name": "ip literal in mixed cidr/ip array", "expr": "1.2.3.4 in [1.0.0.0/8, 8.8.8.8]", "expect": {"value": true}},
     {
       "name": "ip literal not in mixed cidr/ip array",

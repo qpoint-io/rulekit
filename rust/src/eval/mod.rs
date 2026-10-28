@@ -549,9 +549,13 @@ impl Node {
                 self.binary::<S, I>(lhs, rhs, s, |lv, rv| (matches(lv, rv), None))
             }
             Kind::In { lhs, rhs } => self.binary::<S, I>(lhs, rhs, s, |lv, rv| {
-                // The parser guarantees a list on the right.
+                // A right side that is not a list, such as a field holding a
+                // string, contains nothing.
                 let ValueRef::Array(list) = rv else {
-                    return (false, None);
+                    return (
+                        false,
+                        S::ENABLED.then(|| Diagnostic::in_invalid_shape(lv, rv)),
+                    );
                 };
                 // `x in list` is `list contains x`, except a regex element
                 // matches x like `x == /re/`; a list-valued x is in the list

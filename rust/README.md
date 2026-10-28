@@ -117,8 +117,8 @@ let rule = rulekit::parse(r#"host == "api.acme.com" and port == 8443 and user.id
 assert!(rule.eval(&input, &Opts::default()).pass());
 ```
 
-List membership is `tags contains "db"` (`in` takes an array or CIDR literal,
-as in Go). A bare `Vec<u8>` or `&[u8]` is a list of numbers. Mark a field
+List membership is `"db" in tags` or `tags contains "db"`. A bare `Vec<u8>` or
+`&[u8]` is a list of numbers. Mark a field
 `#[rulekit(bytes)]`, or wrap a slice with `rulekit::bytes`, when the rule
 should see a byte string. `bytes::Bytes`, `BytesMut`, and
 `serde_bytes::{ByteBuf, Bytes, ByteArray}` are byte strings automatically.
