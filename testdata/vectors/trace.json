@@ -79,6 +79,20 @@
       }
     },
     {
+      "name": "diagnostic: in a value that is not a list",
+      "expr": "x in allowed",
+      "input": {"x": "b", "allowed": "abc"},
+      "expect": {
+        "value": false,
+        "trace": {
+          "status": "failed",
+          "diagnostics": [
+            {"code": "comparison_invalid_shape", "left_type": "string", "operator": "in", "right_type": "string"}
+          ]
+        }
+      }
+    },
+    {
       "name": "macro call has the expanded macro as its child",
       "expr": "is_internal() and user != \"root\"",
       "input": {"ip.$ip": "172.16.0.1", "user": "api"},

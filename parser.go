@@ -686,10 +686,9 @@ func (p *parser) parseExpr(minPrec int) (ASTNode, error) {
 		if isInequality(kind) && (!astValidInequalityOperand(left) || !astValidInequalityOperand(right)) {
 			return nil, p.errorf(tok, "invalid operation")
 		}
-		if kind == op_IN && !astLiteralIs(right, token_IP_CIDR) {
-			if _, ok := right.(*astArray); !ok {
-				return nil, p.errorf(tok, "in requires an array or CIDR value")
-			}
+		// Any expression may produce the list, but a scalar literal never can.
+		if _, lit := right.(*astLiteral); kind == op_IN && lit && !astLiteralIs(right, token_IP_CIDR) {
+			return nil, p.errorf(tok, "in requires an array or CIDR value")
 		}
 		left = &astBinary{span: joinSpan(left.Span(), right.Span()), left: left, op: op, rawOp: rawOp, right: right, negated: negated}
 	}

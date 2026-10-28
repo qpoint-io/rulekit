@@ -21,6 +21,13 @@
       "input": {"host": "test.svc.cluster.local", "user": "nouser"},
       "macros": {"dst_k8s_svc": "ip in 172.16.0.0/16 or host matches /svc.cluster.local$/"},
       "expect": {"value": true}
+    },
+    {
+      "name": "macro: list on the right of in",
+      "expr": "tool in package_managers()",
+      "input": {"tool": "pnpm"},
+      "macros": {"package_managers": "[\"npm\", /^pnpm$/]"},
+      "expect": {"value": true}
     }
   ]
 }

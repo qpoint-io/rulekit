@@ -160,8 +160,11 @@ impl<'a> Parser<'a> {
                             ..
                         }
                     );
-                    let is_array = matches!(self.ast.nodes[right.index()], NodeData::Array { .. });
-                    if !is_cidr && !is_array {
+                    // Any expression may produce the list, but a scalar
+                    // literal never can.
+                    let is_literal =
+                        matches!(self.ast.nodes[right.index()], NodeData::Literal { .. });
+                    if is_literal && !is_cidr {
                         return Err(self.error(tok, "in requires an array or CIDR value"));
                     }
                     right

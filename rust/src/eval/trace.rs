@@ -111,6 +111,18 @@ impl Diagnostic {
             right_type: rt,
         })
     }
+
+    /// `x in v` where `v` is not a list (Go `nodeIn`'s invalid shape).
+    pub(crate) fn in_invalid_shape(left: ValueRef<'_>, right: ValueRef<'_>) -> Self {
+        let (lt, rt) = (left.type_name(), right.type_name());
+        Diagnostic {
+            code: DiagnosticCode::ComparisonInvalidShape,
+            message: format!("invalid comparison shape for {lt} in {rt}"),
+            left_type: lt,
+            operator: "in",
+            right_type: rt,
+        }
+    }
 }
 
 /// How evaluation reached its result, node by node.

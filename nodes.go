@@ -340,14 +340,16 @@ func (n *nodeIn) Eval(ctx context.Context, input Input, opts Opts) Result {
 		}
 	}
 
-	rvArr, ok := rv.Value.([]any)
+	// A right side that is not a list, such as a field holding a string,
+	// contains nothing.
+	rvArr, ok := asArray(rv.Value)
 	if !ok {
-		// the right value must be an array
 		trace := traceIfEnabled(tracing, lv.Trace, rv.Trace)
 		if tracing {
 			trace = addTraceDiagnostic(trace, newComparisonDiagnostic(compareDiagnosticInvalidShape, lv.Value, op_IN, rv.Value))
 		}
 		return Result{
+			Value: false,
 			Trace: trace,
 		}
 	}
