@@ -81,7 +81,7 @@ export function CodeEditor({
   const anchor = useRef<HTMLSpanElement>(null)
   const [open, setOpen] = useState<Open>()
   const [at, setAt] = useState({ left: 0, top: 0 })
-  const pendingCaret = useRef<number | undefined>(undefined)
+  const pendingCaret = useRef<[number, number] | undefined>(undefined)
 
   // Place the menu under the caret, measured from a mirror of the text. It
   // renders fixed in a portal so the editor's scroll box can't clip it.
@@ -91,13 +91,10 @@ export function CodeEditor({
     setAt({ left: r.left, top: r.top + 22 })
   }, [open])
 
-  // Restore the caret after an accepted suggestion rewrites the value.
+  // Restore the selection after an edit we made ourselves rewrites the value.
   useLayoutEffect(() => {
     if (pendingCaret.current === undefined || !textarea.current) return
-    textarea.current.setSelectionRange(
-      pendingCaret.current,
-      pendingCaret.current
-    )
+    textarea.current.setSelectionRange(...pendingCaret.current)
     pendingCaret.current = undefined
   }, [value])
 
@@ -110,13 +107,45 @@ export function CodeEditor({
     if (!open) return
     const item = open.items[index]
     const insert = `${item.label} `
-    pendingCaret.current = open.from + insert.length
+    const caret = open.from + insert.length
+    pendingCaret.current = [caret, caret]
     setOpen(undefined)
     onChange(
       value.slice(0, open.from) +
         insert +
         value.slice(open.caret).replace(/^ /, "")
     )
+  }
+
+  // Tab indents and Shift+Tab dedents by one level (two spaces). A caret or
+  // single-line selection gets spaces inserted; a multi-line selection, or
+  // any Shift+Tab, shifts every touched line.
+  const indent = (el: HTMLTextAreaElement, out: boolean) => {
+    const { selectionStart: start, selectionEnd: end } = el
+    if (!out && !value.slice(start, end).includes("\n")) {
+      pendingCaret.current = [start + 2, start + 2]
+      onChange(value.slice(0, start) + "  " + value.slice(end))
+      return
+    }
+    const lineStart = value.lastIndexOf("\n", start - 1) + 1
+    // A selection ending at column 0 doesn't touch that line.
+    const last = end > start && value[end - 1] === "\n" ? end - 1 : end
+    const lines = value.slice(lineStart, last).split("\n")
+    let newStart = start
+    let newEnd = end
+    let pos = lineStart
+    const shifted = lines.map((line) => {
+      const cut = out ? (line.match(/^ {1,2}/)?.[0].length ?? 0) : 0
+      // Move each selection edge at or past this line's start by its change.
+      const shift = (at: number) =>
+        at < pos ? 0 : out ? -Math.min(cut, at - pos) : 2
+      newStart += shift(start)
+      newEnd += shift(end)
+      pos += line.length + 1
+      return out ? line.slice(cut) : "  " + line
+    })
+    pendingCaret.current = [newStart, newEnd]
+    onChange(value.slice(0, lineStart) + shifted.join("\n") + value.slice(last))
   }
 
   return (
@@ -228,7 +257,13 @@ export function CodeEditor({
               suggest(value, e.currentTarget.selectionStart)
               return
             }
-            if (!open) return
+            if (!open) {
+              if (e.key === "Tab" && !e.altKey && !e.ctrlKey && !e.metaKey) {
+                e.preventDefault()
+                indent(e.currentTarget, e.shiftKey)
+              }
+              return
+            }
             const n = open.items.length
             if (e.key === "ArrowDown" || e.key === "ArrowUp") {
               e.preventDefault()
