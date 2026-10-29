@@ -794,28 +794,30 @@ function TextPart({
     setError(undefined)
     onCommit(next)
   }
-  // A highlighted copy of the text sits under a transparent input, the same
+  // A highlighted copy of the text sits under a transparent textarea, the same
   // way the rule editor works, so values read like code while staying editable.
+  // The copy sets the size, so a long value wraps instead of overflowing.
   return (
-    <span className="grid self-stretch">
+    <span className="grid min-w-0 self-stretch">
       <span
         aria-hidden
-        className="pointer-events-none col-start-1 row-start-1 self-center justify-self-center px-2 text-center font-mono text-[13px] whitespace-pre"
+        className="pointer-events-none col-start-1 row-start-1 min-w-[calc(4ch+1rem)] self-center px-2 py-1 font-mono text-[13px] leading-5 [overflow-wrap:anywhere] whitespace-pre-wrap"
       >
         {paint(draft, valueSegments(validate(draft), draft))}
+        {/* Keeps a trailing space from collapsing the last line. */}
+        {"\u200b"}
       </span>
-      <input
+      <textarea
         aria-label={label}
         aria-invalid={!!error || undefined}
         title={error}
         value={draft}
+        rows={1}
         spellCheck={false}
         autoComplete="off"
-        // Exactly as wide as the text (monospace) plus px-2 each side, so the
-        // padding is equal left and right; `size` adds a browser-chosen extra.
-        style={{ width: `calc(${Math.max(draft.length, 4)}ch + 1rem)` }}
-        className="col-start-1 row-start-1 min-w-0 bg-transparent px-2 py-1 text-center font-mono text-[13px] text-transparent caret-foreground outline-none selection:bg-primary/30 focus:bg-accent/40 aria-invalid:bg-destructive/15 aria-invalid:underline aria-invalid:decoration-destructive aria-invalid:decoration-wavy"
-        onChange={(e) => setDraft(e.target.value)}
+        className="col-start-1 row-start-1 min-w-0 resize-none overflow-hidden bg-transparent px-2 py-1 font-mono text-[13px] leading-5 [overflow-wrap:anywhere] whitespace-pre-wrap text-transparent caret-foreground outline-none selection:bg-primary/30 focus:bg-accent/40 aria-invalid:bg-destructive/15 aria-invalid:underline aria-invalid:decoration-destructive aria-invalid:decoration-wavy"
+        // Conditions are one line of rule text; a pasted newline is a space.
+        onChange={(e) => setDraft(e.target.value.replace(/\r?\n/g, " "))}
         onBlur={() => void commit()}
         onKeyDown={(e) => {
           if (e.key === "Enter") {
