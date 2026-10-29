@@ -452,8 +452,7 @@ function LogicPill({
  * Siblings stack vertically, so the width is bounded by nesting depth.
  */
 export function StructureGraph({ node, ...props }: StructureProps) {
-  if (!isLogic(node))
-    return <ComparisonBox node={node} className="max-w-80" {...props} />
+  if (!isLogic(node)) return <ComparisonBox node={node} {...props} />
   const children = logicChildren(node, props.grouped)
   const traceStatus = props.traceBySpan.get(spanKey(node.span))?.status
   // Every node's first line is centered 14px below its top (pills are h-7,
@@ -461,14 +460,17 @@ export function StructureGraph({ node, ...props }: StructureProps) {
   // -my-1.5 cancels for the first row, so the stem (14px) meets the first
   // child's stub (20px into its row) exactly; children of any height align.
   return (
-    <div className="flex items-start">
+    <div className="flex min-w-0 items-start">
       <div className="flex shrink-0 items-start">
         <LogicPill node={node} {...props} />
         <span aria-hidden className="mt-[14px] h-px w-6 shrink-0 bg-border" />
       </div>
-      <div className="-my-1.5 flex flex-col">
+      <div className="-my-1.5 flex min-w-0 flex-col">
         {children.map((child, i) => (
-          <div key={child.id} className="relative flex items-start py-1.5 pl-6">
+          <div
+            key={child.id}
+            className="relative flex min-w-0 items-start py-1.5 pl-6"
+          >
             {i > 0 && (
               <span
                 aria-hidden
@@ -526,27 +528,29 @@ export function StructureBlocks({ node, ...props }: StructureProps) {
 const MIN_SCALE = 0.75
 
 /**
- * Shrinks wide content to the container's width, down to MIN_SCALE; past
- * that the container scrolls horizontally.
+ * Lays content out at the container's width, so boxes wrap only when they run
+ * out of room. Content whose narrowest layout is still wider shrinks, down to
+ * MIN_SCALE; past that the container scrolls horizontally.
  */
 export function FitWidth({ children }: { children: ReactNode }) {
   const outer = useRef<HTMLDivElement>(null)
   const inner = useRef<HTMLDivElement>(null)
-  const [fit, setFit] = useState({ scale: 1, width: 0, height: 0 })
+  const [fit, setFit] = useState({ scale: 1, width: 0, height: 0, room: 0 })
 
   useLayoutEffect(() => {
     const measure = () => {
       if (!outer.current || !inner.current) return
+      const room = outer.current.clientWidth
       const width = inner.current.offsetWidth
       const height = inner.current.offsetHeight
-      const scale = Math.max(
-        MIN_SCALE,
-        Math.min(1, outer.current.clientWidth / width)
-      )
+      const scale = Math.max(MIN_SCALE, Math.min(1, room / width))
       setFit((prev) =>
-        prev.scale === scale && prev.width === width && prev.height === height
+        prev.scale === scale &&
+        prev.width === width &&
+        prev.height === height &&
+        prev.room === room
           ? prev
-          : { scale, width, height }
+          : { scale, width, height, room }
       )
     }
     // Measure before first paint; waiting for the observer would flash the unscaled graph.
@@ -567,10 +571,15 @@ export function FitWidth({ children }: { children: ReactNode }) {
           visibility: fit.width ? undefined : "hidden",
         }}
       >
+        {/* At most the container's width, unless the content can't get that
+            narrow (min-width wins); then the scale above shrinks it. */}
         <div
           ref={inner}
-          className="w-max origin-top-left py-2"
-          style={{ transform: `scale(${fit.scale})` }}
+          className="w-max min-w-min origin-top-left py-2"
+          style={{
+            maxWidth: fit.room || undefined,
+            transform: `scale(${fit.scale})`,
+          }}
         >
           {children}
         </div>
