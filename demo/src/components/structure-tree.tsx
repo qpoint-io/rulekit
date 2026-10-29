@@ -264,9 +264,14 @@ const PUN = "font-mono text-[13px] text-tok-pun"
 
 /**
  * A node as selectable chips in source order. Comparisons get a status-colored
- * underline; nested logic of a different operator gets parentheses.
+ * underline; nested logic of a different operator gets parentheses. `after`
+ * (a list separator) ends the last chip, so it follows the text when it wraps.
  */
-function InlineNode({ node, ...props }: StructureProps) {
+function InlineNode({
+  node,
+  after,
+  ...props
+}: StructureProps & { after?: ReactNode }) {
   const { selectedId, hoveredId, traceBySpan } = props
   const trace = traceBySpan.get(spanKey(node.span))
   const chip = (text: string, className: string, extra?: ReactNode) => (
@@ -288,17 +293,17 @@ function InlineNode({ node, ...props }: StructureProps) {
   )
   const label = nodeLabel(node)
   const children = node.children ?? []
-  const grouped = (child: AstNode) =>
+  const grouped = (child: AstNode, after?: ReactNode) =>
     isLogic(child) &&
     child.kind === "binary" &&
     child.operator !== node.operator ? (
       <span className="inline-flex flex-wrap items-center">
         <span className={PUN}>(</span>
         <InlineNode node={child} {...props} />
-        <span className={PUN}>)</span>
+        <span className={PUN}>){after}</span>
       </span>
     ) : (
-      <InlineNode node={child} {...props} />
+      <InlineNode node={child} after={after} {...props} />
     )
 
   if (node.kind === "unary" && children.length === 1) {
@@ -307,7 +312,7 @@ function InlineNode({ node, ...props }: StructureProps) {
         {chip(label.text, label.className)}
         <span className={PUN}>(</span>
         <InlineNode node={children[0]} {...props} />
-        <span className={PUN}>)</span>
+        <span className={PUN}>){after}</span>
       </span>
     )
   }
@@ -319,7 +324,7 @@ function InlineNode({ node, ...props }: StructureProps) {
         {grouped(children[0])}
         <span className="inline-flex min-w-0 items-start">
           {chip(label.text, cn(label.className, "shrink-0 whitespace-nowrap"))}
-          {grouped(children[1])}
+          {grouped(children[1], after)}
         </span>
       </>
     )
@@ -338,14 +343,17 @@ function InlineNode({ node, ...props }: StructureProps) {
           chip("[", "text-tok-pun")
         )}
         {children.map((child, i) => (
-          <span key={child.id} className="inline-flex items-center">
-            <InlineNode node={child} {...props} />
-            {i < children.length - 1 && (
-              <span className={cn(PUN, "mr-0.5 -ml-0.5")}>,</span>
-            )}
-          </span>
+          <InlineNode
+            key={child.id}
+            node={child}
+            after={i < children.length - 1 && <span className={PUN}>,</span>}
+            {...props}
+          />
         ))}
-        <span className={PUN}>{call ? ")" : "]"}</span>
+        <span className={PUN}>
+          {call ? ")" : "]"}
+          {after}
+        </span>
       </span>
     )
   }
@@ -353,9 +361,12 @@ function InlineNode({ node, ...props }: StructureProps) {
   return chip(
     label.text,
     label.className,
-    value && (
-      <span className="ml-1 text-[11px] text-muted-foreground">{value}</span>
-    )
+    <>
+      {value && (
+        <span className="ml-1 text-[11px] text-muted-foreground">{value}</span>
+      )}
+      {after}
+    </>
   )
 }
 
