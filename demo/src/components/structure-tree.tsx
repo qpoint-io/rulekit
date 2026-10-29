@@ -325,10 +325,18 @@ function InlineNode({ node, ...props }: StructureProps) {
     )
     return body
   }
-  if (node.kind === "array") {
+  if (node.kind === "array" || node.kind === "call") {
+    const call = node.kind === "call"
     return (
       <span className="inline-flex flex-wrap items-center">
-        {chip("[", "text-tok-pun")}
+        {call ? (
+          <>
+            {chip(label.text, label.className)}
+            <span className={PUN}>(</span>
+          </>
+        ) : (
+          chip("[", "text-tok-pun")
+        )}
         {children.map((child, i) => (
           <span key={child.id} className="inline-flex items-center">
             <InlineNode node={child} {...props} />
@@ -337,7 +345,7 @@ function InlineNode({ node, ...props }: StructureProps) {
             )}
           </span>
         ))}
-        <span className={PUN}>]</span>
+        <span className={PUN}>{call ? ")" : "]"}</span>
       </span>
     )
   }
