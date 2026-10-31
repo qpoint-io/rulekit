@@ -117,6 +117,16 @@
       "expect": {"print": {"string": "field contains \"str\""}}
     },
     {
+      "name": "string: array item expressions",
+      "expr": "x in [a&&b, f( c ),[1,2], (a or b) and c, not d]",
+      "expect": {"print": {"string": "x in [a and b, f(c), [1, 2], (a or b) and c, not d]"}}
+    },
+    {
+      "name": "multiline: array item expressions stay inline",
+      "expr": "a == 1 and x in [b or c, d]",
+      "expect": {"print": {"multiline_2sp": "a == 1\nand x in [b or c, d]"}}
+    },
+    {
       "name": "string: field in [1, \"str\", 3]",
       "expr": "field in [1, \"str\", 3]",
       "expect": {"print": {"string": "field in [1, \"str\", 3]"}}

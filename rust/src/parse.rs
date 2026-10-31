@@ -365,7 +365,7 @@ impl<'a> Parser<'a> {
         }
         let mut items = Vec::new();
         loop {
-            items.push(self.parse_array_value()?);
+            items.push(self.parse_expr(0)?);
             if self.peek().kind != TokenKind::Comma {
                 break;
             }
@@ -380,26 +380,6 @@ impl<'a> Parser<'a> {
             span,
             items: items.into_boxed_slice(),
         }))
-    }
-
-    fn parse_array_value(&mut self) -> PResult<NodeId> {
-        let tok = self.peek();
-        match tok.kind {
-            TokenKind::LBracket => Err(self.error(tok, "nested arrays are not allowed")),
-            TokenKind::Field
-            | TokenKind::String
-            | TokenKind::Int
-            | TokenKind::Float
-            | TokenKind::Bool
-            | TokenKind::Ip
-            | TokenKind::IpCidr
-            | TokenKind::HexString
-            | TokenKind::Regex => {
-                let value = self.parse_primary()?;
-                self.parse_postfix(value)
-            }
-            _ => Err(self.error(tok, "array values must be literals or fields")),
-        }
     }
 
     fn parse_function(&mut self, name: Token) -> PResult<NodeId> {

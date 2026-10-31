@@ -158,7 +158,7 @@ To compare by value instead, use an unquoted literal: `ip == 2001:DB8::1` matche
 
 | Type         | Used As | Example                        | Description                                                                                   |
 | ------------ | ------- | ------------------------------ | --------------------------------------------------------------------------------------------- |
-| **Array**    | VALUE   | `[1, "string", true]`          | An array of mixed value types. Use it on the right of `in`, `==` (any element is equal), or `!=` (no element is equal), or on the left of `contains`. |
+| **Array**    | VALUE   | `[1, "string", true]`          | An array of mixed value types. Items can be any expression, including fields, function calls, and other arrays: `[host, a && tags, [1, 2]]`. Use it on the right of `in`, `==` (any element is equal), or `!=` (no element is equal), or on the left of `contains`. |
 | **Function** | VALUE   | `starts_with(url, "https://")` | A function call with optional arguments. Can be built-in or custom.                           |
 | **Macro**    | VALUE   | `isValidRequest()`             | A zero-argument function that encapsulates a predefined rule.                                 |
 

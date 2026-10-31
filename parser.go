@@ -830,7 +830,7 @@ func (p *parser) parseArray(start token) (ASTNode, error) {
 	}
 	var vals []ASTNode
 	for {
-		val, err := p.parseArrayValue()
+		val, err := p.parseExpr(0)
 		if err != nil {
 			return nil, err
 		}
@@ -848,22 +848,6 @@ func (p *parser) parseArray(start token) (ASTNode, error) {
 	}
 	_ = start
 	return &astArray{span: Span{Start: start.start, End: p.tokens[p.pos-1].end}, vals: vals}, nil
-}
-
-func (p *parser) parseArrayValue() (ASTNode, error) {
-	tok := p.peek()
-	switch tok.kind {
-	case token_LBRACKET:
-		return nil, p.errorf(tok, "nested arrays are not allowed")
-	case token_FIELD, token_STRING, token_INT, token_FLOAT, token_BOOL, token_IP, token_IP_CIDR, token_HEX_STRING, token_REGEX:
-		val, err := p.parsePrimary()
-		if err != nil {
-			return nil, err
-		}
-		return p.parsePostfix(val)
-	default:
-		return nil, p.errorf(tok, "array values must be literals or fields")
-	}
 }
 
 func (p *parser) parseFunction(name token) (ASTNode, error) {
