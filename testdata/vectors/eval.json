@@ -315,6 +315,50 @@
     {"name": "array literal contains int", "expr": "[1,2,3] contains 2", "expect": {"value": true}},
     {"name": "array literal contains string", "expr": "[1,2,3] contains \"str\"", "expect": {"value": false}},
     {
+      "name": "array item expressions: and",
+      "expr": "x in [host, something && tags]",
+      "input": {"x": "b", "host": "a", "something": true, "tags": "b"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "array item expressions: and short-circuits",
+      "expr": "x in [host, something && tags]",
+      "input": {"x": "b", "host": "a", "something": false, "tags": "b"},
+      "expect": {"value": false}
+    },
+    {
+      "name": "array item expressions: comparison and not",
+      "expr": "[a == 1, not b]",
+      "input": {"a": 1, "b": true},
+      "expect": {"value": [true, false]}
+    },
+    {
+      "name": "array item expressions: function call",
+      "expr": "true in [starts_with(x, \"a\"), false]",
+      "input": {"x": "abc"},
+      "expect": {"value": true}
+    },
+    {
+      "name": "array item expressions: grouped or",
+      "expr": "x in [(y or \"b\"), \"c\"]",
+      "input": {"x": "b", "y": ""},
+      "expect": {"value": true}
+    },
+    {"name": "nested array literal value", "expr": "[1, [2, 3], [x]]", "input": {"x": "a"}, "expect": {"value": [1, [2, 3], ["a"]]}},
+    {"name": "nested array literal contains element", "expr": "[[1, 2], 3] contains 3", "expect": {"value": true}},
+    {
+      "name": "array item expressions: missing field makes the array incomplete",
+      "expr": "x in [y == 1, 2]",
+      "input": {"x": 2},
+      "expect": {"value": null, "missing_fields": ["y"]}
+    },
+    {
+      "name": "array item expressions: error makes the array fail",
+      "expr": "x in [1, no_such_function()]",
+      "input": {"x": 1},
+      "expect": {"error": true}
+    },
+    {
       "name": "in array: superstring",
       "expr": "field in [1, \"str\", 3]",
       "input": {"field": "string"},

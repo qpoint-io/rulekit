@@ -164,6 +164,21 @@
       }
     },
     {
+      "name": "array traces expression items",
+      "expr": "x in [a == 1, b]",
+      "input": {"a": 1, "b": 2, "x": true},
+      "expect": {
+        "value": true,
+        "trace": {
+          "status": "passed",
+          "children": [
+            {"expr": "x"},
+            {"expr": "[a == 1, b]", "children": [{"expr": "a == 1", "status": "passed"}, {"expr": "b", "status": "passed"}]}
+          ]
+        }
+      }
+    },
+    {
       "name": "call traces its arguments, pruning those after an incomplete one",
       "expr": "starts_with(y, \"a\")",
       "input": {},
