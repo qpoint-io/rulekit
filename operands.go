@@ -102,9 +102,27 @@ func evalArrayLiteral(ctx context.Context, input Input, opts Opts, traced *trace
 	return out
 }
 
-// evalComparison evaluates the operands of a comparison and applies compare
-// to their values. negated is true for `!=`, which passes when no element is
-// equal; every other comparison passes when any element is.
+// isArrayLiteral reports whether a lowered rule evaluates an array literal.
+func isArrayLiteral(r Rule) bool {
+	_, arr := arrayLiteral(r)
+	return arr != nil
+}
+
+// incompleteRight is the result of a comparison whose right operand rv is
+// incomplete.
+func incompleteRight(tracing bool, lv, rv Result) Result {
+	return Result{
+		Error:         rv.Error,
+		MissingFields: rv.MissingFields,
+		Trace:         traceIfEnabled(tracing, lv.Trace, rv.Trace),
+	}
+}
+
+// evalComparison evaluates a comparison whose operand is an array literal
+// (comparison nodes decide that when the rule is lowered and evaluate other
+// comparisons themselves) and applies compare to the operand values. negated
+// is true for `!=`, which passes when no element is equal; every other
+// comparison passes when any element is.
 //
 // An incomplete plain operand is the result, and an incomplete left operand
 // prunes the right one. An array literal operand is checked "any element":

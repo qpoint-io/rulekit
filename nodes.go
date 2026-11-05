@@ -187,10 +187,36 @@ func (n *nodeNot) Print(PrintMode) string {
 type nodeMatch struct {
 	lv Rule
 	rv Rule
+	// literal is true when an operand is an array literal.
+	literal bool
 }
 
 func (n *nodeMatch) Eval(ctx context.Context, input Input, opts Opts) Result {
-	return evalComparison(ctx, input, opts, n.lv, n.rv, false, n.compare)
+	if n.literal {
+		return evalComparison(ctx, input, opts, n.lv, n.rv, false, n.compare)
+	}
+	tracing := traceEnabled(opts)
+	lv := n.lv.Eval(ctx, input, opts)
+	if !lv.Ok() {
+		var trace *Trace
+		if tracing {
+			trace = combineTrace(lv.Trace, prunedTrace(n.rv))
+		}
+		return Result{
+			Error:         lv.Error,
+			MissingFields: lv.MissingFields,
+			Trace:         trace,
+		}
+	}
+	rv := n.rv.Eval(ctx, input, opts)
+	if !rv.Ok() {
+		return incompleteRight(tracing, lv, rv)
+	}
+
+	return Result{
+		Value: n.apply(lv.Value, rv.Value),
+		Trace: traceIfEnabled(tracing, lv.Trace, rv.Trace),
+	}
 }
 
 func (n *nodeMatch) compare(lv, rv any, _ bool) (bool, Diagnostic) {
@@ -246,10 +272,41 @@ type nodeCompare struct {
 	lv Rule
 	op int // op_EQ, NE, GT, GE, LT, LE, CONTAINS
 	rv Rule
+	// literal is true when an operand is an array literal.
+	literal bool
 }
 
 func (n *nodeCompare) Eval(ctx context.Context, input Input, opts Opts) Result {
-	return evalComparison(ctx, input, opts, n.lv, n.rv, n.op == op_NE, n.compare)
+	if n.literal {
+		return evalComparison(ctx, input, opts, n.lv, n.rv, n.op == op_NE, n.compare)
+	}
+	tracing := traceEnabled(opts)
+	lv := n.lv.Eval(ctx, input, opts)
+	if !lv.Ok() {
+		var trace *Trace
+		if tracing {
+			trace = combineTrace(lv.Trace, prunedTrace(n.rv))
+		}
+		return Result{
+			Error:         lv.Error,
+			MissingFields: lv.MissingFields,
+			Trace:         trace,
+		}
+	}
+	rv := n.rv.Eval(ctx, input, opts)
+	if !rv.Ok() {
+		return incompleteRight(tracing, lv, rv)
+	}
+
+	outcome := compareDetailed(lv.Value, n.op, rv.Value)
+	trace := traceIfEnabled(tracing, lv.Trace, rv.Trace)
+	if tracing && outcome.diagnostic != compareDiagnosticNone {
+		trace = addTraceDiagnostic(trace, newComparisonDiagnostic(outcome.diagnostic, lv.Value, n.op, rv.Value))
+	}
+	return Result{
+		Value: outcome.pass,
+		Trace: trace,
+	}
 }
 
 func (n *nodeCompare) compare(lv, rv any, tracing bool) (bool, Diagnostic) {
@@ -273,10 +330,41 @@ func (n *nodeCompare) Print(PrintMode) string {
 type nodeIn struct {
 	lv Rule
 	rv Rule
+	// literal is true when an operand is an array literal.
+	literal bool
 }
 
 func (n *nodeIn) Eval(ctx context.Context, input Input, opts Opts) Result {
-	return evalComparison(ctx, input, opts, n.lv, n.rv, false, n.compare)
+	if n.literal {
+		return evalComparison(ctx, input, opts, n.lv, n.rv, false, n.compare)
+	}
+	tracing := traceEnabled(opts)
+	lv := n.lv.Eval(ctx, input, opts)
+	if !lv.Ok() {
+		var trace *Trace
+		if tracing {
+			trace = combineTrace(lv.Trace, prunedTrace(n.rv))
+		}
+		return Result{
+			Error:         lv.Error,
+			MissingFields: lv.MissingFields,
+			Trace:         trace,
+		}
+	}
+	rv := n.rv.Eval(ctx, input, opts)
+	if !rv.Ok() {
+		return incompleteRight(tracing, lv, rv)
+	}
+
+	pass, diagnostic := n.compare(lv.Value, rv.Value, tracing)
+	trace := traceIfEnabled(tracing, lv.Trace, rv.Trace)
+	if diagnostic.Code != "" {
+		trace = addTraceDiagnostic(trace, diagnostic)
+	}
+	return Result{
+		Value: pass,
+		Trace: trace,
+	}
 }
 
 func (n *nodeIn) compare(lv, rv any, tracing bool) (bool, Diagnostic) {

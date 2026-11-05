@@ -226,6 +226,7 @@ func lowerAST(node ASTNode) (Rule, error) {
 			return nil, err
 		}
 		op := n.op
+		literal := isArrayLiteral(left) || isArrayLiteral(right)
 		var r Rule
 		switch op {
 		case OperatorAnd:
@@ -235,14 +236,14 @@ func lowerAST(node ASTNode) (Rule, error) {
 		case OperatorCoalesce:
 			r = &nodeCoalesce{left: left, right: right}
 		case OperatorEQ, OperatorNE, OperatorContains, OperatorGT, OperatorGE, OperatorLT, OperatorLE:
-			r = &nodeCompare{lv: left, op: tokenKindFromASTOperator(op), rv: right}
+			r = &nodeCompare{lv: left, op: tokenKindFromASTOperator(op), rv: right, literal: literal}
 		case OperatorMatches:
-			r = &nodeMatch{lv: left, rv: right}
+			r = &nodeMatch{lv: left, rv: right, literal: literal}
 		case OperatorIn:
 			if literalIs[*net.IPNet](right) {
-				r = &nodeCompare{lv: left, op: op_EQ, rv: right}
+				r = &nodeCompare{lv: left, op: op_EQ, rv: right, literal: literal}
 			} else {
-				r = &nodeIn{lv: left, rv: right}
+				r = &nodeIn{lv: left, rv: right, literal: literal}
 			}
 		}
 		if r != nil {
