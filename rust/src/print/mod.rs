@@ -61,10 +61,26 @@ pub(crate) fn canonical_in(ast: &Ast, id: NodeId, parent_prec: u8, right_child: 
             )
         }
     };
-    if prec < parent_prec || (right_child && prec == parent_prec) {
+    if needs_parens(ast, id, parent_prec, right_child) {
         return format!("({out})");
     }
     out
+}
+
+/// Whether a child needs parentheses under a parent of precedence
+/// `parent_prec`. Operators are left-associative, so a child of equal
+/// precedence needs them on the right; `??` is right-associative, so it needs
+/// them on the left.
+fn needs_parens(ast: &Ast, child: NodeId, parent_prec: u8, right_child: bool) -> bool {
+    let right_assoc = matches!(
+        ast.data(child),
+        NodeData::Binary {
+            op: Operator::Coalesce,
+            ..
+        }
+    );
+    let prec = precedence(ast, child);
+    prec < parent_prec || (prec == parent_prec && right_child != right_assoc)
 }
 
 /// Compact canonical expressions of every node, indexed by `NodeId`, built in
@@ -76,11 +92,9 @@ pub(crate) fn canonical_all(ast: &Ast) -> Vec<String> {
         // Children always precede their parent in the arena.
         let in_context = |child: NodeId, parent_prec: u8, right_child: bool| {
             let text = &texts[child.index()];
-            let prec = precedence(ast, child);
             let unary = matches!(ast.data(child), NodeData::Unary { .. });
             if (unary && parent_prec >= Operator::Eq.precedence())
-                || prec < parent_prec
-                || (right_child && prec == parent_prec)
+                || needs_parens(ast, child, parent_prec, right_child)
             {
                 format!("({text})")
             } else {

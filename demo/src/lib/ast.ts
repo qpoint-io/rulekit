@@ -52,6 +52,7 @@ export const OPERATORS: { value: string; label: string }[] = [
   { value: "not_matches", label: "not =~" },
   { value: "in", label: "in" },
   { value: "not_in", label: "not in" },
+  { value: "coalesce", label: "??" },
 ]
 
 /** Why the node can't be deleted, or undefined when it can. Mirrors the bridge's rules. */

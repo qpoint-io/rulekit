@@ -9,6 +9,8 @@ use crate::literal;
 
 /// Precedence of comparison operators; `not` parses its operand above it.
 const COMPARISON_PRECEDENCE: u8 = 3;
+/// Precedence of `??`: tighter than comparisons, looser than primaries.
+const COALESCE_PRECEDENCE: u8 = 4;
 
 pub(crate) fn parse(source: &str) -> Result<Ast, ParseError> {
     let tokens = lex(source).map_err(|err| ParseError::at(source, err.pos, err.message))?;
@@ -55,6 +57,7 @@ fn infix_precedence(kind: TokenKind) -> Option<u8> {
         | TokenKind::Le
         | TokenKind::Matches
         | TokenKind::In => Some(COMPARISON_PRECEDENCE),
+        TokenKind::Coalesce => Some(COALESCE_PRECEDENCE),
         _ => None,
     }
 }
@@ -149,8 +152,16 @@ impl<'a> Parser<'a> {
                         return Err(self.error(rhs, "matches requires a regex value"));
                     }
                     let right = self.parse_primary()?;
-                    self.parse_postfix(right)?
+                    let right = self.parse_postfix(right)?;
+                    // A `??` here would take the comparison as its left side.
+                    let next = self.peek();
+                    if next.kind == TokenKind::Coalesce {
+                        return Err(self.error(next, "matches requires a regex value"));
+                    }
+                    right
                 }
+                // `??` is right-associative: `a ?? b ?? c` is `a ?? (b ?? c)`.
+                TokenKind::Coalesce => self.parse_expr(prec)?,
                 TokenKind::In => {
                     let right = self.parse_expr(prec + 1)?;
                     let is_cidr = matches!(
@@ -197,11 +208,18 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    /// Go `astValidInequalityOperand`: paths, calls, and number literals.
+    /// Go `astValidInequalityOperand`: paths, calls, number literals, and
+    /// `??` of those.
     fn valid_inequality_operand(&self, id: NodeId) -> bool {
         match &self.ast.nodes[id.index()] {
             NodeData::Path { .. } | NodeData::Call { .. } => true,
             NodeData::Literal { kind, .. } => matches!(kind, LiteralKind::Int | LiteralKind::Float),
+            NodeData::Binary {
+                op: Operator::Coalesce,
+                lhs,
+                rhs,
+                ..
+            } => self.valid_inequality_operand(*lhs) && self.valid_inequality_operand(*rhs),
             _ => false,
         }
     }
@@ -322,6 +340,7 @@ impl<'a> Parser<'a> {
                     | TokenKind::Contains
                     | TokenKind::Matches
                     | TokenKind::In
+                    | TokenKind::Coalesce
             )
     }
 
@@ -416,14 +435,10 @@ impl<'a> Parser<'a> {
         }
         let end = self.expect(TokenKind::RParen)?;
         let name_text = self.raw(name);
-        if let Some(arity) = crate::stdlib_arity(name_text)
-            && arity != args.len()
+        if let Some(params) = crate::stdlib::params(name_text)
+            && let Err(err) = crate::func::check_arity(name_text, params, args.len())
         {
-            let message = format!(
-                "function {name_text:?} expects {arity} arguments, got {}",
-                args.len()
-            );
-            return Err(ParseError::at(self.input, end.span.end, message));
+            return Err(ParseError::at(self.input, end.span.end, err.to_string()));
         }
         let span = Span::new(name.span.start, end.span.end);
         Ok(self.ast.push(NodeData::Call {

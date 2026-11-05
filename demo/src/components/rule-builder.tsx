@@ -85,7 +85,14 @@ type Parts = { field: string; op: string; value: string }
 
 function partsOf(node: AstNode | undefined): Parts | undefined {
   const [lhs, rhs] = node?.children ?? []
-  if (!node || node.kind !== "binary" || !lhs || !rhs || lhs.kind !== "path")
+  if (
+    !node ||
+    node.kind !== "binary" ||
+    node.operator === "coalesce" ||
+    !lhs ||
+    !rhs ||
+    lhs.kind !== "path"
+  )
     return undefined
   // Keep the spelling the rule uses (`ne` stays `ne`).
   const op = node.raw?.toLowerCase().replace(/\s+/g, " ") ?? "=="

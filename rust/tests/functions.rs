@@ -181,6 +181,16 @@ fn opts_validation() {
             .build()
             .is_err()
     );
+    for name in ["compact", "coalesce"] {
+        assert!(Opts::builder().function(named(name)).build().is_err());
+        assert!(
+            Opts::builder()
+                .macro_source(name, "true")
+                .unwrap()
+                .build()
+                .is_err()
+        );
+    }
     assert!(
         Opts::builder()
             .function(named("m"))

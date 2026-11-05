@@ -20,6 +20,7 @@ export function kindLabel(node: AstNode) {
     (node.operator === "and" || node.operator === "or")
   )
     return "logic"
+  if (node.kind === "binary" && node.operator === "coalesce") return "default"
   return KIND_LABEL[node.kind] ?? node.kind
 }
 

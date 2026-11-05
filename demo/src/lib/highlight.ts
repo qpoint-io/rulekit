@@ -70,7 +70,7 @@ const RULE_LEX = new RegExp(
     String.raw`(?<num>-?\b(?:0x[0-9a-f]+|\d+(?:\.\d+)?)\b)`,
     String.raw`(?<bool>\b(?:true|false)\b)`,
     String.raw`(?<kw>\b(?:and|or|not|in|contains|matches|eq|ne|gt|ge|lt|le)\b)`,
-    String.raw`(?<op>==|!=|>=|<=|=~|&&|\|\||[<>!])`,
+    String.raw`(?<op>==|!=|>=|<=|=~|&&|\|\||\?\?|[<>!])`,
     String.raw`(?<id>[A-Za-z_][\w.]*)`,
     String.raw`(?<pun>[()[\],])`,
   ].join("|"),

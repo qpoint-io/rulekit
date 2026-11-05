@@ -43,6 +43,8 @@ pub(crate) struct Meta {
 enum Kind {
     And(Box<Node>, Box<Node>),
     Or(Box<Node>, Box<Node>),
+    /// `??`: the left side unless it is absent, else the right side.
+    Coalesce(Box<Node>, Box<Node>),
     Not(Box<Node>),
     Compare {
         op: CmpOp,
@@ -75,6 +77,10 @@ enum Kind {
 #[derive(Clone, Debug)]
 enum Call {
     StartsWith,
+    /// `compact(list)`: evaluates its array literal argument item by item.
+    Compact,
+    /// `coalesce(value, ...values)`: the first argument that is not absent.
+    Coalesce,
     Named(Box<str>),
 }
 
@@ -120,10 +126,11 @@ fn lower_node(ast: &Ast, texts: &mut [String], id: NodeId) -> Result<Node, Parse
                 .map(|&arg| lower_node(ast, texts, arg))
                 .collect::<Result<Vec<_>, _>>()?;
             let name = ast.text(*name);
-            let target = if name == "starts_with" {
-                Call::StartsWith
-            } else {
-                Call::Named(name.into())
+            let target = match name {
+                "starts_with" => Call::StartsWith,
+                "compact" => Call::Compact,
+                "coalesce" => Call::Coalesce,
+                _ => Call::Named(name.into()),
             };
             Kind::Call {
                 target,
@@ -163,6 +170,7 @@ fn lower_node(ast: &Ast, texts: &mut [String], id: NodeId) -> Result<Node, Parse
                 (_, Some(op)) => Kind::Compare { op, lhs, rhs },
                 (Operator::And, _) => Kind::And(lhs, rhs),
                 (Operator::Or, _) => Kind::Or(lhs, rhs),
+                (Operator::Coalesce, _) => Kind::Coalesce(lhs, rhs),
                 (Operator::Matches, _) => Kind::Match { lhs, rhs },
                 (Operator::In, _) => Kind::In { lhs, rhs },
                 _ => unreachable!("not is unary; comparisons are handled above"),
@@ -398,6 +406,13 @@ impl<'a, S: Slot<'a>> Res<'a, S> {
     fn fail(&self) -> bool {
         self.complete() && self.value.as_ref().is_zero()
     }
+
+    /// Missing, or a null value: what `??` and `coalesce` skip.
+    /// An error is never absent.
+    fn absent(&self) -> bool {
+        self.error().is_none()
+            && (!self.complete() || matches!(self.value.as_ref(), ValueRef::Null))
+    }
 }
 
 /// Evaluate a rule's root node, with or without a trace.
@@ -462,7 +477,13 @@ impl Node {
         &'a self,
         s: &Scope<'a, I>,
     ) -> Res<'a, S> {
-        let mut r = self.eval_kind::<S, I>(s);
+        let r = self.eval_kind::<S, I>(s);
+        self.describe(r)
+    }
+
+    /// When tracing, wrap the trace `r` produced for this node in the node's
+    /// description.
+    fn describe<'a, S: Slot<'a>>(&'a self, mut r: Res<'a, S>) -> Res<'a, S> {
         if S::ENABLED
             && let Some(meta) = &self.meta
         {
@@ -517,6 +538,22 @@ impl Node {
                 }
                 merge::<S>(left, right)
             }
+            Kind::Coalesce(l, r) => {
+                let mut left = l.eval::<S, I>(s);
+                if !left.absent() {
+                    if S::ENABLED {
+                        let frag = combine([left.trace.take_frag(), r.pruned()]);
+                        left.trace.put_frag(frag);
+                    }
+                    return left;
+                }
+                let mut right = r.eval::<S, I>(s);
+                if S::ENABLED {
+                    let frag = combine([left.trace.take_frag(), right.trace.take_frag()]);
+                    right.trace.put_frag(frag);
+                }
+                right
+            }
             Kind::Not(inner) => {
                 let mut r = inner.eval::<S, I>(s);
                 // A negated operator has no traced node between it and its
@@ -534,21 +571,25 @@ impl Node {
                 }
                 Res::bool(r.value.as_ref().is_zero()).with_trace(trace)
             }
-            Kind::Compare { op, lhs, rhs } => self.binary::<S, I>(lhs, rhs, s, |lv, rv| {
-                let outcome = compare(lv, *op, rv);
-                (
-                    outcome.pass,
-                    if S::ENABLED {
-                        Diagnostic::new(outcome.diagnostic, lv, *op, rv)
-                    } else {
-                        None
-                    },
-                )
-            }),
-            Kind::Match { lhs, rhs } => {
-                self.binary::<S, I>(lhs, rhs, s, |lv, rv| (matches(lv, rv), None))
+            Kind::Compare { op, lhs, rhs } => {
+                // `!=` is decided by a failing comparison, the rest by a
+                // passing one.
+                self.binary::<S, I>(lhs, rhs, s, *op != CmpOp::Ne, |lv, rv| {
+                    let outcome = compare(lv, *op, rv);
+                    (
+                        outcome.pass,
+                        if S::ENABLED {
+                            Diagnostic::new(outcome.diagnostic, lv, *op, rv)
+                        } else {
+                            None
+                        },
+                    )
+                })
             }
-            Kind::In { lhs, rhs } => self.binary::<S, I>(lhs, rhs, s, |lv, rv| {
+            Kind::Match { lhs, rhs } => {
+                self.binary::<S, I>(lhs, rhs, s, true, |lv, rv| (matches(lv, rv), None))
+            }
+            Kind::In { lhs, rhs } => self.binary::<S, I>(lhs, rhs, s, true, |lv, rv| {
                 // A right side that is not a list, such as a field holding a
                 // string, contains nothing.
                 let ValueRef::Array(list) = rv else {
@@ -601,18 +642,24 @@ impl Node {
     }
 
     /// Go `nodeCompare`/`nodeMatch`/`nodeIn`: evaluate both operands (a
-    /// non-ok left operand prunes the right), then apply `f`, which returns
-    /// the result and, when tracing, a diagnostic.
+    /// plain operand that is not ok prunes the right), then apply `f`, which
+    /// returns the result and, when tracing, a diagnostic.
+    ///
+    /// An array literal operand with missing or failing items still lets the
+    /// comparison run on its present items. The result is final when `f`
+    /// returns `decisive` (a passing comparison, or a failing `!=`); otherwise
+    /// the incomplete operands are merged like `and`/`or` do.
     fn binary<'a, S: Slot<'a>, I: Input + ?Sized>(
         &'a self,
         lhs: &'a Node,
         rhs: &'a Node,
         s: &Scope<'a, I>,
+        decisive: bool,
         f: impl FnOnce(ValueRef<'_>, ValueRef<'_>) -> (bool, Option<Diagnostic>),
     ) -> Res<'a, S> {
         let (mut lbuf, mut rbuf) = (Buf::<8>::new(), Buf::<8>::new());
         let (mut left, left_in_buf) = lhs.operand::<S, I, 8>(s, &mut lbuf);
-        if !left.ok() {
+        if !left.ok() && !left_in_buf {
             let trace = if S::ENABLED {
                 combine([left.trace.take_frag(), rhs.pruned()])
             } else {
@@ -621,13 +668,9 @@ impl Node {
             return left.incomplete(trace);
         }
         let (mut right, right_in_buf) = rhs.operand::<S, I, 8>(s, &mut rbuf);
-        let trace = if S::ENABLED {
-            combine([left.trace.take_frag(), right.trace.take_frag()])
-        } else {
-            None
-        };
-        if !right.ok() {
-            return right.incomplete(trace);
+        let incomplete = !left.ok() || !right.ok();
+        if !right.ok() && !right_in_buf {
+            return merge::<S>(left, right);
         }
         let lv = if left_in_buf {
             ValueRef::Array(ArrayRef::Vals(&lbuf))
@@ -640,34 +683,51 @@ impl Node {
             right.value.as_ref()
         };
         let (pass, diagnostic) = f(lv, rv);
-        let mut trace = trace;
-        if let Some(diagnostic) = diagnostic {
+        if incomplete && pass != decisive {
+            return merge::<S>(left, right);
+        }
+        let mut trace = if S::ENABLED {
+            combine([left.trace.take_frag(), right.trace.take_frag()])
+        } else {
+            None
+        };
+        // A decided result of an incomplete operand carries no diagnostic.
+        if let Some(diagnostic) = diagnostic.filter(|_| !incomplete) {
             trace = trace::add_diagnostic(trace, diagnostic);
         }
         Res::bool(pass).with_trace(trace)
     }
 
-    /// Evaluate a comparison operand. Untraced, a non-constant array literal
-    /// is evaluated into `buf` (the bool is true) so comparing against it does
-    /// not allocate; traced, it is evaluated as a node like in Go.
+    /// Evaluate a comparison operand. An array literal is evaluated item by
+    /// item into `buf` (the bool is true) so comparing against it does not
+    /// allocate, and an incomplete item does not stop the others.
     fn operand<'a, S: Slot<'a>, I: Input + ?Sized, const N: usize>(
         &'a self,
         s: &Scope<'a, I>,
         buf: &mut Buf<'a, N>,
     ) -> (Res<'a, S>, bool) {
-        if !S::ENABLED
-            && let Kind::Array(items) = &self.kind
-        {
-            for item in items.iter() {
-                let r = item.eval::<S, I>(s);
-                if !r.ok() {
-                    return (r, false);
-                }
-                buf.push(r.value);
-            }
-            return (Res::of(Val::Ref(ValueRef::Null)), true);
+        if let Kind::Array(items) = &self.kind {
+            return (self.array_literal::<S, I, N>(items, s, buf, false), true);
         }
         (self.eval::<S, I>(s), false)
+    }
+
+    /// Evaluate the items of this array literal into `buf` (see
+    /// [`eval_elements`]) and describe the array node. The result has no
+    /// value unless every item is present, and then only when tracing.
+    fn array_literal<'a, S: Slot<'a>, I: Input + ?Sized, const N: usize>(
+        &'a self,
+        items: &'a [Node],
+        s: &Scope<'a, I>,
+        buf: &mut Buf<'a, N>,
+        stop_on_error: bool,
+    ) -> Res<'a, S> {
+        let mut r = eval_elements::<S, I, N>(items, s, buf, stop_on_error);
+        if S::ENABLED && r.complete() {
+            let values = buf.iter().map(|v| v.as_ref().to_owned()).collect();
+            r.value = Val::Owned(Value::Array(values));
+        }
+        self.describe(r)
     }
 }
 
@@ -685,6 +745,8 @@ fn call<'a, S: Slot<'a>, I: Input + ?Sized>(
             };
             return call_result(crate::stdlib::call_starts_with(&vals)).with_trace(trace);
         }
+        Call::Compact => return compact::<S, I>(args, s),
+        Call::Coalesce => return coalesce_call::<S, I>(args, s),
         Call::Named(name) => name,
     };
     if let Some(function) = s.opts.function(name) {
@@ -748,6 +810,148 @@ fn eval_items<'a, S: Slot<'a>, I: Input + ?Sized, const N: usize>(
         vals.push(r.value);
     }
     Ok(if S::ENABLED { combine(traces) } else { None })
+}
+
+/// Evaluate array literal items in order for a comparison or `compact`,
+/// without stopping at an incomplete item: the present values go to
+/// `present`, and the returned result (with no value) is incomplete when an
+/// item was, holding the union of the items' missing fields and the first
+/// error. With `stop_on_error`, an item that failed ends the evaluation and
+/// the items after it are pruned in the trace.
+fn eval_elements<'a, S: Slot<'a>, I: Input + ?Sized, const N: usize>(
+    items: &'a [Node],
+    s: &Scope<'a, I>,
+    present: &mut Buf<'a, N>,
+    stop_on_error: bool,
+) -> Res<'a, S> {
+    let mut out = Res::<S>::of(Val::Ref(ValueRef::Null));
+    let mut traces: Vec<Option<Frag<'a>>> = Vec::new();
+    for (i, item) in items.iter().enumerate() {
+        let mut r = item.eval::<S, I>(s);
+        if S::ENABLED {
+            traces.push(r.trace.take_frag());
+        }
+        if r.ok() {
+            present.push(r.value);
+            continue;
+        }
+        if stop_on_error && r.error().is_some() {
+            // The failing item is the whole result, with its own missing
+            // fields.
+            out.missing = r.missing;
+            out.problem = r.problem;
+            if S::ENABLED {
+                traces.extend(items[i + 1..].iter().map(Node::pruned));
+            }
+            break;
+        }
+        out.missing = union(std::mem::take(&mut out.missing), r.missing);
+        out.problem = keep_first_error(out.problem, r.problem);
+    }
+    if S::ENABLED {
+        out.trace.put_frag(combine(traces));
+    }
+    out
+}
+
+/// Like [`coalesce`], but with only the first error kept.
+fn keep_first_error(
+    first: Option<Box<Problem>>,
+    next: Option<Box<Problem>>,
+) -> Option<Box<Problem>> {
+    match (first, next) {
+        (Some(mut first), Some(next)) => {
+            let next = *next;
+            first.error = first.error.or(next.error);
+            for name in next.missing {
+                if !first.missing.contains(&name) {
+                    first.missing.push(name);
+                }
+            }
+            Some(first)
+        }
+        (first, next) => first.or(next),
+    }
+}
+
+/// `coalesce(value, ...values)`: the same as `value ?? ... ?? last`.
+fn coalesce_call<'a, S: Slot<'a>, I: Input + ?Sized>(
+    args: &'a [Node],
+    s: &Scope<'a, I>,
+) -> Res<'a, S> {
+    let Some((last, init)) = args.split_last() else {
+        unreachable!("coalesce has at least one argument, checked at parse time");
+    };
+    let mut traces: Vec<Option<Frag<'a>>> = Vec::new();
+    for (i, arg) in init.iter().enumerate() {
+        let mut r = arg.eval::<S, I>(s);
+        if S::ENABLED {
+            traces.push(r.trace.take_frag());
+        }
+        if !r.absent() {
+            if S::ENABLED {
+                traces.extend(args[i + 1..].iter().map(Node::pruned));
+                r.trace.put_frag(combine(traces));
+            }
+            return r;
+        }
+    }
+    // Every other argument is absent: the last one is the result as it is.
+    let mut r = last.eval::<S, I>(s);
+    if S::ENABLED {
+        traces.push(r.trace.take_frag());
+        r.trace.put_frag(combine(traces));
+    }
+    r
+}
+
+/// `compact(list)`: the list without its absent items. An array literal is
+/// evaluated item by item, so missing items are dropped instead of making the
+/// list incomplete; an item that fails is the result.
+fn compact<'a, S: Slot<'a>, I: Input + ?Sized>(args: &'a [Node], s: &Scope<'a, I>) -> Res<'a, S> {
+    let [arg] = args else {
+        unreachable!("compact has one argument, checked at parse time");
+    };
+    if let Kind::Array(items) = &arg.kind {
+        let mut present = Buf::<8>::new();
+        let mut array = arg.array_literal::<S, I, 8>(items, s, &mut present, true);
+        let trace = if S::ENABLED {
+            combine([array.trace.take_frag()])
+        } else {
+            None
+        };
+        // An item error is the result, with its own missing fields.
+        if array.error().is_some() {
+            return array.with_trace(trace);
+        }
+        let values = present
+            .into_iter()
+            .map(Val::into_owned)
+            .filter(|value| !matches!(value, Value::Null))
+            .collect();
+        return Res::of(Val::Owned(Value::Array(values))).with_trace(trace);
+    }
+    let mut vals = Buf::<1>::new();
+    let trace = match eval_items::<S, I, 1>(args, s, &mut vals) {
+        Ok(trace) => trace,
+        Err(r) => return r,
+    };
+    match vals[0].as_ref() {
+        ValueRef::Array(list) => {
+            let values = list
+                .iter()
+                .filter(|item| !matches!(item, ValueRef::Null))
+                .map(ValueRef::to_owned)
+                .collect();
+            Res::of(Val::Owned(Value::Array(values)))
+        }
+        other => Res::failed(Error::InvalidArg {
+            name: "list".to_owned(),
+            expected: "array".to_owned(),
+            got: other.type_name().to_owned(),
+        }),
+    }
+    .with_trace(trace)
 }
 
 /// Go `ArrayValue.Eval`: the items as an owned list.

@@ -42,6 +42,7 @@ const OPERATORS: CompletionItem[] = [
   { label: "==", detail: "equals", kind: "operator" },
   { label: "!=", detail: "not equal", kind: "operator" },
   { label: "in", detail: "in list or CIDR", kind: "operator" },
+  { label: "??", detail: "default when missing or null", kind: "operator" },
   { label: "not in", kind: "operator" },
   { label: "contains", kind: "operator" },
   { label: "not contains", kind: "operator" },
@@ -97,7 +98,7 @@ export function completeRule(
   if (line.includes("--") || (before.match(/"/g)?.length ?? 0) % 2 === 1)
     return undefined
 
-  const prefix = /[A-Za-z_][\w.]*$|[=!<>~]+$/.exec(before)?.[0] ?? ""
+  const prefix = /[A-Za-z_][\w.]*$|[=!<>~?]+$/.exec(before)?.[0] ?? ""
   // With nothing typed yet, only offer the next token after a space: closing
   // a string or list shouldn't pop a menu.
   if (!prefix && !/(^|\s)$/.test(before)) return undefined
@@ -111,11 +112,11 @@ export function completeRule(
   } else if (/(["\])/\d]|\btrue|\bfalse)$/.test(prev)) {
     pool = LOGIC
   } else if (
-    /[=!<>~]$|\b(in|contains|matches|eq|ne|gt|ge|lt|le)$/i.test(prev)
+    /[=!<>~?]$|\b(in|contains|matches|eq|ne|gt|ge|lt|le)$/i.test(prev)
   ) {
     // A value goes here: offer what the input currently has for this field.
     const field =
-      /([A-Za-z_][\w.]*)\s*(==|!=|>=|<=|>|<|\b(?:contains|eq|ne|gt|ge|lt|le))$/i.exec(
+      /([A-Za-z_][\w.]*)\s*(==|!=|>=|<=|\?\?|>|<|\b(?:contains|eq|ne|gt|ge|lt|le))$/i.exec(
         prev
       )?.[1]
     const current = fields.find((f) => f.path === field)

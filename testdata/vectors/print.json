@@ -146,6 +146,15 @@
       "name": "string: bracket keys escape quotes, backslashes, and control characters only",
       "expr": "x[\"a\\\"b\\\\c\\td\\u0001e\\u007ff\u00adg\u00e9\"] == 1",
       "expect": {"print": {"string": "x[\"a\\\"b\\\\c\\td\\u0001e\\u007ff\u00adg\u00e9\"] == 1"}}
-    }
+    },
+    {"name": "string: ??", "expr": "a??\"d\"", "expect": {"print": {"string": "a ?? \"d\"", "compact": "a ?? \"d\""}}},
+    {"name": "compact: ?? chain is right-associative", "expr": "a ?? (b ?? c)", "expect": {"print": {"compact": "a ?? b ?? c"}}},
+    {"name": "compact: a left ?? group keeps its parens", "expr": "(a ?? b) ?? c", "expect": {"print": {"compact": "(a ?? b) ?? c"}}},
+    {"name": "compact: ?? under a comparison needs no parens", "expr": "(a ?? \"d\") == \"d\"", "expect": {"print": {"compact": "a ?? \"d\" == \"d\""}}},
+    {"name": "compact: a comparison under ?? keeps its parens", "expr": "(a == 1) ?? false", "expect": {"print": {"compact": "(a == 1) ?? false"}}},
+    {"name": "compact: or under ?? keeps its parens", "expr": "(a or b) ?? c", "expect": {"print": {"compact": "(a or b) ?? c"}}},
+    {"name": "compact: not over ?? keeps its parens", "expr": "not (a ?? b)", "expect": {"print": {"compact": "not (a ?? b)"}}},
+    {"name": "compact: ?? on the right of in", "expr": "x in (allowed ?? [\"a\"])", "expect": {"print": {"compact": "x in allowed ?? [\"a\"]"}}},
+    {"name": "format: multiline keeps ?? inline", "expr": "a ?? b == 1 and c ?? d", "expect": {"print": {"multiline_2sp": "a ?? b == 1\nand c ?? d"}}}
   ]
 }

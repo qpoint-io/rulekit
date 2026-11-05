@@ -41,6 +41,7 @@ const (
 	op_CONTAINS
 	op_MATCHES
 	op_IN
+	op_COALESCE
 )
 
 func operatorToString(op int) string {
@@ -63,6 +64,8 @@ func operatorToString(op int) string {
 		return "matches"
 	case op_IN:
 		return "in"
+	case op_COALESCE:
+		return "??"
 	default:
 		return "unknown"
 	}
@@ -396,6 +399,10 @@ func (l *lexer) next() token {
 		}
 		l.pos++
 		return token{kind: op_GT, raw: ">", start: start, end: l.pos, leadingTrivia: leading}
+	case '?':
+		if l.match("??") {
+			return token{kind: op_COALESCE, raw: "??", start: start, end: l.pos, leadingTrivia: leading}
+		}
 	case 'x', 'X':
 		if l.pos+1 < len(l.input) && (l.input[l.pos+1] == '"' || l.input[l.pos+1] == '\'') {
 			l.pos++
@@ -501,7 +508,7 @@ func (l *lexer) scanAtom(leading string) token {
 		ch := l.input[l.pos]
 		// Atoms are ASCII; a non-ASCII byte ends the atom so the next token can
 		// treat it as whitespace (e.g. a no-break space) or report it.
-		if ch >= utf8.RuneSelf || unicode.IsSpace(rune(ch)) || strings.ContainsRune("()[],<>=!&|\"'", rune(ch)) {
+		if ch >= utf8.RuneSelf || unicode.IsSpace(rune(ch)) || strings.ContainsRune("()[],<>=!&|?\"'", rune(ch)) {
 			break
 		}
 		l.pos++
@@ -677,6 +684,14 @@ func (p *parser) parseExpr(minPrec int) (ASTNode, error) {
 				return nil, err
 			}
 			right, err = p.parsePostfix(right)
+			// The regex is the whole right side, so `x matches /a/ ?? y` is
+			// an error rather than `(x matches /a/) ?? y`.
+			if err == nil && p.peek().kind == op_COALESCE {
+				return nil, p.errorf(p.peek(), "matches requires a regex value")
+			}
+		} else if kind == op_COALESCE {
+			// right-associative: a ?? b ?? c is a ?? (b ?? c)
+			right, err = p.parseExpr(prec)
 		} else {
 			right, err = p.parseExpr(prec + 1)
 		}
@@ -777,7 +792,7 @@ func (p *parser) isRootBracketPath() bool {
 		return false
 	}
 	switch p.tokens[p.pos+2].kind {
-	case token_LBRACKET, token_DOT, op_EQ, op_NE, op_GT, op_GE, op_LT, op_LE, op_CONTAINS, op_MATCHES, op_IN:
+	case token_LBRACKET, token_DOT, op_EQ, op_NE, op_GT, op_GE, op_LT, op_LE, op_CONTAINS, op_MATCHES, op_IN, op_COALESCE:
 		return true
 	default:
 		return false
@@ -932,6 +947,8 @@ func infixPrecedence(kind int) int {
 		return 1
 	case op_AND:
 		return 2
+	case op_COALESCE:
+		return 4
 	case op_EQ, op_NE, op_CONTAINS, op_GT, op_GE, op_LT, op_LE, op_MATCHES, op_IN:
 		return 3
 	default:

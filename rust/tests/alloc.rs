@@ -81,6 +81,26 @@ fn happy_path_eval_does_not_allocate() {
                     ("other_port", Value::Int(8080)),
                 ]),
             ),
+            (
+                "array_literal_decided_with_missing_item",
+                r#""x" in [a, b]"#,
+                input(vec![("a", s("x"))]),
+            ),
+            (
+                "array_literal_undecided_with_missing_item",
+                r#""z" in [a, b]"#,
+                input(vec![("a", s("x"))]),
+            ),
+            (
+                "coalesce_operator_missing_left",
+                r#"user ?? "anonymous" == "anonymous""#,
+                input(vec![]),
+            ),
+            (
+                "coalesce_function_missing_arguments",
+                "coalesce(user, owner)",
+                input(vec![]),
+            ),
         ]
         .into_iter()
         .map(|(name, expr, input)| cases::EvalCase {

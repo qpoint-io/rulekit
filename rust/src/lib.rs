@@ -249,11 +249,6 @@ impl fmt::Display for Rule {
     }
 }
 
-/// Argument count of a standard library function, checked at parse time.
-pub(crate) fn stdlib_arity(name: &str) -> Option<usize> {
-    stdlib::params(name).map(<[func::Param]>::len)
-}
-
 /// Internal hooks for the crate's benchmarks. Not part of the API.
 #[doc(hidden)]
 pub mod __bench {

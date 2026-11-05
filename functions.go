@@ -19,6 +19,14 @@ type FunctionValue struct {
 
 func (f *FunctionValue) Eval(ctx context.Context, input Input, opts Opts) Result {
 	if fn, ok := StdlibFuncs[f.fn]; ok {
+		// coalesce and compact evaluate their arguments themselves: an
+		// incomplete argument must not end the call before the function runs.
+		switch fn {
+		case stdlibCoalesce:
+			return f.evalCoalesce(fn, ctx, input, opts)
+		case stdlibCompact:
+			return f.evalCompact(fn, ctx, input, opts)
+		}
 		return f.eval(fn, ctx, input, opts)
 	} else if fn, ok := opts.Functions[f.fn]; ok {
 		return f.eval(fn, ctx, input, opts)
@@ -74,6 +82,56 @@ func (f *FunctionValue) eval(fn *Function, ctx context.Context, input Input, opt
 		res.Trace = trace
 	}
 	return res
+}
+
+// evalCoalesce returns the result of the first argument that is present or an
+// error, or else the last argument's result. Later arguments are not
+// evaluated.
+func (f *FunctionValue) evalCoalesce(fn *Function, ctx context.Context, input Input, opts Opts) Result {
+	n := len(f.args.vals)
+	if err := fn.checkArity(n); err != nil {
+		return Result{Error: err}
+	}
+
+	tracing := traceEnabled(opts)
+	var traces []*Trace
+	var res Result
+	for i, arg := range f.args.vals {
+		res = arg.Eval(ctx, input, opts)
+		if tracing {
+			traces = append(traces, res.Trace)
+		}
+		if isPresent(res) || res.Error != nil {
+			if tracing {
+				for _, rest := range f.args.vals[i+1:] {
+					traces = append(traces, prunedTrace(rest))
+				}
+			}
+			break
+		}
+	}
+	res.Trace = traceIfEnabled(tracing, traces...)
+	return res
+}
+
+// evalCompact calls compact with an array literal argument's complete
+// elements. Any other argument is evaluated as for an ordinary call.
+func (f *FunctionValue) evalCompact(fn *Function, ctx context.Context, input Input, opts Opts) Result {
+	if len(f.args.vals) == 1 {
+		if traced, arr := arrayLiteral(f.args.vals[0]); arr != nil {
+			list := evalArrayLiteral(ctx, input, opts, traced, arr, true)
+			trace := traceIfEnabled(traceEnabled(opts), list.Trace)
+			if list.Error != nil {
+				return Result{Error: list.Error, MissingFields: list.MissingFields, Trace: trace}
+			}
+			args := callArgs{n: 1}
+			args.inline[0] = list.Value
+			res := fn.call(ctx, args)
+			res.Trace = trace
+			return res
+		}
+	}
+	return f.eval(fn, ctx, input, opts)
 }
 
 func (f *FunctionValue) String() string {

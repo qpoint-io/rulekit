@@ -291,9 +291,22 @@ live in [src/eval/mod.rs](src/eval/mod.rs); the public API is documented in
   no printer of their own: Go's per-node `String()` is only reachable through traces, which
   always use the AST text.
 - Array operands evaluate into stack `SmallVec` buffers and compare in place.
-  Items are evaluated in order, stopping at the first incomplete item. Arrays
-  whose items are all literals are built once during compilation; a dynamic
-  array used as a value materializes an owned `Value::Array`, as Go does.
+  Arrays whose items are all literals are built once during compilation; a
+  dynamic array used as a value (a rule result, a function argument) materializes
+  an owned `Value::Array`, as Go does, and stops at the first incomplete item.
+- An array literal written directly as an operand of `==`, `!=`, `contains`,
+  `matches`, or `in` is "any element" (Kleene): every item is evaluated
+  (`eval_elements`), the comparison runs on the present values, and a result that
+  those values already fix (a pass, or a failing `!=`) is final, with no missing
+  fields or error. Otherwise the operands' missing fields are unioned (an error
+  also carries them). Such an operand never prunes the right side; a plain
+  incomplete left operand still does. The untraced path keeps the stack buffers,
+  so a missing item allocates nothing.
+- `a ?? b` lowers to `Kind::Coalesce`; `coalesce` and `compact` are
+  `Call` variants beside `StartsWith`, evaluated by the evaluator because an
+  ordinary call returns before its handler runs once an argument is incomplete.
+  `stdlib::params` holds their parameters for parse-time arity and the `Opts`
+  name-conflict check.
 
 ## 5. Regex dialect (`src/regex/`)
 
@@ -375,7 +388,8 @@ Evaluation is generic over a trace slot: `()` without tracing, `Option<Frag>`
 with tracing. `Rule::eval` branches once on `opts.trace()`; the untraced
 instantiation contains no trace code or per-node trace storage. Untraced
 evaluation keeps the stack-buffer path for array operands; traced evaluation
-evaluates them as nodes, as Go does, because traces need the array node.
+builds the same results and also the array node, whose status is `missing` or
+`error` when an item was incomplete, with every item as a child.
 
 Trace construction reproduces Go's shape: compiled nodes carry AST metadata,
 except the base operator under `not in`/`not contains`/`not matches`, which Go

@@ -3,7 +3,7 @@
 use crate::error::{Error, ParseError};
 use crate::func::Function;
 use crate::value::Map;
-use crate::{Rule, stdlib_arity};
+use crate::{Rule, stdlib};
 
 /// A named, zero-argument rule, expanded where it is called as `name()`.
 ///
@@ -163,7 +163,7 @@ impl OptsBuilder {
         let mut names: Vec<&String> = self.opts.functions.keys().collect();
         names.sort();
         for name in names {
-            if stdlib_arity(name).is_some() {
+            if stdlib::params(name).is_some() {
                 return Err(Error::Opts(format!(
                     "function {name:?}: name conflicts with a stdlib function"
                 )));
@@ -172,7 +172,7 @@ impl OptsBuilder {
         let mut names: Vec<&String> = self.opts.macros.keys().collect();
         names.sort();
         for name in names {
-            if stdlib_arity(name).is_some() {
+            if stdlib::params(name).is_some() {
                 return Err(Error::Opts(format!(
                     "macro {name:?}: name conflicts with a stdlib function"
                 )));

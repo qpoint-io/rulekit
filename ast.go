@@ -45,6 +45,8 @@ func astOperatorFromToken(kind int) Operator {
 		return OperatorMatches
 	case op_IN:
 		return OperatorIn
+	case op_COALESCE:
+		return OperatorCoalesce
 	default:
 		return OperatorUnknown
 	}
@@ -76,6 +78,8 @@ func tokenKindFromASTOperator(op Operator) int {
 		return op_MATCHES
 	case OperatorIn:
 		return op_IN
+	case OperatorCoalesce:
+		return op_COALESCE
 	default:
 		return 0
 	}
@@ -228,6 +232,8 @@ func lowerAST(node ASTNode) (Rule, error) {
 			r = &nodeAnd{left: left, right: right}
 		case OperatorOr:
 			r = &nodeOr{left: left, right: right}
+		case OperatorCoalesce:
+			r = &nodeCoalesce{left: left, right: right}
 		case OperatorEQ, OperatorNE, OperatorContains, OperatorGT, OperatorGE, OperatorLT, OperatorLE:
 			r = &nodeCompare{lv: left, op: tokenKindFromASTOperator(op), rv: right}
 		case OperatorMatches:
@@ -260,6 +266,9 @@ func astValidInequalityOperand(node ASTNode) bool {
 		return true
 	case *astLiteral:
 		return n.kind == token_INT || n.kind == token_FLOAT
+	case *astBinary:
+		// a ?? b is as valid as its operands.
+		return n.op == OperatorCoalesce && astValidInequalityOperand(n.left) && astValidInequalityOperand(n.right)
 	default:
 		return false
 	}
@@ -309,7 +318,7 @@ func printASTWithParent(node ASTNode, parentPrec int, rightChild bool) string {
 		out = printASTWithParent(n.left, prec, false) + " " + operator + " " + printASTWithParent(n.right, prec, true)
 	}
 
-	if prec > 0 && (prec < parentPrec || (rightChild && prec == parentPrec)) {
+	if prec > 0 && (prec < parentPrec || (prec == parentPrec && rightChild != astRightAssociative(node))) {
 		return "(" + out + ")"
 	}
 	return out
@@ -327,9 +336,18 @@ func astPrecedence(node ASTNode) int {
 			return 2
 		case OperatorEQ, OperatorNE, OperatorGT, OperatorGE, OperatorLT, OperatorLE, OperatorContains, OperatorMatches, OperatorIn:
 			return 3
+		case OperatorCoalesce:
+			return 4
 		}
 	}
 	return 5
+}
+
+// astRightAssociative reports whether node groups to the right: a ?? b ?? c is
+// a ?? (b ?? c), so only its left operand needs parentheses when nested.
+func astRightAssociative(node ASTNode) bool {
+	binary, ok := node.(*astBinary)
+	return ok && binary.op == OperatorCoalesce
 }
 
 func astOperatorString(op Operator) string {

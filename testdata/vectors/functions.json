@@ -153,6 +153,31 @@
       "expr": "starts_with(code, [\"5\"])",
       "input": {"code": 500},
       "expect": {"error": true}
-    }
+    },
+    {"name": "starts_with list: a missing prefix element is still strict", "expr": "starts_with(s, [a, \"x\"])", "input": {"s": "xy"}, "expect": {"value": null, "missing_fields": ["a"]}},
+    {"name": "compact: drops a missing element", "expr": "compact([a, 123])", "input": {}, "expect": {"value": [123]}},
+    {"name": "compact: every element missing is an empty list", "expr": "compact([a])", "input": {}, "expect": {"value": []}},
+    {"name": "compact: drops null, keeps false", "expr": "compact([a, b])", "input": {"a": false, "b": null}, "expect": {"value": [false]}},
+    {"name": "compact: keeps falsy values", "expr": "compact([a, b, c, d])", "input": {"a": 0, "b": "", "c": false, "d": []}, "expect": {"value": [0, "", false, []]}},
+    {"name": "compact: keeps element order", "expr": "compact([a, b, c])", "input": {"a": 1, "c": 3}, "expect": {"value": [1, 3]}},
+    {"name": "compact: parenthesized literal", "expr": "compact(([a, 1]))", "input": {}, "expect": {"value": [1]}},
+    {"name": "compact: a missing argument is unknown", "expr": "compact(list)", "input": {}, "expect": {"value": null, "missing_fields": ["list"]}},
+    {"name": "compact: an input list loses its nulls", "expr": "compact(list)", "input": {"list": [1, null, 2]}, "expect": {"value": [1, 2]}},
+    {"name": "compact: a non-array argument is an error", "expr": "compact(s)", "input": {"s": "x"}, "expect": {"error": true}},
+    {"name": "compact: a null argument is an error", "expr": "compact(s)", "input": {"s": null}, "expect": {"error": true}},
+    {"name": "compact: an element error is the result", "expr": "compact([a, starts_with(code, \"5\")])", "input": {"code": 500}, "expect": {"error": true}},
+    {"name": "compact: drops missing nested paths", "expr": "compact([a.x, b.y, c.z]) == \"v\"", "input": {"a": {"x": "v"}}, "expect": {"value": true}},
+    {"name": "compact: no arguments is a parse error", "expr": "compact()", "expect": {"parse_error": true}},
+    {"name": "compact: two arguments is a parse error", "expr": "compact([a], [b])", "expect": {"parse_error": true}},
+    {"name": "coalesce: the first present argument", "expr": "coalesce(a, b, \"d\")", "input": {"b": "x"}, "expect": {"value": "x"}},
+    {"name": "coalesce: the last argument when the rest are missing", "expr": "coalesce(a, b, \"d\")", "input": {}, "expect": {"value": "d"}},
+    {"name": "coalesce: skips nulls", "expr": "coalesce(a, b)", "input": {"a": null, "b": 1}, "expect": {"value": 1}},
+    {"name": "coalesce: falsy values are present", "expr": "coalesce(a, \"d\")", "input": {"a": 0}, "expect": {"value": 0}},
+    {"name": "coalesce: every argument null is null", "expr": "coalesce(a, b)", "input": {"a": null, "b": null}, "expect": {"value": null}},
+    {"name": "coalesce: every argument missing reports the last", "expr": "coalesce(a, b)", "input": {}, "expect": {"value": null, "missing_fields": ["b"]}},
+    {"name": "coalesce: one argument", "expr": "coalesce(a)", "input": {"a": 1}, "expect": {"value": 1}},
+    {"name": "coalesce: one missing argument is unknown", "expr": "coalesce(a)", "input": {}, "expect": {"value": null, "missing_fields": ["a"]}},
+    {"name": "coalesce: an error stops the search", "expr": "coalesce(a, starts_with(code, \"5\"), \"d\")", "input": {"code": 500}, "expect": {"error": true}},
+    {"name": "coalesce: no arguments is a parse error", "expr": "coalesce()", "expect": {"parse_error": true}}
   ]
 }

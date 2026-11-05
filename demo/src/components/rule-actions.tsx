@@ -265,6 +265,8 @@ const SYNTAX: [string, string][] = [
   ["tls.enabled == true", "booleans"],
   ["a and b, a or b", "also && and ||"],
   ["not (a or b)", "negation and grouping"],
+  ['a ?? "default"', "fallback when a is missing or null; also coalesce(a, b)"],
+  ['"x" in compact([a, b])', "drops missing and null items from a list"],
   ["-- note, /* note */", "comments"],
 ]
 

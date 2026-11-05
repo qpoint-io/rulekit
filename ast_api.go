@@ -55,6 +55,7 @@ const (
 	OperatorContains
 	OperatorMatches
 	OperatorIn
+	OperatorCoalesce
 )
 
 // ASTNode is the read-only public view of a parsed expression node.
@@ -237,6 +238,8 @@ func tokenKindString(kind int) string {
 		return "MATCHES"
 	case op_IN:
 		return "IN"
+	case op_COALESCE:
+		return "COALESCE"
 	case token_FIELD:
 		return "FIELD"
 	case token_STRING:

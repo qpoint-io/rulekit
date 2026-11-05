@@ -94,6 +94,11 @@ impl Lexer<'_> {
                 }
                 return self.scan_regex(b'|', leading);
             }
+            b'?' => {
+                if self.eat("??") {
+                    return Ok(self.token(TokenKind::Coalesce, start, leading));
+                }
+            }
             b'=' => {
                 if self.eat("==") {
                     return Ok(self.token(TokenKind::Eq, start, leading));
@@ -226,7 +231,7 @@ impl Lexer<'_> {
         while self.pos < self.bytes.len() {
             let ch = self.bytes[self.pos];
             // Atoms are ASCII; a non-ASCII byte ends the atom.
-            if !ch.is_ascii() || is_go_ascii_space(ch) || b"()[],<>=!&|\"'".contains(&ch) {
+            if !ch.is_ascii() || is_go_ascii_space(ch) || b"()[],<>=!&|?\"'".contains(&ch) {
                 break;
             }
             self.pos += 1;

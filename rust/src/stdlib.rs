@@ -81,10 +81,19 @@ fn invalid_prefix(item: ValueRef<'_>) -> Error {
     }
 }
 
+/// Parameters of `compact(list)`. Like `coalesce`, it is evaluated by the
+/// evaluator itself (see `Call`), so it has no handler here.
+const COMPACT_PARAMS: &[Param] = &[Param::new("list", "array")];
+
+/// Parameters of `coalesce(value, ...values)`.
+const COALESCE_PARAMS: &[Param] = &[Param::new("value", "any"), Param::rest("values")];
+
 /// The parameters of a standard library function, if `name` is one.
 pub(crate) fn params(name: &str) -> Option<&'static [Param]> {
     match name {
         "starts_with" => Some(StartsWithArgs::PARAMS),
+        "compact" => Some(COMPACT_PARAMS),
+        "coalesce" => Some(COALESCE_PARAMS),
         _ => None,
     }
 }

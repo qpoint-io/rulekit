@@ -117,6 +117,8 @@ pub enum TokenKind {
     Matches,
     /// `in`.
     In,
+    /// `??`.
+    Coalesce,
 }
 
 impl TokenKind {
@@ -151,6 +153,7 @@ impl TokenKind {
             TokenKind::Contains => "CONTAINS",
             TokenKind::Matches => "MATCHES",
             TokenKind::In => "IN",
+            TokenKind::Coalesce => "COALESCE",
         }
     }
 
@@ -176,7 +179,8 @@ impl TokenKind {
             | TokenKind::Le
             | TokenKind::Contains
             | TokenKind::Matches
-            | TokenKind::In => "kw",
+            | TokenKind::In
+            | TokenKind::Coalesce => "kw",
             _ => "pun",
         }
     }
@@ -195,6 +199,7 @@ impl TokenKind {
             TokenKind::Contains => Operator::Contains,
             TokenKind::Matches => Operator::Matches,
             TokenKind::In => Operator::In,
+            TokenKind::Coalesce => Operator::Coalesce,
             _ => return None,
         })
     }
@@ -297,6 +302,8 @@ pub enum Operator {
     Matches,
     /// `in`.
     In,
+    /// `??`.
+    Coalesce,
 }
 
 impl Operator {
@@ -315,6 +322,7 @@ impl Operator {
             Operator::Contains => "contains",
             Operator::Matches => "matches",
             Operator::In => "in",
+            Operator::Coalesce => "coalesce",
         }
     }
 
@@ -333,6 +341,7 @@ impl Operator {
             Operator::Contains => "contains",
             Operator::Matches => "=~",
             Operator::In => "in",
+            Operator::Coalesce => "??",
         }
     }
 
@@ -341,7 +350,7 @@ impl Operator {
         match self {
             Operator::Or => 1,
             Operator::And => 2,
-            Operator::Not => 4,
+            Operator::Not | Operator::Coalesce => 4,
             _ => 3,
         }
     }

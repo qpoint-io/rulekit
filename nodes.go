@@ -190,32 +190,11 @@ type nodeMatch struct {
 }
 
 func (n *nodeMatch) Eval(ctx context.Context, input Input, opts Opts) Result {
-	tracing := traceEnabled(opts)
-	lv := n.lv.Eval(ctx, input, opts)
-	if !lv.Ok() {
-		var trace *Trace
-		if tracing {
-			trace = combineTrace(lv.Trace, prunedTrace(n.rv))
-		}
-		return Result{
-			Error:         lv.Error,
-			MissingFields: lv.MissingFields,
-			Trace:         trace,
-		}
-	}
-	rv := n.rv.Eval(ctx, input, opts)
-	if !rv.Ok() {
-		return Result{
-			Error:         rv.Error,
-			MissingFields: rv.MissingFields,
-			Trace:         traceIfEnabled(tracing, lv.Trace, rv.Trace),
-		}
-	}
+	return evalComparison(ctx, input, opts, n.lv, n.rv, false, n.compare)
+}
 
-	return Result{
-		Value: n.apply(lv.Value, rv.Value),
-		Trace: traceIfEnabled(tracing, lv.Trace, rv.Trace),
-	}
+func (n *nodeMatch) compare(lv, rv any, _ bool) (bool, Diagnostic) {
+	return n.apply(lv, rv), Diagnostic{}
 }
 
 func (n *nodeMatch) apply(lv any, rv any) bool {
@@ -270,37 +249,16 @@ type nodeCompare struct {
 }
 
 func (n *nodeCompare) Eval(ctx context.Context, input Input, opts Opts) Result {
-	tracing := traceEnabled(opts)
-	lv := n.lv.Eval(ctx, input, opts)
-	if !lv.Ok() {
-		var trace *Trace
-		if tracing {
-			trace = combineTrace(lv.Trace, prunedTrace(n.rv))
-		}
-		return Result{
-			Error:         lv.Error,
-			MissingFields: lv.MissingFields,
-			Trace:         trace,
-		}
-	}
-	rv := n.rv.Eval(ctx, input, opts)
-	if !rv.Ok() {
-		return Result{
-			Error:         rv.Error,
-			MissingFields: rv.MissingFields,
-			Trace:         traceIfEnabled(tracing, lv.Trace, rv.Trace),
-		}
-	}
+	return evalComparison(ctx, input, opts, n.lv, n.rv, n.op == op_NE, n.compare)
+}
 
-	outcome := compareDetailed(lv.Value, n.op, rv.Value)
-	trace := traceIfEnabled(tracing, lv.Trace, rv.Trace)
+func (n *nodeCompare) compare(lv, rv any, tracing bool) (bool, Diagnostic) {
+	outcome := compareDetailed(lv, n.op, rv)
+	var diagnostic Diagnostic
 	if tracing && outcome.diagnostic != compareDiagnosticNone {
-		trace = addTraceDiagnostic(trace, newComparisonDiagnostic(outcome.diagnostic, lv.Value, n.op, rv.Value))
+		diagnostic = newComparisonDiagnostic(outcome.diagnostic, lv, n.op, rv)
 	}
-	return Result{
-		Value: outcome.pass,
-		Trace: trace,
-	}
+	return outcome.pass, diagnostic
 }
 
 func (n *nodeCompare) String() string {
@@ -318,59 +276,35 @@ type nodeIn struct {
 }
 
 func (n *nodeIn) Eval(ctx context.Context, input Input, opts Opts) Result {
-	tracing := traceEnabled(opts)
-	lv := n.lv.Eval(ctx, input, opts)
-	if !lv.Ok() {
-		var trace *Trace
-		if tracing {
-			trace = combineTrace(lv.Trace, prunedTrace(n.rv))
-		}
-		return Result{
-			Error:         lv.Error,
-			MissingFields: lv.MissingFields,
-			Trace:         trace,
-		}
-	}
-	rv := n.rv.Eval(ctx, input, opts)
-	if !rv.Ok() {
-		return Result{
-			Error:         rv.Error,
-			MissingFields: rv.MissingFields,
-			Trace:         traceIfEnabled(tracing, lv.Trace, rv.Trace),
-		}
-	}
+	return evalComparison(ctx, input, opts, n.lv, n.rv, false, n.compare)
+}
 
+func (n *nodeIn) compare(lv, rv any, tracing bool) (bool, Diagnostic) {
 	// A right side that is not a list, such as a field holding a string,
 	// contains nothing.
-	rvArr, ok := asArray(rv.Value)
+	rvArr, ok := asArray(rv)
 	if !ok {
-		trace := traceIfEnabled(tracing, lv.Trace, rv.Trace)
+		var diagnostic Diagnostic
 		if tracing {
-			trace = addTraceDiagnostic(trace, newComparisonDiagnostic(compareDiagnosticInvalidShape, lv.Value, op_IN, rv.Value))
+			diagnostic = newComparisonDiagnostic(compareDiagnosticInvalidShape, lv, op_IN, rv)
 		}
-		return Result{
-			Value: false,
-			Trace: trace,
-		}
+		return false, diagnostic
 	}
 
 	// `FIELD in ARR` == `ARR contains FIELD`, except a regex element matches
 	// FIELD like `FIELD == /re/`. A list-valued FIELD is in ARR when ANY of its
 	// elements is.
-	outcome, ok := compareAnyElem(lv.Value, func(el any) compareOutcome {
+	outcome, ok := compareAnyElem(lv, func(el any) compareOutcome {
 		return compareIn(el, rvArr)
 	})
 	if !ok {
-		outcome = compareIn(lv.Value, rvArr)
+		outcome = compareIn(lv, rvArr)
 	}
-	trace := traceIfEnabled(tracing, lv.Trace, rv.Trace)
+	var diagnostic Diagnostic
 	if tracing && outcome.diagnostic != compareDiagnosticNone {
-		trace = addTraceDiagnostic(trace, newComparisonDiagnostic(outcome.diagnostic, rvArr, op_CONTAINS, lv.Value))
+		diagnostic = newComparisonDiagnostic(outcome.diagnostic, rvArr, op_CONTAINS, lv)
 	}
-	return Result{
-		Value: outcome.pass,
-		Trace: trace,
-	}
+	return outcome.pass, diagnostic
 }
 
 // compareIn reports whether x is an element of list: `list contains x`, with
@@ -394,5 +328,39 @@ func (n *nodeIn) String() string {
 }
 
 func (n *nodeIn) Print(PrintMode) string {
+	return n.String()
+}
+
+// COALESCE
+type nodeCoalesce struct {
+	left  Rule
+	right Rule
+}
+
+// Eval returns the left result when it is an error or has a value that is not
+// null, and otherwise (missing or null) the right result unchanged. The left
+// result's missing fields are dropped.
+func (n *nodeCoalesce) Eval(ctx context.Context, input Input, opts Opts) Result {
+	tracing := traceEnabled(opts)
+	rleft := n.left.Eval(ctx, input, opts)
+	if isPresent(rleft) || rleft.Error != nil {
+		if tracing {
+			rleft.Trace = combineTrace(rleft.Trace, prunedTrace(n.right))
+		}
+		return rleft
+	}
+
+	rright := n.right.Eval(ctx, input, opts)
+	if tracing {
+		rright.Trace = combineTrace(rleft.Trace, rright.Trace)
+	}
+	return rright
+}
+
+func (n *nodeCoalesce) String() string {
+	return fmt.Sprintf("(%s ?? %s)", n.left.String(), n.right.String())
+}
+
+func (n *nodeCoalesce) Print(PrintMode) string {
 	return n.String()
 }

@@ -479,6 +479,7 @@ fn operator_spelling(name: &str) -> Option<&'static str> {
         "not_contains" => "not contains",
         "not_matches" => "not =~",
         "not_in" => "not in",
+        "coalesce" => "??",
         _ => return None,
     })
 }

@@ -129,6 +129,8 @@ func (o Operator) String() string {
 		return "matches"
 	case OperatorIn:
 		return "in"
+	case OperatorCoalesce:
+		return "coalesce"
 	default:
 		return "unknown"
 	}
@@ -169,7 +171,7 @@ func tokenRole(kind string) string {
 		return "str"
 	case "INT", "FLOAT":
 		return "num"
-	case "AND", "OR", "NOT", "EQ", "NE", "GT", "GE", "LT", "LE", "CONTAINS", "MATCHES", "IN":
+	case "AND", "OR", "NOT", "EQ", "NE", "GT", "GE", "LT", "LE", "CONTAINS", "MATCHES", "IN", "COALESCE":
 		return "kw"
 	default:
 		return "pun"

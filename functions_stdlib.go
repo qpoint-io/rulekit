@@ -7,7 +7,7 @@ import (
 )
 
 // StdlibFuncs are the built-in functions, available in every rule.
-var StdlibFuncs = NewFunctionSet(stdlibStartsWith)
+var StdlibFuncs = NewFunctionSet(stdlibStartsWith, stdlibCoalesce, stdlibCompact)
 
 type startsWithArgs struct {
 	Value  any
@@ -78,3 +78,45 @@ func stringableArg(name string, value any) (string, error) {
 	}
 	return s, nil
 }
+
+type coalesceArgs struct {
+	Value  any
+	Values Rest
+}
+
+// FunctionValue.Eval evaluates coalesce itself, argument by argument and
+// stopping at the first present one, which a strict call cannot do; this
+// handler is the same choice over arguments that are all evaluated.
+var stdlibCoalesce = Func(FuncSchema{
+	Name: "coalesce",
+	Doc:  "Returns the first argument that is present: not missing from the input and not null. Same as value ?? values... Arguments are evaluated in order and later ones are skipped once one is present; an error stops the search and is the result. If no argument is present, the result is the last argument's (missing, or null). A falsy value such as false, 0, or \"\" is present.",
+}, func(_ context.Context, a coalesceArgs) (any, error) {
+	if a.Value != nil {
+		return a.Value, nil
+	}
+	for _, v := range a.Values {
+		if v != nil {
+			return v, nil
+		}
+	}
+	return nil, nil
+})
+
+type compactArgs struct {
+	List []any
+}
+
+// FunctionValue.Eval evaluates an array literal argument element by element,
+// dropping the missing ones, before calling the handler with the rest.
+var stdlibCompact = Func(FuncSchema{
+	Name: "compact",
+	Doc:  "Returns list without its null elements. In an array literal, such as compact([a, b]), elements missing from the input are dropped too, so the result is always complete; an element error is the result. Only top-level elements are dropped: false, 0, \"\", and [] are kept. A list that is missing from the input makes the result unknown, and an argument that is not a list is an error.",
+}, func(_ context.Context, a compactArgs) ([]any, error) {
+	out := make([]any, 0, len(a.List))
+	for _, v := range a.List {
+		if v != nil {
+			out = append(out, v)
+		}
+	}
+	return out, nil
+})

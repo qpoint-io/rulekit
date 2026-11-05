@@ -32,7 +32,12 @@
     {"name": "not in requires an array or cidr", "expr": "a not in 1", "expect": {"parse_error": {"line": 1, "column": 3}}},
     {"name": "not matches requires a regex", "expr": "a not matches \"x\"", "expect": {"parse_error": {"line": 1, "column": 15}}},
     {"name": "! is not a negated operator", "expr": "a ! contains \"x\"", "expect": {"parse_error": {"line": 1, "column": 3}}},
-    {"name": "error column counts bytes after non-ascii text", "expr": "x == \"ñ\" ??", "expect": {"parse_error": {"line": 1, "column": 11}}},
-    {"name": "error position on a later line after non-ascii text", "expr": "a == 'é' and\n  b == 'ü' ?? c", "expect": {"parse_error": {"line": 2, "column": 13}}}
+    {"name": "error column counts bytes after non-ascii text", "expr": "x == \"ñ\" %", "expect": {"parse_error": {"line": 1, "column": 11}}},
+    {"name": "error position on a later line after non-ascii text", "expr": "a == 'é' and\n  b == 'ü' % c", "expect": {"parse_error": {"line": 2, "column": 13}}},
+    {"name": "?? without a right operand", "expr": "a ??", "expect": {"parse_error": {"line": 1, "column": 5}}},
+    {"name": "lone ? is not an operator", "expr": "a ? b", "expect": {"parse_error": {"line": 1, "column": 3}}},
+    {"name": "?? with a non-number literal is not an inequality operand", "expr": "a ?? \"x\" > 5", "expect": {"parse_error": {"line": 1, "column": 10}}},
+    {"name": "?? with number operands is an inequality operand", "expr": "a ?? 0 > 5 and 5 < b ?? c", "expect": {"parse_error": false}},
+    {"name": "matches does not take ?? on the right", "expr": "x matches /a/ ?? y", "expect": {"parse_error": {"line": 1, "column": 15}}}
   ]
 }

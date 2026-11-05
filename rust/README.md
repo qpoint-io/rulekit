@@ -294,8 +294,8 @@ assert!(rule.eval(&input, &Opts::default()).pass());
 
 Custom functions and macros live in `Opts`, built once with `Opts::builder()`
 and passed to `Rule::eval`. `OptsBuilder::build` rejects duplicate function
-names, names that shadow the standard library (`starts_with`), and macros
-named like a function. `Opts::default()` has neither.
+names, names that shadow the standard library (`starts_with`, `coalesce`,
+`compact`), and macros named like a function. `Opts::default()` has neither.
 
 ```rust
 use rulekit::{FuncSchema, Function, NoInput, Opts};

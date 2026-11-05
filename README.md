@@ -103,6 +103,7 @@ The Result also provides additional helper methods:
 | `in`       |        | A value is an element of an array, or an IP is within a CIDR. The array may be a literal or come from a field, function, or macro (`client in allowed_clients`); a right side that is not an array does not match. A regex element matches like `==`: `id in ["grok", /claude/]` passes for `claude-cli`. If the left side is an array, the check passes when ANY of its elements matches (same as `==` and `contains`) |
 | `matches`  | `=~`   | Match against a regular expression                                   |
 | `not contains`, `not in`, `not matches` | `not =~` | The negation of `contains`, `in`, or `matches`. `a not in [1, 2]` means `not (a in [1, 2])` |
+| `??`       |        | Default for a missing or null value: `a ?? b` is `a` when it is present, otherwise `b`. It binds tighter than comparisons and groups to the right, so `a ?? "d" == "d"` means `(a ?? "d") == "d"` and `a ?? b ?? c` means `a ?? (b ?? c)`. See [Missing Values](#missing-values) |
 
 ## Supported Types
 
@@ -158,7 +159,7 @@ To compare by value instead, use an unquoted literal: `ip == 2001:DB8::1` matche
 
 | Type         | Used As | Example                        | Description                                                                                   |
 | ------------ | ------- | ------------------------------ | --------------------------------------------------------------------------------------------- |
-| **Array**    | VALUE   | `[1, "string", true]`          | An array of mixed value types. Use it on the right of `in`, `==` (any element is equal), or `!=` (no element is equal), or on the left of `contains`. |
+| **Array**    | VALUE   | `[1, "string", true]`          | An array of mixed value types. Use it on the right of `in`, `==` (any element is equal), or `!=` (no element is equal), or on the left of `contains`. A literal operand of these may have missing elements; see [Missing Values](#missing-values). |
 | **Function** | VALUE   | `starts_with(url, "https://")` | A function call with optional arguments. Can be built-in or custom.                           |
 | **Macro**    | VALUE   | `isValidRequest()`             | A zero-argument function that encapsulates a predefined rule.                                 |
 
@@ -209,6 +210,16 @@ device.mac.oui == 00:1a:2b
 | MAC address | `oui` | First three bytes, e.g. `00:1a:2b` |
 
 A field that the value doesn't have, such as `port` on `https://example.com`, is missing, so the rule result is unknown rather than false. Fields only apply to typed values: a map with a `host` key is read as a map, and a string is never treated as a URL.
+
+### Missing Values
+
+A field that is absent from the input is *missing*, and a rule that needs it is unknown (`MissingFields` lists it), not false. A missing value is not a zero value: with `a` missing, `a or b` is unknown unless `b` passes, so a default is written with `??`, not `or`. A value is *absent* when it is missing or null (a JSON `null`, or a function that returns null); `false`, `0`, `""`, and `[]` are present.
+
+`a ?? b` is the value of `a` when it is present, and otherwise `b`, which is evaluated only then and whose result (value, missing fields, or error) is the result. The missing fields of `a` are not reported. An error in `a` is the result and is not replaced by `b`. `coalesce(a, b, c)` is the same as `a ?? b ?? c`; if every argument is absent, the result is the last argument's. `??` binds tighter than comparisons, `and`, and `or`, and looser than path access, and it groups to the right: `not a ?? b` is `not (a ?? b)` and `x in allowed ?? ["a"]` is `x in (allowed ?? ["a"])`. Inequalities accept `??` when both of its operands are numbers or fields (`n ?? 0 > 5`). A `matches` right side is still a regex literal, so `x matches /a/ ?? y` is a syntax error; write `(x matches /a/) ?? y`.
+
+`compact([a, b, c])` is the list of the elements that are present, in order, and is always complete: `compact([a])` with `a` missing is `[]`. An element error is the result. Given a list that is not a literal, such as a field, it returns a copy without the null elements (missing makes the result unknown; a value that is not a list is an error). Only top-level elements are dropped.
+
+An array literal that is an operand of `==`, `!=`, `contains`, `matches`, or `in` (and `not contains`, `not matches`, `not in`) is checked by its present elements, without stopping at one that is missing, so `"admin" in [user.role, group.role]` passes when `user.role` is `"admin"` even if `group.role` is missing. The check passes when any element passes (for `!=`, when no element is equal). A result decided by the present elements is final: a pass, or for `!=` a failure. Otherwise the result is unknown, listing the missing fields of every element and of the other operand, or an error that also lists them. The same array literal anywhere else, such as a function argument or the whole rule, is strict: the first missing element makes it incomplete.
 
 ### JSON Input Helpers
 
@@ -369,6 +380,8 @@ Rulekit comes with a built-in standard library of functions:
 | Function                     | Description                                                                                                                 | Example                        |
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
 | `starts_with(value, prefix)` | Checks if a value starts with the given prefix, or with any prefix in a list of prefixes. The value and each prefix must be strings or values with a text form (IP address, CIDR, MAC address, URL); other types are an error. A list is checked in order and stops at the first match, so items after a match are not checked; an empty list (such as an empty array from the input) does not match. | `starts_with(url, "https://")`<br>`starts_with(type, ["process.", "agent."])` |
+| `coalesce(value, ...values)` | Returns the first argument that is present: not missing and not null (`false`, `0`, and `""` are present). Arguments are evaluated in order and the rest are skipped once one is present; an error stops the search and is the result. If no argument is present, the result is the last argument's, so it is unknown when that argument is missing and null when it is null. Same as `value ?? values...` | `coalesce(user.name, user.login, "anonymous")` |
+| `compact(list)` | Returns the list without its null elements. Given an array literal, it also drops the elements that are missing from the input and is always complete; an element error is the result. Given other values, a missing list makes the result unknown and a value that is not a list is an error. `false`, `0`, `""`, and `[]` are kept; nested lists are not flattened. | `compact([user.email, user.phone])` |
 
 ### Custom Functions
 

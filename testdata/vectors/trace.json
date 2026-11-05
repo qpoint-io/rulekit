@@ -140,16 +140,33 @@
       }
     },
     {
-      "name": "array traces its items, pruning those after an incomplete one",
-      "expr": "[x, 1] contains 1",
-      "input": {},
+      "name": "array argument traces its items, pruning those after an incomplete one",
+      "expr": "starts_with(s, [x, \"a\"])",
+      "input": {"s": "abc"},
       "expect": {
         "missing_fields": ["x"],
         "trace": {
+          "kind": "call",
           "status": "missing",
           "children": [
-            {"expr": "[x, 1]", "status": "missing", "children": [{"expr": "x", "status": "missing"}, {"expr": "1", "status": "pruned", "pruned": true}]},
-            {"expr": "1", "status": "pruned", "pruned": true}
+            {"expr": "s", "status": "passed"},
+            {"expr": "[x, \"a\"]", "status": "missing", "children": [{"expr": "x", "status": "missing"}, {"expr": "\"a\"", "status": "pruned", "pruned": true}]}
+          ]
+        }
+      }
+    },
+    {
+      "name": "array comparison operand traces every item",
+      "expr": "[x, 1] contains 1",
+      "input": {},
+      "expect": {
+        "value": true,
+        "trace": {
+          "status": "passed",
+          "missing_fields": [],
+          "children": [
+            {"expr": "[x, 1]", "status": "missing", "missing_fields": ["x"], "children": [{"expr": "x", "status": "missing"}, {"expr": "1", "status": "passed", "pruned": false}]},
+            {"expr": "1", "status": "passed"}
           ]
         }
       }
@@ -179,6 +196,60 @@
       "expect": {
         "value": true,
         "trace": {"kind": "call", "status": "passed", "children": [{"expr": "s", "status": "passed"}, {"expr": "\"a\"", "status": "passed"}]}
+      }
+    },
+    {
+      "name": "?? prunes the right side when the left is present",
+      "expr": "a ?? \"d\"",
+      "input": {"a": "x"},
+      "expect": {
+        "value": "x",
+        "trace": {"kind": "binary", "expr": "a ?? \"d\"", "status": "passed", "children": [{"expr": "a", "status": "passed"}, {"expr": "\"d\"", "status": "pruned", "pruned": true, "active": false}]}
+      }
+    },
+    {
+      "name": "?? evaluates the right side when the left is missing",
+      "expr": "a ?? \"d\"",
+      "input": {},
+      "expect": {
+        "value": "d",
+        "trace": {"kind": "binary", "status": "passed", "missing_fields": [], "children": [{"expr": "a", "status": "missing", "missing_fields": ["a"]}, {"expr": "\"d\"", "status": "passed"}]}
+      }
+    },
+    {
+      "name": "coalesce prunes the arguments after the chosen one",
+      "expr": "coalesce(a, b, \"d\")",
+      "input": {"b": 1},
+      "expect": {
+        "value": 1,
+        "trace": {"kind": "call", "status": "passed", "children": [{"expr": "a", "status": "missing"}, {"expr": "b", "status": "passed"}, {"expr": "\"d\"", "status": "pruned", "pruned": true}]}
+      }
+    },
+    {
+      "name": "compact traces every element of a literal list",
+      "expr": "compact([a, 1])",
+      "input": {},
+      "expect": {
+        "value": [1],
+        "trace": {"kind": "call", "status": "passed", "missing_fields": [], "children": [{"kind": "array", "status": "missing", "missing_fields": ["a"], "children": [{"expr": "a", "status": "missing"}, {"expr": "1", "status": "passed"}]}]}
+      }
+    },
+    {
+      "name": "in literal evaluates every element and passes on a present match",
+      "expr": "\"x\" in [a, b]",
+      "input": {"b": "x"},
+      "expect": {
+        "value": true,
+        "trace": {"kind": "binary", "status": "passed", "missing_fields": [], "children": [{"expr": "\"x\"", "status": "passed"}, {"kind": "array", "status": "missing", "missing_fields": ["a"], "children": [{"expr": "a", "status": "missing"}, {"expr": "b", "status": "passed", "pruned": false}]}]}
+      }
+    },
+    {
+      "name": "in literal without a match is missing",
+      "expr": "\"x\" in [a, b]",
+      "input": {"b": "y"},
+      "expect": {
+        "missing_fields": ["a"],
+        "trace": {"kind": "binary", "status": "missing", "missing_fields": ["a"], "children": [{"expr": "\"x\""}, {"kind": "array", "status": "missing", "children": [{"expr": "a", "status": "missing"}, {"expr": "b", "status": "passed"}]}]}
       }
     }
   ]

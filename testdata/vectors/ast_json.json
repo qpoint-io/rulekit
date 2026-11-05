@@ -707,6 +707,7 @@
           ]
         }
       }
-    }
+    },
+    {"name": "coalesce operator", "expr": "a ?? \"d\"", "expect": {"ast_json": {"source": "a ?? \"d\"", "root": {"id": "root", "kind": "binary", "text": "a ?? \"d\"", "operator": "coalesce", "raw": "??", "span": {"start": 0, "end": 8, "startLine": 1, "startColumn": 1, "endLine": 1, "endColumn": 9}, "children": [{"id": "root.0", "kind": "path", "text": "a", "path": "a", "span": {"start": 0, "end": 1, "startLine": 1, "startColumn": 1, "endLine": 1, "endColumn": 2}}, {"id": "root.1", "kind": "literal", "text": "\"d\"", "raw": "\"d\"", "span": {"start": 5, "end": 8, "startLine": 1, "startColumn": 6, "endLine": 1, "endColumn": 9}}]}, "tokens": [{"kind": "FIELD", "role": "id", "raw": "a", "span": {"start": 0, "end": 1, "startLine": 1, "startColumn": 1, "endLine": 1, "endColumn": 2}}, {"kind": "COALESCE", "role": "kw", "raw": "??", "span": {"start": 2, "end": 4, "startLine": 1, "startColumn": 3, "endLine": 1, "endColumn": 5}}, {"kind": "STRING", "role": "str", "raw": "\"d\"", "span": {"start": 5, "end": 8, "startLine": 1, "startColumn": 6, "endLine": 1, "endColumn": 9}}]}}}
   ]
 }
